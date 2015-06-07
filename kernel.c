@@ -1,0 +1,20 @@
+#include <stdint.h>
+
+#include "port.h"
+#include "console.h"
+
+void kmain()
+{
+	console_init();
+	
+    console_write_line("Hello world from a kernel!");
+	console_write_line("This is just a test.");
+	console_write_line("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ");
+	console_advance_cursor(2, 3);
+	console_write_line("Test number 2");
+	console_write_line("Test number 3");
+	
+	console_scroll(2);
+	
+	console_write_line("Test scroll");
+}

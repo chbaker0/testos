@@ -41,13 +41,13 @@ void console_scroll(unsigned int lines)
     }
     else
     {
-        size_t copy_count = lines * CONSOLE_WIDTH;
-        size_t copy_read = (CONSOLE_HEIGHT - lines) * CONSOLE_WIDTH;
+        size_t copy_count = (CONSOLE_HEIGHT - lines) * CONSOLE_WIDTH;
+        size_t copy_read = lines * CONSOLE_WIDTH;
         
         for(size_t i = 0; i < copy_count; ++i)
             console_buffer[i] = console_buffer[copy_read + i];
         
-        for(size_t i = copy_read; i < CONSOLE_WIDTH * CONSOLE_HEIGHT; ++i)
+        for(size_t i = copy_count; i < CONSOLE_WIDTH * CONSOLE_HEIGHT; ++i)
             console_buffer[i] = vga_entry(' ', console_color);
     }
     

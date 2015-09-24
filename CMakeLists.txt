@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.0)
 project(testos)
 
 set(CMAKE_ASM_NASM_OBJECT_FORMAT "elf32")

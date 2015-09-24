@@ -7,6 +7,26 @@
 
 struct gdt_entry flat_gdt[3] = {0};
 
+struct idtr
+{
+	uint16_t limit;
+	uint32_t base;
+};
+
+struct idt_entry
+{
+	uint16_t offset_0_15;
+	uint16_t selector;
+	uint8_t zero;
+	uint8_t type;
+	uint16_t offset_16_31;
+};
+
+idt_entry idt_entries[256];
+
+#define IDT_32_INT_GATE 14u
+#define IDT_32_TRAP_GATE 15u
+
 void kmain()
 {
 	flat_gdt[1] =

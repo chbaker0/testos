@@ -5,9 +5,9 @@ MAGIC equ 0x1BADB002
 FLAGS equ 0000_0000_0000_0000_0000_0000_0000_0111
 
 SECTION .multiboot
-dd MAGIC
-dd FLAGS
-dd -(MAGIC + FLAGS) 
+	dd MAGIC
+	dd FLAGS
+	dd -(MAGIC + FLAGS)
 
 SECTION .boot_stack nobits
 stack_bottom: resb 16384

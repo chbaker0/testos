@@ -12,6 +12,7 @@ gdt_load:
 	mov eax, [esp + 4]
 	mov [gdtr + 2], eax
 	mov ax, [esp + 8]
+	shl ax, 3
 	mov [gdtr], ax
 	lgdt [gdtr]
 	ret

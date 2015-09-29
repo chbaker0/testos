@@ -23,4 +23,6 @@ struct __attribute__ ((__packed__)) idt_entry
 
 struct idt_entry idt_make_entry(uint32_t offset, uint8_t selector, uint8_t type, uint8_t priv, uint8_t present);
 
+void idt_load(struct idt_entry *entries, uint16_t size);
+
 #endif // _IDT_H_INCLUDED_

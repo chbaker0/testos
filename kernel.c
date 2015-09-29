@@ -8,7 +8,7 @@
 
 struct gdt_entry flat_gdt[3] = {0};
 
-idt_entry idt_entries[256];
+struct idt_entry idt_entries[256];
 
 void kmain()
 {

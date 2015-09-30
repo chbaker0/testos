@@ -1,9 +1,9 @@
 #include <stdint.h>
 
-#include "port.h"
+#include "x86/port.h"
+#include "x86/gdt.h"
+#include "x86/helpers.h"
 #include "console.h"
-#include "gdt.h"
-#include "helpers.h"
 
 struct gdt_entry flat_gdt[3] = {0};
 

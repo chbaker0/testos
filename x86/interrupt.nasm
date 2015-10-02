@@ -8,8 +8,12 @@ extern __interrupt_handlers
 
 __isr_%1:
 	pushad
+	mov eax, __interrupt_handlers + (%1) * 4
+	test eax, eax
+	jz .no_handler
 	cld
-	call [__interrupt_handlers + (%1) * 4]
+	call [eax]
+.no_handler:
 	popad
 	iret
 

@@ -1,6 +1,9 @@
 #ifndef _INTERRUPT_H_INCLUDED_
 #define _INTERRUPT_H_INCLUDED_
 
+#define INTERRUPT_DISABLE() asm volatile ("cli")
+#define INTERRUPT_ENABLE() asm volatile ("sti")
+
 #include <stdint.h>
 
 typedef void (*interrupt_handler)(void);

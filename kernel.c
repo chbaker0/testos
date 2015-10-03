@@ -3,12 +3,20 @@
 #include "x86/port.h"
 #include "x86/gdt.h"
 #include "x86/idt.h"
+#include "x86/interrupt.h"
 #include "x86/helpers.h"
 #include "console.h"
 
 struct gdt_entry flat_gdt[3] = {0};
 
 struct idt_entry idt_entries[256];
+
+void panic()
+{
+	console_write_line("Bye");
+	INTERRUPT_DISABLE();
+    *(volatile char *) 0xb8000 = 'Z';
+}
 
 void kmain()
 {
@@ -23,6 +31,15 @@ void kmain()
 					   GDT_ENTRY_FLAGS_GR_BIT | GDT_ENTRY_FLAGS_SZ_BIT);
 	gdt_load(flat_gdt, 3);
 	helpers_reload_all_segments(0x08, 0x10);
+
+	for(unsigned int i = 0; i < 256; ++i)
+	{
+		uintptr_t ih = interrupt_get_trampoline_addr(i);
+		interrupt_set_handler(i, panic);
+		idt_entries[i] = idt_make_entry(ih, 0x08, IDT_ENTRY_TYPE_32_INT_GATE, 0, 1);
+	}
+
+	idt_load(idt_entries, 255);
 	
 	console_init();
 	
@@ -36,4 +53,6 @@ void kmain()
 	console_scroll(2);
 	
 	console_write_line("Test scroll");
+
+	INTERRUPT_RAISE(0x80);
 }

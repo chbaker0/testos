@@ -4,6 +4,8 @@
 #define INTERRUPT_DISABLE() asm volatile ("cli")
 #define INTERRUPT_ENABLE() asm volatile ("sti")
 
+#define INTERRUPT_RAISE(int_num) asm volatile("int $" #int_num)
+
 #include <stdint.h>
 
 typedef void (*interrupt_handler)(void);

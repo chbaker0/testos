@@ -7,6 +7,8 @@
 #include "x86/helpers.h"
 #include "console.h"
 
+#define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
+
 struct gdt_entry flat_gdt[3] = {0};
 
 struct idt_entry idt_entries[256];
@@ -32,14 +34,18 @@ void kmain()
 	gdt_load(flat_gdt, 3);
 	helpers_reload_all_segments(0x08, 0x10);
 
+	BOCHS_BREAKPOINT();
+
 	for(unsigned int i = 0; i < 256; ++i)
 	{
 		uintptr_t ih = interrupt_get_trampoline_addr(i);
 		interrupt_set_handler(i, panic);
-		idt_entries[i] = idt_make_entry(ih, 0x08, IDT_ENTRY_TYPE_32_INT_GATE, 0, 1);
+		idt_entries[i] = idt_make_int_gate(ih, 0x08, 1, 0);
 	}
 
 	idt_load(idt_entries, 255);
+
+	BOCHS_BREAKPOINT();
 	
 	console_init();
 	
@@ -54,5 +60,7 @@ void kmain()
 	
 	console_write_line("Test scroll");
 
+	BOCHS_BREAKPOINT();
+	
 	INTERRUPT_RAISE(0x80);
 }

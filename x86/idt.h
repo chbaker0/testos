@@ -3,12 +3,6 @@
 
 #include <stdint.h>
 
-#define IDT_ENTRY_TYPE_32_TASK_GATE 5u
-#define IDT_ENTRY_TYPE_16_INT_GATE 6u
-#define IDT_ENTRY_TYPE_16_TRAP_GATE 7u
-#define IDT_ENTRY_TYPE_32_INT_GATE 14u
-#define IDT_ENTRY_TYPE_32_TRAP_GATE 15u
-
 struct __attribute__ ((__packed__)) idt_entry
 {
     unsigned long long offset_0_15 : 16;
@@ -21,7 +15,7 @@ struct __attribute__ ((__packed__)) idt_entry
 	unsigned long long offset_16_31 : 16;
 };
 
-struct idt_entry idt_make_entry(uint32_t offset, uint8_t selector, uint8_t type, uint8_t priv, uint8_t present);
+struct idt_entry idt_make_int_gate(uint32_t offset, uint16_t selector, uint8_t present, uint8_t priv);
 
 void idt_load(struct idt_entry *entries, uint16_t size);
 

@@ -18,6 +18,7 @@ void panic()
 	console_write_line("Bye");
 	INTERRUPT_DISABLE();
     *(volatile char *) 0xb8000 = 'Z';
+	while(1);
 }
 
 void kmain()

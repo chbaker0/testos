@@ -21,6 +21,11 @@ void panic()
 		asm volatile("hlt");
 }
 
+void test_handler()
+{
+	console_write_line("Test handler called");
+}
+
 void kmain()
 {
 	flat_gdt[1] =
@@ -45,6 +50,8 @@ void kmain()
 	}
 
 	idt_load(idt_entries, 255);
+
+	interrupt_set_handler(0x80, test_handler);
 
 	BOCHS_BREAKPOINT();
 	

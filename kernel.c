@@ -24,10 +24,14 @@ void panic()
 void test_handler()
 {
 	console_write_line("Test handler called");
+
+	BOCHS_BREAKPOINT();
 }
 
 void kmain()
 {
+	BOCHS_BREAKPOINT();
+	
 	flat_gdt[1] =
 		gdt_make_entry(0x00000000, 0x000FFFFF,
 					   GDT_ENTRY_ACCESS_EX_BIT | GDT_ENTRY_ACCESS_PR_BIT

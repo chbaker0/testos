@@ -4,6 +4,7 @@ SECTION .text:
 
 global helpers_reload_all_segments
 helpers_reload_all_segments:
+	xchg bx, bx
 	xor ecx, ecx
 	xor eax, eax
 	mov cx, word [esp + 8] 			; New data segments
@@ -17,7 +18,7 @@ helpers_reload_all_segments:
 	sub esp, 6
 	mov dword [esp], .reload_cs
 	mov [esp + 4], ax
-	jmp [esp]
+	jmp far [esp]
 .reload_cs:
 	add esp, 6
 	ret

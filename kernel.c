@@ -15,10 +15,10 @@ struct idt_entry idt_entries[256];
 
 void panic()
 {
-	console_write_line("Bye");
+	console_write_line("Panic handler called");
 	INTERRUPT_DISABLE();
-    *(volatile char *) 0xb8000 = 'Z';
-	while(1);
+	while(1)
+		asm volatile("hlt");
 }
 
 void kmain()

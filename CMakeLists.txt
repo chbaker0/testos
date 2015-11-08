@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.1)
 project(testos)
 
 set(CMAKE_ASM_NASM_OBJECT_FORMAT "elf32")
@@ -15,5 +15,16 @@ include_directories(.)
 add_subdirectory(x86)
 
 add_executable(kernel.bin kernel.c console.c $<TARGET_OBJECTS:x86>)
+
+set(GRUB_PREFIX "/usr/lib/grub" CACHE PATH "Prefix of grub files")
+add_custom_command(OUTPUT "kernel.iso"
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/iso
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/iso/boot
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/iso/boot/grub
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/kernel.bin ${CMAKE_CURRENT_BINARY_DIR}/iso/boot
+  COMMAND grub-mkrescue -o kernel.iso -d ${GRUB_PREFIX}/i386-pc iso
+  DEPENDS kernel.bin
+  )
+add_custom_target(build-kernel.iso ALL DEPENDS kernel.iso)
 
 set_target_properties(kernel.bin PROPERTIES LINK_FLAGS "-T ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld -nostdlib -lgcc")

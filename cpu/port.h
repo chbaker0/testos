@@ -11,4 +11,6 @@ void port_write_8(uint16_t port, uint8_t val);
 void port_write_16(uint16_t port, uint16_t val);
 void port_write_32(uint16_t port, uint32_t val);
 
+void port_wait();
+
 #endif // _PORT_H_

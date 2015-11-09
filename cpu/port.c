@@ -31,3 +31,8 @@ void port_write_32(uint16_t port, uint32_t val)
 {
 	asm volatile ("outl %1, %0" : : "d" (port), "a" (val));
 }
+
+void port_wait()
+{
+	port_write_8(0x80, 0);
+}

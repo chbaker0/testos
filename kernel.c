@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 
 #include "cpu/port.h"
 #include "cpu/gdt.h"
@@ -62,8 +63,12 @@ void kmain()
 	for(unsigned int i = 0; i < 256; ++i)
 	{
 		uintptr_t ih = interrupt_get_trampoline_addr(i);
-		interrupt_set_handler(i, panic);
+		interrupt_set_handler(i, NULL);
 		idt_entries[i] = idt_make_int_gate(ih, 0x08, 1, 0);
+	}
+	for(unsigned int i = 0; i < 32; ++i)
+	{
+		interrupt_set_handler(i, panic);
 	}
 
 	idt_load(idt_entries, 255);

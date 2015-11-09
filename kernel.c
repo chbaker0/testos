@@ -5,6 +5,7 @@
 #include "cpu/gdt.h"
 #include "cpu/idt.h"
 #include "cpu/interrupt.h"
+#include "cpu/pic.h"
 #include "cpu/helpers.h"
 #include "console.h"
 
@@ -59,6 +60,8 @@ void kmain()
 	setup_flat_gdt();
 
 	BOCHS_BREAKPOINT();
+
+	pic_remap(32, 40);
 
 	for(unsigned int i = 0; i < 256; ++i)
 	{

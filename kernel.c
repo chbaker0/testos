@@ -1,10 +1,10 @@
 #include <stdint.h>
 
-#include "x86/port.h"
-#include "x86/gdt.h"
-#include "x86/idt.h"
-#include "x86/interrupt.h"
-#include "x86/helpers.h"
+#include "cpu/port.h"
+#include "cpu/gdt.h"
+#include "cpu/idt.h"
+#include "cpu/interrupt.h"
+#include "cpu/helpers.h"
 #include "console.h"
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")

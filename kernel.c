@@ -9,8 +9,6 @@
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
-struct gdt_entry flat_gdt[3] = {0};
-
 struct idt_entry idt_entries[256];
 
 void panic()
@@ -28,21 +26,34 @@ void test_handler()
 	BOCHS_BREAKPOINT();
 }
 
+void setup_flat_gdt()
+{
+	struct gdt_common_segment_settings common_settings = {0};
+	common_settings.granularity = 1;
+	common_settings.present = 1;
+	common_settings.privilege = 0;
+	
+	struct gdt_code_segment_settings c_settings = {0};
+	c_settings.conforming = 0;
+	c_settings.readable = 1;
+	c_settings.common = common_settings;
+	gdt_set_code_segment(0x08, 0, 0xFFFFF, &c_settings);
+
+	struct gdt_data_segment_settings d_settings = {0};
+	d_settings.direction = 0;
+	d_settings.writable = 1;
+	d_settings.common = common_settings;
+	gdt_set_data_segment(0x10, 0, 0xFFFFF, &d_settings);
+
+	gdt_init();
+	helpers_reload_all_segments(0x08, 0x10);
+}
+
 void kmain()
 {
 	BOCHS_BREAKPOINT();
-	
-	flat_gdt[1] =
-		gdt_make_entry(0x00000000, 0x000FFFFF,
-					   GDT_ENTRY_ACCESS_EX_BIT | GDT_ENTRY_ACCESS_PR_BIT
-					   | GDT_ENTRY_ACCESS_RW_BIT, 0,
-					   GDT_ENTRY_FLAGS_GR_BIT | GDT_ENTRY_FLAGS_SZ_BIT);
-	flat_gdt[2] =
-		gdt_make_entry(0x00000000, 0x000FFFFF,
-					   GDT_ENTRY_ACCESS_PR_BIT | GDT_ENTRY_ACCESS_RW_BIT, 0,
-					   GDT_ENTRY_FLAGS_GR_BIT | GDT_ENTRY_FLAGS_SZ_BIT);
-	gdt_load(flat_gdt, 3);
-	helpers_reload_all_segments(0x08, 0x10);
+
+	setup_flat_gdt();
 
 	BOCHS_BREAKPOINT();
 

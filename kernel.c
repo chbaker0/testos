@@ -51,6 +51,8 @@ void setup_flat_gdt()
 
 void kmain()
 {
+	console_init();
+	
 	BOCHS_BREAKPOINT();
 
 	setup_flat_gdt();
@@ -65,12 +67,11 @@ void kmain()
 	}
 
 	idt_load(idt_entries, 255);
+	INTERRUPT_ENABLE();
 
 	interrupt_set_handler(0x80, test_handler);
 
 	BOCHS_BREAKPOINT();
-	
-	console_init();
 	
 	console_write_line("Hello world from a kernel!");
 	console_write_line("This is just a test.");

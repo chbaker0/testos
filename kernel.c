@@ -21,6 +21,13 @@ void panic()
 		asm volatile("hlt");
 }
 
+void timer_handler()
+{
+	console_write_line("Timer interrupt received");
+
+	pic_eoi(0);
+}
+
 void test_handler()
 {
 	console_write_line("Test handler called");
@@ -73,6 +80,7 @@ void kmain()
 	{
 		interrupt_set_handler(i, panic);
 	}
+	interrupt_set_handler(32, timer_handler);
 
 	idt_load(idt_entries, 255);
 	INTERRUPT_ENABLE();
@@ -95,4 +103,7 @@ void kmain()
 	BOCHS_BREAKPOINT();
 	
 	INTERRUPT_RAISE(0x80);
+
+	while(1)
+		asm volatile("hlt"); // Busy loop
 }

@@ -23,14 +23,10 @@ typedef enum console_color
 	CONSOLE_COLOR_WHITE
 } console_color_t;
 
+extern unsigned int console_width, console_height;
+
 void console_init();
-void console_set_color(console_color_t fg, console_color_t bg);
 void console_clear();
-void console_advance_cursor(unsigned int rows, unsigned int columns);
-void console_carriage_return();
-void console_new_line();
-void console_put_char(char c);
-void console_write_line(const char *str);
-void console_scroll(unsigned int lines);
+uint8_t console_make_color(console_color_t fg, console_color_t bg);
 
 #endif // _CONSOLE_H_

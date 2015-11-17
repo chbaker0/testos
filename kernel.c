@@ -7,7 +7,7 @@
 #include "cpu/interrupt.h"
 #include "cpu/pic.h"
 #include "cpu/helpers.h"
-#include "console.h"
+#include "io/terminal.h"
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
@@ -15,7 +15,7 @@ struct idt_entry idt_entries[256];
 
 void panic()
 {
-	console_write_line("Panic handler called");
+	terminal_write_line("Panic handler called");
 	INTERRUPT_DISABLE();
 	while(1)
 		asm volatile("hlt");
@@ -30,7 +30,7 @@ void timer_handler()
 
 void test_handler()
 {
-	console_write_line("Test handler called");
+	terminal_write_line("Test handler called");
 
 	BOCHS_BREAKPOINT();
 }
@@ -60,7 +60,7 @@ void setup_flat_gdt()
 
 void kmain()
 {
-	console_init();
+	terminal_init();
 	
 	BOCHS_BREAKPOINT();
 
@@ -89,16 +89,11 @@ void kmain()
 
 	BOCHS_BREAKPOINT();
 	
-	console_write_line("Hello world from a kernel!");
-	console_write_line("This is just a test.");
-	console_write_line("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ");
-	console_advance_cursor(2, 3);
-	console_write_line("Test number 2");
-	console_write_line("Test number 3");
-	
-	console_scroll(2);
-	
-	console_write_line("Test scroll");
+	terminal_write_line("Hello world from a kernel!");
+	terminal_write_line("This is just a test.");
+	terminal_write_line("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ");
+	terminal_write_line("Test number 2");
+	terminal_write_line("Test number 3");
 
 	BOCHS_BREAKPOINT();
 	

@@ -1,9 +1,14 @@
-#ifndef _CONSOLE_H_
-#define _CONSOLE_H_
+#ifndef _VGA_H_
+#define _VGA_H_
 
 #include <stdint.h>
 
-typedef enum console_color
+struct screen_pos
+{
+	unsigned int x, y;
+};
+
+typedef enum vga_color
 {
 	CONSOLE_COLOR_BLACK = 0,
 	CONSOLE_COLOR_BLUE,
@@ -21,12 +26,10 @@ typedef enum console_color
 	CONSOLE_COLOR_LIGHT_MAGENTA,
 	CONSOLE_COLOR_LIGHT_BROWN,
 	CONSOLE_COLOR_WHITE
-} console_color_t;
+} vga_color_t;
 
-extern unsigned int console_width, console_height;
+void vga_clear();
+void vga_write_rect(const uint16_t *buf, const struct screen_pos *off, const struct screen_pos *size);
+uint8_t vga_make_color(vga_color_t fg, vga_color_t bg);
 
-void console_init();
-void console_clear();
-uint8_t console_make_color(console_color_t fg, console_color_t bg);
-
-#endif // _CONSOLE_H_
+#endif // _VGA_H_

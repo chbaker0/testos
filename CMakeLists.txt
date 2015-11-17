@@ -13,8 +13,9 @@ set(CMAKE_ASM_NASM_FLAGS "-g")
 include_directories(.)
 
 add_subdirectory(cpu)
+add_subdirectory(io)
 
-add_executable(kernel.bin kernel.c console.c boot.nasm $<TARGET_OBJECTS:cpu>)
+add_executable(kernel.bin kernel.c boot.nasm $<TARGET_OBJECTS:io> $<TARGET_OBJECTS:cpu>)
 
 set(GRUB_PREFIX "/usr/lib/grub" CACHE PATH "Prefix of grub files")
 add_custom_command(OUTPUT "kernel.iso"

@@ -52,7 +52,7 @@ void terminal_write_line(const char *str)
 {
 	while(*str != 0)
 	{
-		buffer[bottom * TERMINAL_WIDTH + head] = *str;
+		buffer[bottom * TERMINAL_WIDTH + head] = *str++;
 	    if(++head == TERMINAL_WIDTH)
 		{
 			head = 0;

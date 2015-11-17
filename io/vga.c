@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-static volatile uint16_t *vmem;
+static volatile uint16_t *vmem = 0xb8000;
 
 void vga_clear()
 {

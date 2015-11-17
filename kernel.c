@@ -23,7 +23,7 @@ void panic()
 
 void timer_handler()
 {
-	console_write_line("Timer interrupt received");
+	terminal_write_line("Timer interrupt received");
 
 	pic_eoi(0);
 }

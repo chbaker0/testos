@@ -12,9 +12,9 @@ void vga_clear()
 
 void vga_write_rect(const uint16_t *buf, const struct screen_pos *off, const struct screen_pos *size)
 {
-	for(unsigned int i = 0; i < size->y && i < 25 - size->y + 1; ++i)
+	for(unsigned int i = 0; i < size->y && i + off->y < 25; ++i)
 	{
-		for(unsigned int j = 0; j < size->x && j < 80 - size->x + 1; ++j)
+		for(unsigned int j = 0; j < size->x && j + off->x < 80; ++j)
 		{
 			vmem[(i + off->y) * 80 + j + off->x]
 				= buf[i * size->y + j];

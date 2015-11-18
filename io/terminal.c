@@ -6,7 +6,8 @@ static vga_color_t cur_color = 0;
 
 void terminal_init()
 {
-	// There is nothing to do
+    cur_color = vga_make_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
+	bottom = 24;
 }
 
 void terminal_set_color(vga_color_t color)
@@ -34,7 +35,7 @@ static void draw()
 	{
 		struct screen_pos off = {0, 0};
 		struct screen_pos size = {80, 25};
-		vga_write_rect(buffer + bottom * TERMINAL_WIDTH, &off, &size);
+		vga_write_rect(buffer + (24 - bottom) * TERMINAL_WIDTH, &off, &size);
 	}
 	else
 	{
@@ -52,7 +53,7 @@ void terminal_write_line(const char *str)
 {
 	while(*str != 0)
 	{
-		buffer[bottom * TERMINAL_WIDTH + head] = *str++;
+		buffer[bottom * TERMINAL_WIDTH + head] = (uint16_t) *str++ + ((uint16_t) cur_color << 8U);
 	    if(++head == TERMINAL_WIDTH)
 		{
 			head = 0;

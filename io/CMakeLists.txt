@@ -1,1 +1,1 @@
-add_library(io OBJECT terminal.c vga.c)
+add_library(io OBJECT vga.c)

@@ -1,13 +1,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "core/terminal.h"
 #include "cpu/port.h"
 #include "cpu/gdt.h"
 #include "cpu/idt.h"
 #include "cpu/interrupt.h"
 #include "cpu/pic.h"
 #include "cpu/helpers.h"
-#include "io/terminal.h"
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
@@ -41,7 +41,7 @@ void setup_flat_gdt()
 	common_settings.granularity = 1;
 	common_settings.present = 1;
 	common_settings.privilege = 0;
-	
+
 	struct gdt_code_segment_settings c_settings = {0};
 	c_settings.conforming = 0;
 	c_settings.readable = 1;
@@ -61,7 +61,7 @@ void setup_flat_gdt()
 void kmain()
 {
 	terminal_init();
-	
+
 	BOCHS_BREAKPOINT();
 
 	setup_flat_gdt();
@@ -88,7 +88,7 @@ void kmain()
 	interrupt_set_handler(0x80, test_handler);
 
 	BOCHS_BREAKPOINT();
-	
+
 	terminal_write_line("Hello world from a kernel!");
 	terminal_write_line("This is just a test.");
 	terminal_write_line("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ");
@@ -96,7 +96,7 @@ void kmain()
 	terminal_write_line("Test number 3");
 
 	BOCHS_BREAKPOINT();
-	
+
 	INTERRUPT_RAISE(0x80);
 
 	while(1)

@@ -15,7 +15,6 @@ struct idt_entry idt_entries[256];
 
 void panic()
 {
-	terminal_write_line("Panic handler called");
 	INTERRUPT_DISABLE();
 	while(1)
 		asm volatile("hlt");
@@ -23,15 +22,11 @@ void panic()
 
 void timer_handler()
 {
-	terminal_write_line("Timer interrupt received");
-
 	pic_eoi(0);
 }
 
 void test_handler()
 {
-	terminal_write_line("Test handler called");
-
 	BOCHS_BREAKPOINT();
 }
 
@@ -60,8 +55,6 @@ void setup_flat_gdt()
 
 void kmain()
 {
-	terminal_init();
-
 	BOCHS_BREAKPOINT();
 
 	setup_flat_gdt();
@@ -88,12 +81,6 @@ void kmain()
 	interrupt_set_handler(0x80, test_handler);
 
 	BOCHS_BREAKPOINT();
-
-	terminal_write_line("Hello world from a kernel!");
-	terminal_write_line("This is just a test.");
-	terminal_write_line("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ");
-	terminal_write_line("Test number 2");
-	terminal_write_line("Test number 3");
 
 	BOCHS_BREAKPOINT();
 

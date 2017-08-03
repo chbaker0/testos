@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #include "terminal.h"
 
 static uint16_t buffer[TERMINAL_WIDTH * TERMINAL_HEIGHT] = {0};
@@ -49,17 +51,36 @@ static void draw()
 	}
 }
 
+// Writes string to bottom of terminal. Assumes input string is no
+// longer than TERMINAL_WIDTH.
+static void write_line_impl(const char *str, size_t str_length)
+{
+    clear_bottom();
+    for (size_t i = 0; i < str_length; ++i)
+    {
+        buffer[bottom * TERMINAL_WIDTH + i] =
+            (uint16_t) str[i] + ((uint16_t) cur_color << 8U);
+    }
+}
+
 void terminal_write_line(const char *str)
 {
-	while(*str != 0)
-	{
-		buffer[bottom * TERMINAL_WIDTH + head] = (uint16_t) *str++ + ((uint16_t) cur_color << 8U);
-	    if(++head == TERMINAL_WIDTH)
-		{
-			head = 0;
-		    scroll();
-		}
-	}
-	scroll();
+    size_t str_length = 0;
+    const char *cur = str;
+	while (*cur != 0)
+    {
+        ++str_length;
+        ++cur;
+    }
+
+    size_t num_lines = (str_length+TERMINAL_WIDTH-1) / TERMINAL_WIDTH;
+    size_t cur_ndx = 0;
+    for (size_t l = 0; l < num_lines; ++l)
+    {
+        size_t line_length = (str_length - cur_ndx) < 80 ? (str_length - cur_ndx) : 80;
+        write_line_impl(str + cur_ndx, line_length);
+        scroll();
+    }
+
 	draw();
 }

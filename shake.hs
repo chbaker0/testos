@@ -18,7 +18,7 @@ static_library name sources = do
   let sources_no_headers = filter (not . extension_is ".h") sources
   let c_sources = filter (extension_is ".c") sources_no_headers
   let nasm_sources = filter (extension_is ".nasm") sources_no_headers
-  let objects = map (\x -> "build" </> (x -<.> ".o")) sources_no_headers
+  let objects = map (\x -> "build" </> (x ++ ".o")) sources_no_headers
 
   "build" </> name %> \target -> do
     need objects

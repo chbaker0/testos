@@ -27,7 +27,6 @@ static_library name sources = do
     let object = "build" </> replaceExtension source ".o"
     object %> \_ -> do
       need [source]
-      liftIO $ putStrLn "Build dependencies."
       cmd kcc [object] [source]
 
 main :: IO ()

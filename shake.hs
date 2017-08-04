@@ -25,13 +25,13 @@ static_library name sources = do
     cmd kar [target] objects
 
   forM_ c_sources $ \source -> do
-    let object = "build" </> replaceExtension source ".o"
+    let object = "build" </> replaceExtension source ".c.o"
     object %> \_ -> do
       need [source]
       cmd kcc [object] [source]
 
   forM_ nasm_sources $ \source -> do
-    let object = "build" </> replaceExtension source ".o"
+    let object = "build" </> replaceExtension source ".nasm.o"
     object %> \_ -> do
       need [source]
       cmd kas [object] [source]

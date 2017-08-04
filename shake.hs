@@ -4,7 +4,7 @@ import Development.Shake.Command
 import Development.Shake.FilePath
 import System.FilePath
 
-freestanding_gcc = "i686-elf-gcc"
+freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
 
 kcc = freestanding_gcc ++ " -c -o"
 kar = "ar crf"
@@ -17,17 +17,17 @@ static_library name sources = do
   let sources_no_headers = filter (not . extension_is ".h") sources
   let c_sources = filter (extension_is ".c") sources_no_headers
   let nasm_sources = filter (extension_is ".nasm") sources_no_headers
-  let objects = map (`replaceExtension` ".o") sources_no_headers
+  let objects = map (\x -> "build" </> (x -<.> ".o")) sources_no_headers
 
   "build" </> name %> \target -> do
-    need $ map ("build" </>) objects
+    need objects
     cmd kar [target] objects
 
   forM_ c_sources $ \source -> do
     let object = "build" </> replaceExtension source ".o"
     object %> \_ -> do
       need [source]
-      let object = replaceExtension source ".o"
+      liftIO $ putStrLn "Build dependencies."
       cmd kcc [object] [source]
 
 main :: IO ()

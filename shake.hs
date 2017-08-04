@@ -42,6 +42,27 @@ main = shakeArgs shakeOptions{shakeFiles = "build"} $ do
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]
+
+  static_library "io.a" $ map ("io/" ++) ["vga.c",
+                                          "vga.h"]
+
+  static_library "cpu.a" $ map ("cpu/" ++) ["apic.c",
+                                            "apic.h",
+                                            "gdt.c",
+                                            "gdt.h",
+                                            "gdt.nasm",
+                                            "helpers.h",
+                                            "helpers.nasm",
+                                            "idt.c",
+                                            "idt.h",
+                                            "idt.nasm",
+                                            "interrupt.c",
+                                            "interrupt.h",
+                                            "interrupt.nasm",
+                                            "pic.c",
+                                            "pic.h",
+                                            "port.c",
+                                            "port.h"]
   -- "build/kernel.iso" %> \out -> do
   --   let sources = []
   --   ()

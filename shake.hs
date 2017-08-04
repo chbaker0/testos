@@ -7,6 +7,7 @@ import System.FilePath
 freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
 
 kcc = freestanding_gcc ++ " -c -o"
+kas = "nasm -f elf32 -o"
 kar = "ar crf"
 
 extension_is ext file = ext == takeExtension file
@@ -28,6 +29,12 @@ static_library name sources = do
     object %> \_ -> do
       need [source]
       cmd kcc [object] [source]
+
+  forM_ nasm_sources $ \source -> do
+    let object = "build" </> replaceExtension source ".o"
+    object %> \_ -> do
+      need [source]
+      cmd kas [object] [source]
 
 main :: IO ()
 main = shakeArgs shakeOptions{shakeFiles = "build"} $ do

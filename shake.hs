@@ -38,7 +38,7 @@ static_library name sources = do
 
 main :: IO ()
 main = shakeArgs shakeOptions{shakeFiles = "build"} $ do
-  want ["build/core.a"]
+  want ["build/core.a", "build/cpu.a", "build/io.a"]
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]

@@ -33,6 +33,8 @@ kernel_dependencies target source = do
   need [source]
   cmd freestanding_gcc "-MM -o" target source
 
+build_path = "build"
+
 extension_is ext file = ext == takeExtension file
 
 -- |sources| can include .c, .h, and .nasm files.
@@ -41,30 +43,30 @@ static_library name sources = do
   let sources_no_headers = filter (not . extension_is ".h") sources
   let c_sources = filter (extension_is ".c") sources_no_headers
   let nasm_sources = filter (extension_is ".nasm") sources_no_headers
-  let objects = map (\x -> "build" </> (x ++ ".o")) sources_no_headers
+  let objects = map (\x -> build_path </> (x ++ ".o")) sources_no_headers
 
-  "build" </> name %> \target -> do
+  build_path </> name %> \target -> do
     kernel_archive name objects
 
   forM_ c_sources $ \source -> do
-    let dep = "build" </> replaceExtension source ".c.m"
+    let dep = build_path </> replaceExtension source ".c.m"
     dep %> \_ -> do
       kernel_dependencies dep source
 
   forM_ c_sources $ \source -> do
-    let object = "build" </> replaceExtension source ".c.o"
-    let dep = "build" </> replaceExtension source ".c.m"
+    let object = build_path </> replaceExtension source ".c.o"
+    let dep = build_path </> replaceExtension source ".c.m"
     object %> \_ -> do
       kernel_compile object source dep
 
   forM_ nasm_sources $ \source -> do
-    let object = "build" </> replaceExtension source ".nasm.o"
+    let object = build_path </> replaceExtension source ".nasm.o"
     object %> \_ -> do
       kernel_assemble object source
 
 main :: IO ()
-main = shakeArgs shakeOptions{shakeFiles = "build"} $ do
-  want ["build/core.a", "build/cpu.a", "build/io.a"]
+main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
+  want $ map (build_path </>) ["core.a", "cpu.a", "io.a"]
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]

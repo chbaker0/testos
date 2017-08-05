@@ -7,15 +7,36 @@ import System.FilePath
 
 freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
 
-kdep = freestanding_gcc ++ " -MM -o"
-kcc = freestanding_gcc ++ " -c -o"
-kas = "nasm -f elf32 -o"
-kar = "ar crf"
+-- Make a static library from objects. Needs the object files.
+kernel_archive :: FilePath -> [FilePath] -> Action ()
+kernel_archive target objects = do
+  need objects
+  cmd "ar crf" target objects
+
+-- Assemble a NASM file for the kernel binary. Needs the source file.
+kernel_assemble :: FilePath -> FilePath -> Action ()
+kernel_assemble target source = do
+  need [source]
+  cmd "nasm -f elf32 -o" target source
+
+-- Compile a C source for the kernel binary. Needs the source file
+-- dependency file.
+kernel_compile :: FilePath -> FilePath -> FilePath -> Action ()
+kernel_compile target source dep = do
+  need [source, dep]
+  needMakefileDependencies dep
+  cmd freestanding_gcc "-c -o" target source
+
+-- Get header dependencies from a source file. Needs the source file.
+kernel_dependencies :: FilePath -> FilePath -> Action ()
+kernel_dependencies target source = do
+  need [source]
+  cmd freestanding_gcc "-MM -o" target source
 
 extension_is ext file = ext == takeExtension file
 
 -- |sources| can include .c, .h, and .nasm files.
-static_library :: String -> [String] -> Rules ()
+static_library :: FilePath -> [FilePath] -> Rules ()
 static_library name sources = do
   let sources_no_headers = filter (not . extension_is ".h") sources
   let c_sources = filter (extension_is ".c") sources_no_headers
@@ -23,28 +44,23 @@ static_library name sources = do
   let objects = map (\x -> "build" </> (x ++ ".o")) sources_no_headers
 
   "build" </> name %> \target -> do
-    need objects
-    cmd kar [target] objects
+    kernel_archive name objects
 
   forM_ c_sources $ \source -> do
     let dep = "build" </> replaceExtension source ".c.m"
     dep %> \_ -> do
-      need [source]
-      cmd kdep [dep] [source]
+      kernel_dependencies dep source
 
   forM_ c_sources $ \source -> do
     let object = "build" </> replaceExtension source ".c.o"
     let dep = "build" </> replaceExtension source ".c.m"
     object %> \_ -> do
-      need [source, dep]
-      needMakefileDependencies dep
-      cmd kcc [object] [source] "-MMD -MF" [dep]
+      kernel_compile object source dep
 
   forM_ nasm_sources $ \source -> do
     let object = "build" </> replaceExtension source ".nasm.o"
     object %> \_ -> do
-      need [source]
-      cmd kas [object] [source]
+      kernel_assemble object source
 
 main :: IO ()
 main = shakeArgs shakeOptions{shakeFiles = "build"} $ do

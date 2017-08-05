@@ -46,7 +46,7 @@ static_library name sources = do
   let objects = map (\x -> build_path </> (x ++ ".o")) sources_no_headers
 
   build_path </> name %> \target -> do
-    kernel_archive name objects
+    kernel_archive target objects
 
   forM_ c_sources $ \source -> do
     let dep = build_path </> replaceExtension source ".c.m"

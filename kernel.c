@@ -55,11 +55,7 @@ void setup_flat_gdt()
 
 void kmain()
 {
-	BOCHS_BREAKPOINT();
-
 	setup_flat_gdt();
-
-	BOCHS_BREAKPOINT();
 
 	pic_remap(32, 40);
 
@@ -79,10 +75,6 @@ void kmain()
 	INTERRUPT_ENABLE();
 
 	interrupt_set_handler(0x80, test_handler);
-
-	BOCHS_BREAKPOINT();
-
-	BOCHS_BREAKPOINT();
 
 	INTERRUPT_RAISE(0x80);
 

@@ -33,7 +33,7 @@ kernel_dependencies target source = do
   need [source]
   cmd freestanding_gcc "-MM -o" target source
 
-build_path = "build"
+build_path = "out"
 
 extension_is ext file = ext == takeExtension file
 

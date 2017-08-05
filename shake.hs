@@ -2,10 +2,12 @@ import Control.Monad
 import Development.Shake
 import Development.Shake.Command
 import Development.Shake.FilePath
+import Development.Shake.Util
 import System.FilePath
 
 freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
 
+kdep = freestanding_gcc ++ " -MM -o"
 kcc = freestanding_gcc ++ " -c -o"
 kas = "nasm -f elf32 -o"
 kar = "ar crf"
@@ -25,10 +27,18 @@ static_library name sources = do
     cmd kar [target] objects
 
   forM_ c_sources $ \source -> do
-    let object = "build" </> replaceExtension source ".c.o"
-    object %> \_ -> do
+    let dep = "build" </> replaceExtension source ".c.m"
+    dep %> \_ -> do
       need [source]
-      cmd kcc [object] [source]
+      cmd kdep [dep] [source]
+
+  forM_ c_sources $ \source -> do
+    let object = "build" </> replaceExtension source ".c.o"
+    let dep = "build" </> replaceExtension source ".c.m"
+    object %> \_ -> do
+      need [source, dep]
+      needMakefileDependencies dep
+      cmd kcc [object] [source] "-MMD -MF" [dep]
 
   forM_ nasm_sources $ \source -> do
     let object = "build" </> replaceExtension source ".nasm.o"

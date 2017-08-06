@@ -8,6 +8,7 @@
 #include "cpu/interrupt.h"
 #include "cpu/pic.h"
 #include "cpu/helpers.h"
+#include "io/vga.h"
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
@@ -53,6 +54,8 @@ void setup_flat_gdt()
 	helpers_reload_all_segments(0x08, 0x10);
 }
 
+static struct terminal_buffer termbuf;
+
 void kmain()
 {
 	setup_flat_gdt();
@@ -77,6 +80,10 @@ void kmain()
 	interrupt_set_handler(0x80, test_handler);
 
 	INTERRUPT_RAISE(0x80);
+
+    terminal_init(&termbuf);
+    terminal_write_line(&termbuf, "Test line 1");
+    vga_display_terminal(&termbuf);
 
 	while(1)
 		asm volatile("hlt"); // Busy loop

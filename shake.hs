@@ -25,13 +25,13 @@ kernel_compile :: FilePath -> FilePath -> FilePath -> Action ()
 kernel_compile target source dep = do
   need [source, dep]
   needMakefileDependencies dep
-  cmd freestanding_gcc "-c -o" target source
+  cmd freestanding_gcc "-I./ -c -o" target source
 
 -- Get header dependencies from a source file. Needs the source file.
 kernel_dependencies :: FilePath -> FilePath -> Action ()
 kernel_dependencies target source = do
   need [source]
-  cmd freestanding_gcc "-MM -o" target source
+  cmd freestanding_gcc "-I./ -MM -o" target source
 
 build_path = "out"
 

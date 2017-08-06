@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "core/terminal.h"
+
 struct screen_pos
 {
 	unsigned int x, y;
@@ -29,7 +31,6 @@ typedef enum vga_color
 } vga_color_t;
 
 void vga_clear();
-void vga_write_rect(const uint16_t *buf, const struct screen_pos *off, const struct screen_pos *size);
 uint8_t vga_make_color(vga_color_t fg, vga_color_t bg);
 
 #endif // _VGA_H_

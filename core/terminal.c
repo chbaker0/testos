@@ -2,7 +2,7 @@
 
 #include "terminal.h"
 
-void terminal_buffer_init(struct terminal_buffer *tb)
+void terminal_init(struct terminal_buffer *tb)
 {
     tb->bottom_line = 24;
 

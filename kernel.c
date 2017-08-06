@@ -56,6 +56,12 @@ void setup_flat_gdt()
 
 static struct terminal_buffer termbuf;
 
+static void print_line(const char *str)
+{
+    terminal_write_line(&termbuf, str);
+    vga_display_terminal(&termbuf);
+}
+
 void kmain()
 {
 	setup_flat_gdt();
@@ -82,8 +88,8 @@ void kmain()
 	INTERRUPT_RAISE(0x80);
 
     terminal_init(&termbuf);
-    terminal_write_line(&termbuf, "Test line 1");
-    vga_display_terminal(&termbuf);
+    print_line("Test line 1");
+    print_line("Test line 2");
 
 	while(1)
 		asm volatile("hlt"); // Busy loop

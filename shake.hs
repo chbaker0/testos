@@ -70,9 +70,9 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
 
   build_path </> "kernel.bin" %> \target -> do
     let objects = map (build_path </>) ["boot.nasm.o", "kernel.c.o"]
-    let libs = map (build_path </>) ["core.a", "cpu.a", "io.a"]
+    let libs = map (build_path </>) ["core.a", "cpu.a", "io.a", "rust.a"]
     need $ ["linker.ld"] ++ objects ++ libs
-    cmd freestanding_gcc "-T linker.ld -nostdlib -lgcc -o" target objects libs
+    cmd freestanding_gcc "-T linker.ld -Wl,--gc-sections -nostdlib -lgcc -o" target objects libs
 
   build_path </> "boot.nasm.o" %> \target -> do
     kernel_assemble target "boot.nasm"

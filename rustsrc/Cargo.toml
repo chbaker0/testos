@@ -7,3 +7,6 @@ authors = ["chbaker0@gmail.com"]
 name = "kernel_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
+
+[dependencies]
+rlibc = "^1"

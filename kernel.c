@@ -9,6 +9,7 @@
 #include "cpu/pic.h"
 #include "cpu/helpers.h"
 #include "io/vga.h"
+#include "multiboot.h"
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
@@ -62,7 +63,7 @@ static void print_line(const char *str)
     vga_display_terminal(&termbuf);
 }
 
-void kmain()
+void kmain(struct multiboot_info *mbinfo)
 {
 	setup_flat_gdt();
 
@@ -90,6 +91,21 @@ void kmain()
     terminal_init(&termbuf);
     print_line("Test line 1");
     print_line("Test line 2");
+
+    if (mbinfo->flags & MULTIBOOT_INFO_FLAG_MMAP)
+    {
+        print_line("Memory map present.");
+    }
+
+    if (mbinfo->flags & MULTIBOOT_INFO_FLAG_AOUT_SYM)
+    {
+        print_line("a.out symbols present");
+    }
+
+    if (mbinfo->flags & MULTIBOOT_INFO_FLAG_ELF_SYM)
+    {
+        print_line("ELF symbols present.");
+    }
 
 	while(1)
 		asm volatile("hlt"); // Busy loop

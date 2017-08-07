@@ -9,7 +9,11 @@ extern {
 }
 
 #[lang="panic_fmt"]
-extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32) -> ! {
+#[no_mangle]
+pub extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32) -> ! {
+    unsafe {
+        print_line("Panic\0".as_ptr());
+    }
     loop { }
 }
 
@@ -18,5 +22,5 @@ pub extern fn rustmain() {
     unsafe {
         print_line("Test from Rust!\0".as_ptr())
     }
-    loop { }
+    panic!();
 }

@@ -59,7 +59,7 @@ void setup_flat_gdt()
 
 static struct terminal_buffer termbuf;
 
-static void print_line(const char *str)
+void print_line(const char *str)
 {
     terminal_write_line(&termbuf, str);
     vga_display_terminal(&termbuf);

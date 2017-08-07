@@ -3,6 +3,11 @@
 
 extern crate rlibc;
 
+// C kernel functions.
+extern {
+    pub fn print_line(str: *const u8);
+}
+
 #[lang="panic_fmt"]
 extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32) -> ! {
     loop { }
@@ -10,5 +15,8 @@ extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32) -> ! {
 
 #[no_mangle]
 pub extern fn rustmain() {
+    unsafe {
+        print_line("Test from Rust!\0".as_ptr())
+    }
     loop { }
 }

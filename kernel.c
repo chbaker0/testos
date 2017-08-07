@@ -13,6 +13,8 @@
 
 #define BOCHS_BREAKPOINT() asm volatile("xchg %bx, %bx")
 
+extern void rustmain();
+
 struct idt_entry idt_entries[256];
 
 void panic()
@@ -57,7 +59,7 @@ void setup_flat_gdt()
 
 static struct terminal_buffer termbuf;
 
-static void print_line(const char *str)
+void print_line(const char *str)
 {
     terminal_write_line(&termbuf, str);
     vga_display_terminal(&termbuf);
@@ -106,6 +108,8 @@ void kmain(struct multiboot_info *mbinfo)
     {
         print_line("ELF symbols present.");
     }
+
+    rustmain();
 
 	while(1)
 		asm volatile("hlt"); // Busy loop

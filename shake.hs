@@ -3,6 +3,7 @@ import Development.Shake
 import Development.Shake.Command
 import Development.Shake.FilePath
 import Development.Shake.Util
+import System.Directory
 import System.FilePath
 
 freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
@@ -83,6 +84,12 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
 
   build_path </> "kernel.c.m" %> \target -> do
     kernel_dependencies target "kernel.c"
+
+  build_path </> "rust.a" %> \_ -> do
+    alwaysRerun
+    wd <- liftIO getCurrentDirectory
+    command [Cwd "rustsrc", AddEnv "RUST_TARGET_PATH" (wd </> "rustsrc" </> "targets")]
+      "xargo" ["rustc", "--target", "i686-unknown-none", "--", "-C", "panic=abort", "--emit", "link=../out/rust.a"]
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]

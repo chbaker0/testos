@@ -6,6 +6,9 @@ extern crate rlibc;
 use core::fmt::Write;
 use core::fmt::write;
 
+mod terminal;
+mod vga;
+
 // C kernel functions.
 extern {
     pub fn print_line(str: *const u8);
@@ -44,8 +47,12 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
 
 #[no_mangle]
 pub extern fn rustmain() {
-    unsafe {
-        print_line("Test from Rust!\0".as_ptr())
-    }
-    panic!();
+    vga::clear();
+
+    let mut termbuf = terminal::Buffer::new();
+    termbuf.write_line("Test");
+
+    vga::display_terminal(&termbuf);
+
+    loop { }
 }

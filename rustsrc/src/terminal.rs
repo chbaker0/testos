@@ -32,7 +32,7 @@ impl Clone for Buffer {
 impl Copy for Buffer { }
 
 impl Buffer {
-    pub fn new() -> Buffer {
+    pub const fn new() -> Buffer {
         Buffer {
             bottom_line: 25,
             data: [BufferLine([0; WIDTH]); HEIGHT]

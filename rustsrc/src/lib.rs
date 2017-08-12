@@ -1,10 +1,13 @@
+#![feature(const_fn)]
 #![feature(lang_items)]
 #![no_std]
 
 extern crate rlibc;
 
+use core::cell;
 use core::fmt::Write;
 use core::fmt::write;
+use core::ops::DerefMut;
 
 mod terminal;
 mod vga;
@@ -13,6 +16,8 @@ mod vga;
 extern {
     pub fn print_line(str: *const u8);
 }
+
+static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
 
 struct PanicWriter {
     buffer: [u8; 80],
@@ -49,10 +54,12 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
 pub extern fn rustmain() {
     vga::clear();
 
-    let mut termbuf = terminal::Buffer::new();
-    termbuf.write_line("Test");
+    unsafe {
+        let mut termbuf = TERMBUF.borrow_mut();
+        termbuf.write_line("Test");
 
-    vga::display_terminal(&termbuf);
+        vga::display_terminal(termbuf.deref_mut());
+    }
 
     loop { }
 }

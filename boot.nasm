@@ -22,7 +22,7 @@ SECTION .multiboot
 	dd 0
 
 SECTION .boot_stack nobits
-stack_bottom: resb 16384
+stack_bottom: resb 4096 * 32
 stack_top:
 
 SECTION .text

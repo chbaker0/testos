@@ -14,5 +14,6 @@
     "code-model": "small",
     "eliminate-frame-pointer": false,
     "no-compiler-rt": true,
-    "no-default-libraries": true
+    "no-default-libraries": true,
+    "panic-strategy": "abort"
 }

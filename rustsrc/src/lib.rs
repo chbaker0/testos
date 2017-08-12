@@ -8,6 +8,7 @@ use core::cell;
 use core::fmt::Write;
 use core::fmt::write;
 use core::ops::DerefMut;
+use core::str::from_utf8;
 
 mod terminal;
 mod vga;
@@ -18,6 +19,15 @@ extern {
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
+
+fn log_terminal(s: &str) {
+    // Currently only one thread exists, so this is safe.
+    unsafe {
+        let mut termbuf = TERMBUF.borrow_mut();
+        termbuf.write_line(s);
+        vga::display_terminal(termbuf.deref_mut());
+    }
+}
 
 struct PanicWriter {
     buffer: [u8; 80],
@@ -44,9 +54,12 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
     };
     write(&mut panic_writer, format_args!("Panic in {} at line {}\0", file, line));
     panic_writer.buffer[79] = 0;
-    unsafe {
-        print_line(&panic_writer.buffer as *const u8);
+
+    match from_utf8(&panic_writer.buffer) {
+        Ok(s) => log_terminal(s),
+        Err(_) => (), // We're already panicking, there's nothing else to do.
     }
+
     loop { }
 }
 
@@ -54,12 +67,7 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
 pub extern fn rustmain() {
     vga::clear();
 
-    unsafe {
-        let mut termbuf = TERMBUF.borrow_mut();
-        termbuf.write_line("Test");
-
-        vga::display_terminal(termbuf.deref_mut());
-    }
+    log_terminal("Test");
 
     loop { }
 }

@@ -1,3 +1,5 @@
+use core::option::Option;
+
 #[repr(C)]
 pub struct Info {
     pub flags: u32,
@@ -28,3 +30,49 @@ pub const INFO_FLAG_MODULES: u32 = 8;
 pub const INFO_FLAG_AOUT_SYM: u32 = 16;
 pub const INFO_FLAG_ELF_SYM: u32 = 32;
 pub const INFO_FLAG_MMAP: u32 = 64;
+
+#[repr(C, packed)]
+struct MemoryMapEntryRaw {
+    size: u32,
+    base_addr: u64,
+    length: u64,
+    mem_type: u32,
+}
+
+pub struct AvailableMemoryEntry {
+    pub base_addr: u64,
+    pub length: u64,
+}
+
+pub struct MemoryMapIterator {
+    base: u32,
+    length: u32,
+    cur: u32,
+}
+
+impl Iterator for MemoryMapIterator {
+    type Item = AvailableMemoryEntry;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.cur - self.base < self.length {
+            let entry = unsafe { &*(self.cur as *const MemoryMapEntryRaw) };
+            self.cur += entry.size + 4;
+
+            if entry.mem_type == 1 {
+                return Some(AvailableMemoryEntry {
+                    base_addr: entry.base_addr,
+                    length: entry.length,
+                });
+            }
+        }
+
+        None
+    }
+}
+
+pub fn get_memory_map_iterator(mbinfo: &Info) -> MemoryMapIterator {
+    MemoryMapIterator {
+        base: mbinfo.mmap_addr,
+        length: mbinfo.mmap_length,
+        cur: mbinfo.mmap_addr,
+    }
+}

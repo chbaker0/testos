@@ -67,9 +67,10 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
 #[no_mangle]
 pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
+    assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
 
-    if mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0 {
-        log_terminal("Memory map present.");
+    for entry in multiboot::get_memory_map_iterator(mbinfo) {
+        log_terminal("Memory map entry");
     }
 
     vga::clear();

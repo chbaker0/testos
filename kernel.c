@@ -109,7 +109,7 @@ void kmain(struct multiboot_info *mbinfo)
         print_line("ELF symbols present.");
     }
 
-    rustmain();
+    rustmain(mbinfo);
 
 	while(1)
 		asm volatile("hlt"); // Busy loop

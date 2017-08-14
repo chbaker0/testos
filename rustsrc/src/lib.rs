@@ -10,6 +10,7 @@ use core::fmt::write;
 use core::ops::DerefMut;
 use core::str::from_utf8;
 
+mod multiboot;
 mod terminal;
 mod vga;
 
@@ -64,7 +65,13 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
 }
 
 #[no_mangle]
-pub extern fn rustmain() {
+pub extern fn rustmain(mbinfop: *const multiboot::Info) {
+    let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
+
+    if mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0 {
+        log_terminal("Memory map present.");
+    }
+
     vga::clear();
 
     log_terminal("Test");

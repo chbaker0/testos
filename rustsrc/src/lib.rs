@@ -75,8 +75,14 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
     assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
 
+    log_terminal("Memory map:");
     for entry in multiboot::get_memory_map_iterator(mbinfo) {
-        log_terminal("Memory map entry");
+        let mut buf_writer = BufWriter::new();
+        write!(&mut buf_writer, "    Address {:x} Size {:x}", entry.base_addr, entry.length);
+        match from_utf8(&buf_writer.buffer) {
+            Ok(s) => log_terminal(s),
+            Err(_) => panic!(),
+        }
     }
 
     vga::clear();

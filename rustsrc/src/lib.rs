@@ -30,12 +30,12 @@ fn log_terminal(s: &str) {
     }
 }
 
-struct PanicWriter {
+struct BufWriter {
     buffer: [u8; 80],
     ndx: usize,
 }
 
-impl core::fmt::Write for PanicWriter {
+impl core::fmt::Write for BufWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         let trunc = s.bytes().take(80-self.ndx);
         for c in trunc {
@@ -49,14 +49,14 @@ impl core::fmt::Write for PanicWriter {
 #[lang="panic_fmt"]
 #[no_mangle]
 pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    let mut panic_writer = PanicWriter {
+    let mut buf_writer = BufWriter {
         buffer: [0; 80],
         ndx: 0,
     };
-    write(&mut panic_writer, format_args!("Panic in {} at line {}\0", file, line));
-    panic_writer.buffer[79] = 0;
+    write(&mut buf_writer, format_args!("Panic in {} at line {}\0", file, line));
+    buf_writer.buffer[79] = 0;
 
-    match from_utf8(&panic_writer.buffer) {
+    match from_utf8(&buf_writer.buffer) {
         Ok(s) => log_terminal(s),
         Err(_) => (), // We're already panicking, there's nothing else to do.
     }

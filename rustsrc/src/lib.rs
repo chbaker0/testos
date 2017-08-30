@@ -56,6 +56,17 @@ impl core::fmt::Write for BufWriter {
     }
 }
 
+fn write_terminal(args: core::fmt::Arguments) {
+    let mut buf_writer = BufWriter::new();
+    write(&mut buf_writer, args);
+    buf_writer.buffer[79] = 0;
+
+    match from_utf8(&buf_writer.buffer) {
+        Ok(s) => log_terminal(s),
+        Err(_) => panic!(),
+    }
+}
+
 #[lang="panic_fmt"]
 #[no_mangle]
 pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
@@ -78,12 +89,7 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
 
     log_terminal("Memory map:");
     for entry in multiboot::get_memory_map_iterator(mbinfo) {
-        let mut buf_writer = BufWriter::new();
-        write!(&mut buf_writer, "    Address {:x} Size {:x}", entry.base_addr, entry.length);
-        match from_utf8(&buf_writer.buffer) {
-            Ok(s) => log_terminal(s),
-            Err(_) => panic!(),
-        }
+        write_terminal(format_args!("    Address {:x} Size {:x}", entry.base_addr, entry.length));
     }
 
     let symtab_info = multiboot::get_section_header_table_info(mbinfo);
@@ -91,12 +97,7 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     log_terminal("Kernel sections:");
     for i in 0..symtab_info.entry_count {
         let section_header = unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, i) };
-        let mut buf_writer = BufWriter::new();
-        write!(&mut buf_writer, "    Address {:x} Size {:x}", section_header.addr, section_header.size);
-        match from_utf8(&buf_writer.buffer) {
-            Ok(s) => log_terminal(s),
-            Err(_) => panic!(),
-        }
+        write_terminal(format_args!("    Address {:x} Size {:x}", section_header.addr, section_header.size));
     }
 
     log_terminal("Test");

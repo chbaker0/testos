@@ -5,6 +5,7 @@
 extern crate rlibc;
 
 use core::cell;
+use core::cmp;
 use core::fmt::Write;
 use core::fmt::write;
 use core::ops::DerefMut;
@@ -82,6 +83,15 @@ pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32
     loop { }
 }
 
+fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u32, u32) {
+    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
+    (0..symtab_info.entry_count)
+        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
+        .map(|header| (header.addr, header.addr + header.size))
+        .filter(|&(lower, upper)| upper - lower > 0)
+        .fold((u32::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
+}
+
 #[no_mangle]
 pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
@@ -92,13 +102,9 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base_addr, entry.length));
     }
 
-    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
-
-    log_terminal("Kernel sections:");
-    for i in 0..symtab_info.entry_count {
-        let section_header = unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, i) };
-        write_terminal(format_args!("    Address {:x} Size {:x}", section_header.addr, section_header.size));
-    }
+    // Calculate extent of kernel in memory.
+    let (lower, upper) = kernel_image_bounds(&mbinfo);
+    write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", lower, upper));
 
     log_terminal("Test");
 

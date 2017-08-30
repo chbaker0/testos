@@ -10,6 +10,7 @@ use core::fmt::write;
 use core::ops::DerefMut;
 use core::str::from_utf8;
 
+mod elf;
 mod multiboot;
 mod terminal;
 mod vga;
@@ -85,7 +86,18 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
         }
     }
 
-    vga::clear();
+    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
+
+    log_terminal("Kernel sections:");
+    for i in 0..symtab_info.entry_count {
+        let section_header = unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, i) };
+        let mut buf_writer = BufWriter::new();
+        write!(&mut buf_writer, "    Address {:x} Size {:x}", section_header.addr, section_header.size);
+        match from_utf8(&buf_writer.buffer) {
+            Ok(s) => log_terminal(s),
+            Err(_) => panic!(),
+        }
+    }
 
     log_terminal("Test");
 

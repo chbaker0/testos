@@ -76,3 +76,19 @@ pub fn get_memory_map_iterator(mbinfo: &Info) -> MemoryMapIterator {
         cur: mbinfo.mmap_addr,
     }
 }
+
+pub struct SectionHeaderTableInfo {
+    pub addr: *const u8,
+    pub entry_size: usize,
+    pub entry_count: usize,
+    pub string_table_ndx: usize,
+}
+
+pub fn get_section_header_table_info(mbinfo: &Info) -> SectionHeaderTableInfo {
+    SectionHeaderTableInfo {
+        addr: mbinfo.shdr_addr as *const u8,
+        entry_size: mbinfo.shdr_size as usize,
+        entry_count: mbinfo.shdr_num as usize,
+        string_table_ndx: mbinfo.shdr_shndx as usize,
+    }
+}

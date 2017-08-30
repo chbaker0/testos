@@ -10,6 +10,7 @@ use core::fmt::write;
 use core::ops::DerefMut;
 use core::str::from_utf8;
 
+mod elf;
 mod multiboot;
 mod terminal;
 mod vga;

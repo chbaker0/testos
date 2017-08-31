@@ -89,7 +89,7 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
     alwaysRerun
     wd <- liftIO getCurrentDirectory
     command [Cwd "rustsrc", AddEnv "RUST_TARGET_PATH" (wd </> "rustsrc" </> "targets")]
-      "xargo" ["rustc", "--target", "i686-unknown-none", "--", "--emit", "link=../out/rust.a"]
+      "rustup" ["run", "nightly", "xargo", "rustc", "--target", "i686-unknown-none", "--", "--emit", "link=../out/rust.a"]
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]

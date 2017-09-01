@@ -12,6 +12,7 @@ use core::ops::DerefMut;
 use core::str::from_utf8;
 
 mod elf;
+mod mm;
 mod multiboot;
 mod terminal;
 mod vga;
@@ -23,7 +24,8 @@ extern {
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
 
-fn log_terminal(s: &str) {
+fn log_terminal(s: &str)
+{
     // Currently only one thread exists, so this is safe.
     unsafe {
         let mut termbuf = TERMBUF.borrow_mut();

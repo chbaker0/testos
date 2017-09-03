@@ -131,6 +131,8 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
 
     write_terminal(format_args!("Available memory address {:x} size {:x}.", mem_base, mem_size));
 
+    mm::init(mem_base as usize, mem_size as usize);
+
     log_terminal("Test");
 
     loop { }

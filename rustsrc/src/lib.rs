@@ -9,6 +9,7 @@ use core::cmp;
 use core::fmt::Write;
 use core::fmt::write;
 use core::ops::DerefMut;
+use core::option::Option;
 use core::str::from_utf8;
 
 mod elf;
@@ -86,13 +87,13 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
     loop { }
 }
 
-fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u32, u32) {
+fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
     let symtab_info = multiboot::get_section_header_table_info(mbinfo);
     (0..symtab_info.entry_count)
         .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
-        .map(|header| (header.addr, header.addr + header.size))
+        .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
         .filter(|&(lower, upper)| upper - lower > 0)
-        .fold((u32::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
+        .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
 }
 
 #[no_mangle]
@@ -106,8 +107,21 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     }
 
     // Calculate extent of kernel in memory.
-    let (lower, upper) = kernel_image_bounds(&mbinfo);
-    write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", lower, upper));
+    let (kernel_lower, kernel_upper) = kernel_image_bounds(&mbinfo);
+    write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", kernel_lower, kernel_upper));
+
+    // Get largest chunk of available memory.
+    let (mut mem_base, mut mem_size) =
+        multiboot::get_memory_map_iterator(mbinfo)
+        .map(|entry| (entry.base_addr, entry.length))
+        .fold((0, 0), |(x_base, x_size), (y_base, y_size)| if x_size >= y_size {(x_base, x_size)} else {(y_base, y_size)});
+
+    // If kernel is in this chunk, only use memory after the kernel.
+    if mem_base < kernel_upper && mem_base + mem_size > kernel_lower {
+        assert!(mem_base + mem_size > kernel_upper);
+        mem_base = kernel_upper;
+        mem_size = kernel_upper - mem_base;
+    }
 
     log_terminal("Test");
 

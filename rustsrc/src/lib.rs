@@ -70,9 +70,10 @@ fn write_terminal(args: core::fmt::Arguments) {
 
 #[lang="panic_fmt"]
 #[no_mangle]
-pub extern fn panic_fmt(_: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
     let mut buf_writer = BufWriter::new();
-    write(&mut buf_writer, format_args!("Panic in {} at line {}\0", file, line));
+    write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
+    write(&mut buf_writer, panic_args);
     buf_writer.buffer[79] = 0;
 
     match from_utf8(&buf_writer.buffer) {

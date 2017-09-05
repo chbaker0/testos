@@ -142,10 +142,15 @@ pub fn init(mbinfo: &::multiboot::Info) {
     unsafe {
         FRAME_ALLOCATOR = FrameAllocator::new(&MEMORY_MAP);
     }
+
+    unsafe {
+        INITIALIZED = true;
+    }
 }
 
 // Public interface for frame allocations.
 pub fn get_frame_allocator() -> &'static mut FrameAllocator<'static> {
+    assert!(unsafe { INITIALIZED });
     // Currently, locking is unnecessary. When there are multiple
     // threads of execution locking must be added.
     unsafe { &mut FRAME_ALLOCATOR }

@@ -1,39 +1,63 @@
-// This implements a page frame allocator based on the buddy allocation scheme.
+/* Memory map
+ *
+ * We store a map of available and reserved memory. There are a
+ * maximum number of entries in this map, but it should be enough for
+ * any sane configuration.
+ */
 
-pub const FRAME_SIZE: usize = 4096;
-
-// Physical memory map.
 #[derive(Clone, Copy, Debug)]
+enum MemoryStatus {
+    Unknown = 0, // Memory is unvailable because it is of unknown
+                 // type.
+    Available,   // Memory is available for use by the frame allocator.
+    Kernel,      // Memory is unavailable because it is used by the
+                 // kernel image.
+    Reserved,    // Memory is unavailable because it is reserved.
+}
+
+#[derive(Clone, Copy)]
 struct MemoryMapEntry {
-    addr: u64,
-    size: u64,
+    base: u64,
+    length: u64,
+    status: MemoryStatus,
 }
 
-static mut MEMORY_MAP: [MemoryMapEntry; 128] = [MemoryMapEntry{0, 0}; 128];
-
-// We will store a memory bitmap above the kernel.
-static mut BITMAP_ADDR: usize = 0;
-static mut MEMORY_FRAMES: usize = 0;
-
-fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (usize, usize) {
-    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
-    (0..symtab_info.entry_count)
-        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
-        .map(|header| (header.addr as usize, (header.addr + header.size) as usize))
-        .filter(|&(lower, upper)| upper - lower > 0)
-        .fold((size::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
-}
-
-fn copy_memory_map(mbinfo: &multiboot::Info) {
-    let mm_iterator = multiboot::get_memory_map_iterator(mbinfo)
-        .map(|entry| MemoryMapEntry{addr: entry.base_addr, size: entry.length});
-
-    let mut i = 0;
-    for entry in mm_iterator {
-        unsafe { MEMORY_MAP[i] = }
+impl Default for MemoryMapEntry {
+    fn default() -> MemoryMapEntry {
+        MemoryMapEntry {
+            base: 0,
+            length: 0,
+            status: MemoryStatus::Unknown,
+        }
     }
 }
 
-pub fn init(mbinfo: &multiboot::Info) {
+const MEMORY_MAP_MAX_ENTRIES: usize = 256;
 
+struct MemoryMap {
+    entries: [MemoryMapEntry; MEMORY_MAP_MAX_ENTRIES],
+    num_entries: usize,
+}
+
+static mut MEMORY_MAP: MemoryMap = MemoryMap {
+    entries: [MemoryMapEntry{base:0,length:0,status:MemoryStatus::Unknown}; MEMORY_MAP_MAX_ENTRIES],
+    num_entries: 0,
+};
+
+// Public interface for initializing memory manager.
+pub fn init(mbinfo: &::multiboot::Info) {
+    let mut i = 0;
+    for e in ::multiboot::get_memory_map_iterator(mbinfo) {
+        unsafe {
+            MEMORY_MAP.entries[i] = MemoryMapEntry {
+                base: e.base_addr,
+                length: e.length,
+                status: MemoryStatus::Available,
+            };
+        }
+        i += 1;
+    }
+    unsafe {
+        MEMORY_MAP.num_entries = i;
+    }
 }

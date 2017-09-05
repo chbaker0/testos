@@ -110,28 +110,9 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     let (kernel_lower, kernel_upper) = kernel_image_bounds(&mbinfo);
     write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", kernel_lower, kernel_upper));
 
-    let (mem_base, mem_size) = {
-        // Get largest chunk of available memory.
-        let (mut mem_base, mut mem_size) =
-            multiboot::get_memory_map_iterator(mbinfo)
-            .map(|entry| (entry.base_addr, entry.length))
-            .fold((0, 0), |(x_base, x_size), (y_base, y_size)| if x_size >= y_size {(x_base, x_size)} else {(y_base, y_size)});
-
-        // If kernel is in this chunk, only use memory after the kernel.
-        if mem_base < kernel_upper && mem_base + mem_size > kernel_lower {
-            mem_base = kernel_upper;
-            mem_size = mem_size - (kernel_upper - mem_base);
-        }
-
-        let aligned_base = (mem_base - 1 + mm::FRAME_SIZE as u64) & !(mm::FRAME_SIZE as u64 - 1);
-        let aligned_size = (mem_size - (aligned_base - mem_base)) & !(mm::FRAME_SIZE as u64 - 1);
-
-        (aligned_base as u32, aligned_size as u32)
-    };
-
-    write_terminal(format_args!("Available memory address {:x} size {:x}.", mem_base, mem_size));
-
     log_terminal("Test");
+
+    mm::init(mbinfo);
 
     loop { }
 }

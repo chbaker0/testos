@@ -66,8 +66,8 @@ pub struct FrameAllocator<'a> {
 
 fn align_address(address: u64, order: u32) -> u64 {
     let mask = (1 << order) - 1;
-    let new_address = (address + mask) & mask;
-    assert!(new_address > address);
+    let new_address = (address + mask) & !mask;
+    assert!(new_address >= address);
     new_address
 }
 

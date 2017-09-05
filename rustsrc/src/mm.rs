@@ -125,14 +125,16 @@ pub fn init(mbinfo: &::multiboot::Info) {
     // Copy multiboot memory map.
     let mut i = 0;
     for e in ::multiboot::get_memory_map_iterator(mbinfo) {
-        unsafe {
-            MEMORY_MAP.entries[i] = MemoryMapEntry {
-                base: e.base_addr,
-                length: e.length,
-                status: MemoryStatus::Available,
-            };
+        if e.base_addr >= 0x100000 {
+            unsafe {
+                MEMORY_MAP.entries[i] = MemoryMapEntry {
+                    base: e.base_addr,
+                    length: e.length,
+                    status: MemoryStatus::Available,
+                };
+            }
+            i += 1;
         }
-        i += 1;
     }
     unsafe {
         MEMORY_MAP.num_entries = i;

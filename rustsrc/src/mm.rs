@@ -85,7 +85,7 @@ impl<'a> FrameAllocator<'a> {
         }
     }
 
-    fn get_frame(self: &mut Self) -> usize {
+    pub fn get_frame(self: &mut Self) -> usize {
         let addr = self.cur_addr;
         self.cur_addr += PAGE_SIZE;
 
@@ -142,4 +142,11 @@ pub fn init(mbinfo: &::multiboot::Info) {
     unsafe {
         FRAME_ALLOCATOR = FrameAllocator::new(&MEMORY_MAP);
     }
+}
+
+// Public interface for frame allocations.
+pub fn get_frame_allocator() -> &'static mut FrameAllocator<'static> {
+    // Currently, locking is unnecessary. When there are multiple
+    // threads of execution locking must be added.
+    unsafe { &mut FRAME_ALLOCATOR }
 }

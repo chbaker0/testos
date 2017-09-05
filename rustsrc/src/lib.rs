@@ -109,10 +109,11 @@ pub extern fn rustmain(mbinfop: *const multiboot::Info) {
     // Calculate extent of kernel in memory.
     let (kernel_lower, kernel_upper) = kernel_image_bounds(&mbinfo);
     write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", kernel_lower, kernel_upper));
-
-    log_terminal("Test");
-
     mm::init(mbinfo);
+
+    let frame1 = mm::get_frame_allocator().get_frame();
+    let frame2 = mm::get_frame_allocator().get_frame();
+    write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
 
     loop { }
 }

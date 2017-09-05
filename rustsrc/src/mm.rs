@@ -1,3 +1,8 @@
+use core::mem::uninitialized;
+
+const PAGE_ORDER: u32 = 12;
+pub const PAGE_SIZE: usize = 1 << (PAGE_ORDER);
+
 /* Memory map
  *
  * We store a map of available and reserved memory. There are a
@@ -44,8 +49,80 @@ static mut MEMORY_MAP: MemoryMap = MemoryMap {
     num_entries: 0,
 };
 
+/* Frame allocator
+ *
+ * This is a simple page frame allocator that hands out frames in
+ * increasing order of address. We use the memory map to iterate over
+ * usable memory.
+ *
+ * Idea from https://os.phil-opp.com/allocating-frames/
+ */
+
+pub struct FrameAllocator<'a> {
+    cur_addr: usize,
+    mem_map: &'a MemoryMap,
+    cur_map_entry: usize,
+}
+
+fn align_address(address: u64, order: u32) -> u64 {
+    let mask = (1 << order) - 1;
+    let new_address = (address + mask) & mask;
+    assert!(new_address > address);
+    new_address
+}
+
+impl<'a> FrameAllocator<'a> {
+    fn new(mem_map: &'a MemoryMap) -> FrameAllocator<'a> {
+        assert!(mem_map.num_entries > 0);
+        let first = mem_map.entries[0];
+        let base = align_address(first.base, PAGE_ORDER);
+        assert!(base <= usize::max_value() as u64);
+        assert!(base < first.base + first.length);
+        FrameAllocator {
+            cur_addr: base as usize,
+            mem_map: mem_map,
+            cur_map_entry: 0,
+        }
+    }
+
+    fn get_frame(self: &mut Self) -> usize {
+        let addr = self.cur_addr;
+        self.cur_addr += PAGE_SIZE;
+
+        let map_entry = self.mem_map.entries[self.cur_map_entry];
+        let next_addr = self.cur_addr + PAGE_SIZE;
+        if (next_addr as u64) > map_entry.base + map_entry.length {
+            self.cur_map_entry += 1;
+            if self.cur_map_entry >= self.mem_map.num_entries {
+                panic!("Out of physical memory.");
+            }
+            let next_entry = self.mem_map.entries[self.cur_map_entry];
+            let new_addr = align_address(next_entry.base, PAGE_ORDER);
+            assert!(new_addr <= usize::max_value() as u64);
+            assert!(new_addr < next_entry.base + next_entry.length);
+            self.cur_addr = new_addr as usize;
+        }
+
+        addr
+    }
+}
+
+// Must be initialized correctly in init function!
+static mut FRAME_ALLOCATOR: FrameAllocator = FrameAllocator {
+    cur_addr: 0,
+    mem_map: unsafe { &MEMORY_MAP },
+    cur_map_entry: 0
+};
+
+static mut INITIALIZED: bool = false;
+
 // Public interface for initializing memory manager.
 pub fn init(mbinfo: &::multiboot::Info) {
+    if unsafe { INITIALIZED } {
+        panic!("init called when already initialized.");
+    }
+
+    // Copy multiboot memory map.
     let mut i = 0;
     for e in ::multiboot::get_memory_map_iterator(mbinfo) {
         unsafe {
@@ -59,5 +136,10 @@ pub fn init(mbinfo: &::multiboot::Info) {
     }
     unsafe {
         MEMORY_MAP.num_entries = i;
+    }
+
+    // Initialize frame allocator.
+    unsafe {
+        FRAME_ALLOCATOR = FrameAllocator::new(&MEMORY_MAP);
     }
 }

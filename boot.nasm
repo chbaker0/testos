@@ -25,6 +25,10 @@ SECTION .boot_stack nobits
 stack_bottom: resb 4096 * 32
 stack_top:
 
+SECTION .bss
+multiboot_info:
+    resb 128
+
 SECTION .text
 
 GDT:
@@ -81,7 +85,12 @@ extern kmain
 
 global _start
 _start:
-    xchg bx, bx
+    ; Copy multiboot info structure
+    mov ecx, 116
+    mov esi, ebx
+    mov edi, multiboot_info
+    rep movsb
+
     ; Identity map first 4 MiB
 
     mov eax, [PML4T]

@@ -33,9 +33,9 @@ void gdt_set_code_segment(
 		| (settings->common.privilege << 5U)
 		| (settings->common.present << 7U);
 
-	asm volatile("pushfl; cli");
+	asm volatile("pushf; cli");
 	gdt[segment / 8U] = entry;
-	asm volatile("popfl");
+	asm volatile("popf");
 }
 
 void gdt_set_data_segment(
@@ -54,7 +54,7 @@ void gdt_set_data_segment(
 		| (settings->common.privilege << 5U)
 		| (settings->common.present << 7U);
 
-	asm volatile("pushfl; cli");
+	asm volatile("pushf; cli");
 	gdt[segment / 8U] = entry;
-	asm volatile("popfl");
+	asm volatile("popf");
 }

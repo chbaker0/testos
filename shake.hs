@@ -6,7 +6,7 @@ import Development.Shake.Util
 import System.Directory
 import System.FilePath
 
-freestanding_gcc = "i686-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
+freestanding_gcc = "x86_64-elf-gcc -std=gnu99 -ffreestanding -Wall -Wextra -pedantic"
 
 -- Make a static library from objects. Needs the object files.
 kernel_archive :: FilePath -> [FilePath] -> Action ()
@@ -18,7 +18,7 @@ kernel_archive target objects = do
 kernel_assemble :: FilePath -> FilePath -> Action ()
 kernel_assemble target source = do
   need [source]
-  cmd "nasm -f elf32 -o" target source
+  cmd "nasm -f elf64 -o" target source
 
 -- Compile a C source for the kernel binary. Needs the source file
 -- dependency file.
@@ -73,7 +73,7 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
     let objects = map (build_path </>) ["boot.nasm.o", "kernel.c.o"]
     let libs = map (build_path </>) ["core.a", "cpu.a", "io.a", "rust.a"]
     need $ ["linker.ld"] ++ objects ++ libs
-    cmd freestanding_gcc "-T linker.ld -Wl,--gc-sections -nostdlib -lgcc -o" target objects libs
+    cmd freestanding_gcc "-T linker.ld -z max-page-size=0x1000 -Wl,--gc-sections -nostdlib -lgcc -o" target objects libs
 
   build_path </> "boot.nasm.o" %> \target -> do
     kernel_assemble target "boot.nasm"
@@ -89,7 +89,7 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
     alwaysRerun
     wd <- liftIO getCurrentDirectory
     command [Cwd "rustsrc", AddEnv "RUST_TARGET_PATH" (wd </> "rustsrc" </> "targets")]
-      "rustup" ["run", "nightly", "xargo", "rustc", "--target", "i686-unknown-none", "--", "--emit", "link=../out/rust.a"]
+      "rustup" ["run", "nightly", "xargo", "rustc", "--target", "x86_64-unknown-none", "--", "--emit", "link=../out/rust.a"]
 
   static_library "core.a" $ map ("core/" ++) ["terminal.c",
                                               "terminal.h"]

@@ -81,7 +81,7 @@ align 4096
 PT:
     times 1024 dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
 
-extern kmain
+extern kentry
 
 global _start
 _start:
@@ -148,8 +148,8 @@ _kernel_handoff:
     mov byte [0xb8000], 'A'
     ; mov esp, stack_top
 
-    ; push ebx
-    ; call kmain
+    mov rdi, multiboot_info
+    call kentry
 
     cli
 

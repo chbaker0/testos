@@ -97,7 +97,7 @@ fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
 }
 
 #[no_mangle]
-pub extern fn rustmain(mbinfop: *const multiboot::Info) {
+pub extern fn kentry(mbinfop: *const multiboot::Info) {
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
     assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
 

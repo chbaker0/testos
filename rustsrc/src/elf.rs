@@ -18,14 +18,14 @@ pub enum SectionType {
 pub struct SectionHeaderRaw {
     pub name: u32,
     pub typ: u32,
-    pub flags: u32,
-    pub addr: u32,
-    pub offset: u32,
-    pub size: u32,
+    pub flags: u64,
+    pub addr: u64,
+    pub offset: u64,
+    pub size: u64,
     pub link: u32,
     pub info: u32,
-    pub addralign: u32,
-    pub entsize: u32,
+    pub addralign: u64,
+    pub entsize: u64,
 }
 
 pub unsafe fn get_section_header(base: *const u8, entry_size: usize, ndx: usize) -> SectionHeaderRaw {

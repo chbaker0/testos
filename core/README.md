@@ -1,1 +1,0 @@
-This directory contains code that doesn't depend on any other parts of the kernel.

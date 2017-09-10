@@ -71,19 +71,12 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
 
   build_path </> "kernel.bin" %> \target -> do
     let objects = map (build_path </>) ["boot.nasm.o", "kernel.c.o"]
-    let libs = map (build_path </>) ["core.a", "cpu.a", "io.a", "rust.a"]
+    let libs = map (build_path </>) ["rust.a"]
     need $ ["linker.ld"] ++ objects ++ libs
     cmd freestanding_gcc "-T linker.ld -z max-page-size=0x1000 -Wl,--gc-sections -nostdlib -lgcc -o" target objects libs
 
   build_path </> "boot.nasm.o" %> \target -> do
     kernel_assemble target "boot.nasm"
-
-  build_path </> "kernel.c.o" %> \target -> do
-    let dep = build_path </> "kernel.c.m"
-    kernel_compile target "kernel.c" dep
-
-  build_path </> "kernel.c.m" %> \target -> do
-    kernel_dependencies target "kernel.c"
 
   build_path </> "rust.a" %> \_ -> do
     alwaysRerun
@@ -91,29 +84,6 @@ main = shakeArgs shakeOptions{shakeFiles = build_path} $ do
     command [Cwd "rustsrc", AddEnv "RUST_TARGET_PATH" (wd </> "rustsrc" </> "targets")]
       "rustup" ["run", "nightly", "xargo", "rustc", "--target", "x86_64-unknown-none", "--", "--emit", "link=../out/rust.a"]
 
-  static_library "core.a" $ map ("core/" ++) ["terminal.c",
-                                              "terminal.h"]
-
-  static_library "io.a" $ map ("io/" ++) ["vga.c",
-                                          "vga.h"]
-
-  static_library "cpu.a" $ map ("cpu/" ++) ["apic.c",
-                                            "apic.h",
-                                            "gdt.c",
-                                            "gdt.h",
-                                            "gdt.nasm",
-                                            "helpers.h",
-                                            "helpers.nasm",
-                                            "idt.c",
-                                            "idt.h",
-                                            "idt.nasm",
-                                            "interrupt.c",
-                                            "interrupt.h",
-                                            "interrupt.nasm",
-                                            "pic.c",
-                                            "pic.h",
-                                            "port.c",
-                                            "port.h"]
   -- "build/kernel.iso" %> \out -> do
   --   let sources = []
   --   ()

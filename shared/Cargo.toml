@@ -1,0 +1,8 @@
+[package]
+name = "shared"
+version = "0.0.1"
+authors = ["chbaker0@gmail.com"]
+
+[lib]
+name = "shared"
+path = "src/lib.rs"

@@ -3,6 +3,7 @@
 #![no_std]
 
 extern crate rlibc;
+extern crate shared;
 
 use core::cell;
 use core::cmp;
@@ -11,10 +12,10 @@ use core::fmt::write;
 use core::ops::DerefMut;
 use core::option::Option;
 use core::str::from_utf8;
+use shared::elf;
+use shared::multiboot;
 
-mod elf;
 mod mm;
-mod multiboot;
 mod terminal;
 mod vga;
 

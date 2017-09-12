@@ -64,92 +64,14 @@ GDT:
     dw .pointer - GDT - 1
     dq GDT
 
-align 4096
-PML4T:
-    dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
-    times 511 dq 0
-align 4096
-PDPT:
-    dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
-    times 511 dq 0
-align 4096
-PDT:
-    dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
-    dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
-    times 511 dq 0
-align 4096
-PT:
-    times 1024 dq 0b0_00000000000_0000000000000000000000000000000000000000_0000_00_000011
-
-extern kentry
+extern loader_entry
 
 global _start
 _start:
-    ; Copy multiboot info structure
-    mov ecx, 116
-    mov esi, ebx
-    mov edi, multiboot_info
-    rep movsb
-
-    ; Identity map first 4 MiB
-
-    mov eax, [PML4T]
-    or eax, PDPT
-    mov [PML4T], eax
-
-    mov eax, [PDPT]
-    or eax, PDT
-    mov [PDPT], eax
-
-    mov eax, [PDT]
-    or eax, PT
-    mov [PDT], eax
-
-    mov eax, [PDT+8]
-    or eax, PT+4096
-    mov [PDT+8], eax
-
-    mov ecx, 0
-.ptloop:
-    mov edx, ecx
-    shl edx, 3
-    mov eax, [PT+edx]
-    mov ebx, ecx
-    shl ebx, 12
-    or eax, ebx
-    mov [PT+edx], eax
-    add ecx, 1
-    cmp ecx, 1024
-    jne .ptloop
-
-    mov eax, PML4T
-    mov cr3, eax
-
-    mov eax, cr4
-    or eax, 0b100000
-    mov cr4, eax
-
-    mov ecx, 0xC0000080
-    rdmsr
-    or eax, 1 << 8
-    wrmsr
-
-    mov eax, cr0
-    or eax, 0b1000_0000_0000_0000_0000_0000_0000_0000
-    mov cr0, eax
-
-    lgdt [GDT.pointer]
-    jmp 0x8:_kernel_handoff
-
-
-[bits 64]
-
-_kernel_handoff:
     mov byte [0xb8000], 'A'
-    ; mov esp, stack_top
 
-    mov rdi, multiboot_info
-    call kentry
+    push ebx
+    call loader_entry
 
     cli
 

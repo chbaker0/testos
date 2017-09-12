@@ -3,7 +3,7 @@
 
 extern crate rlibc;
 
-#[lang="panic"]
+#[lang="panic_fmt"]
 #[no_mangle]
 pub extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _:u32) -> ! {
     loop { }

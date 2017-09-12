@@ -6,22 +6,22 @@ SECTIONS
 {
 	. = KERNEL_BASE + 1M;
 
-	.text ALIGN(4K) : AT(ADDR(.text) - KERNEL_BASE)
+	.text ALIGN(4K) :
 	{
 		*(.text)
 	}
 
-	.rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_BASE)
+	.rodata ALIGN(4K) :
 	{
 		*(.rodata)
 	}
 
-	.data ALIGN(4K) : AT(ADDR(.data) - KERNEL_BASE)
+	.data ALIGN(4K) :
 	{
 		*(.data)
 	}
 
-	.bss ALIGN(4K) : AT(ADDR(.bss) - KERNEL_BASE)
+	.bss ALIGN(4K) :
 	{
 		*(COMMON)
 		*(.bss)

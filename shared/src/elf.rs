@@ -8,20 +8,20 @@ pub enum ElfType {
 
 #[repr(C, packed)]
 pub struct ElfHeaderRaw {
-    ident: [u8; 16],
-    typ: u16,
-    machine: u16,
-    version: u32,
-    entry: u64,
-    phoff: u64,
-    shoff: u64,
-    flags: u32,
-    ehsize: u16,
-    phentsize: u16,
-    phnum: u16,
-    shentsize: u16,
-    shnum: u16,
-    shstrndx: u16,
+    pub ident: [u8; 16],
+    pub typ: u16,
+    pub machine: u16,
+    pub version: u32,
+    pub entry: u64,
+    pub phoff: u64,
+    pub shoff: u64,
+    pub flags: u32,
+    pub ehsize: u16,
+    pub phentsize: u16,
+    pub phnum: u16,
+    pub shentsize: u16,
+    pub shnum: u16,
+    pub shstrndx: u16,
 }
 
 pub enum SectionType {

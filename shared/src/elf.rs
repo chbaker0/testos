@@ -24,6 +24,33 @@ pub struct ElfHeaderRaw {
     pub shstrndx: u16,
 }
 
+pub enum SegmentType {
+    Null,
+    Load,
+    Dynamic,
+    Interp,
+    Note,
+    Shlib,
+    Phrd,
+    Tls,
+}
+
+pub const PROGRAM_FLAG_X: u32 = 1;
+pub const PROGRAM_FLAG_W: u32 = 2;
+pub const PROGRAM_FLAG_R: u32 = 4;
+
+#[repr(C, packed)]
+pub struct ProgramHeaderRaw {
+    pub typ: u32,
+    pub flags: u32,
+    pub offset: u64,
+    pub vaddr: u64,
+    pub paddr: u64,
+    pub filesz: u64,
+    pub memsz: u64,
+    pub align: u64,
+}
+
 pub enum SectionType {
     Null,
     ProgBits,

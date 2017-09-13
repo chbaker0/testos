@@ -129,5 +129,8 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     assert!(elf_header.typ == elf::ElfType::Exec as u16);
     assert!(elf_header.machine == 62);
 
+    // Display segments.
+
+
     loop { }
 }

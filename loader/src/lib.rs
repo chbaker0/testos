@@ -2,6 +2,7 @@
 #![no_std]
 
 extern crate rlibc;
+extern crate shared;
 
 #[lang="panic_fmt"]
 #[no_mangle]

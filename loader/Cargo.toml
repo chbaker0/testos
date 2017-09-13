@@ -10,3 +10,4 @@ crate-type = ["staticlib"]
 
 [dependencies]
 rlibc = "^1"
+shared = { path = "../shared" }

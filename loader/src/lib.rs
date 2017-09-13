@@ -4,6 +4,7 @@
 extern crate rlibc;
 extern crate shared;
 
+use core::mem::size_of;
 use core::slice::from_raw_parts;
 use shared::*;
 
@@ -35,12 +36,23 @@ impl Module {
     }
 }
 
+// T must be repr(C, packed)
+fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
+    let sz = size_of::<T>();
+    assert!(sz + off <= buf.len());
+    let ptr = unsafe { buf.as_ptr().offset(off as isize) };
+    unsafe { &*(ptr as *const T) }
+}
+
 #[no_mangle]
 pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let mbinfo = unsafe { &*mbinfop };
     let mod_raw_entries = unsafe {
         from_raw_parts(mbinfo.mods_addr as *const ModuleRaw, mbinfo.mods_count as usize)
     };
-    let mod_entries = mod_raw_entries.into_iter().map(Module::from_raw);
+    let mut mod_entries = mod_raw_entries.into_iter().map(Module::from_raw);
+    // Kernel should be first (and only) module.
+    let kernel_mod = mod_entries.next().expect("Kernel module not loaded.");
+    let elf_header: &elf::ElfHeaderRaw = read_from_buffer(kernel_mod.data, 0);
     loop { }
 }

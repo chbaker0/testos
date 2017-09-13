@@ -120,5 +120,14 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     // Kernel should be first (and only) module.
     let kernel_mod = mod_entries.next().expect("Kernel module not loaded.");
     let elf_header: &elf::ElfHeaderRaw = read_from_buffer(kernel_mod.data, 0);
+
+    // Check that the kernel image is what we expect.
+    assert!(elf_header.ident[0] == 0x7f
+            && elf_header.ident[1] == 'E' as u8
+            && elf_header.ident[2] == 'L' as u8
+            && elf_header.ident[3] == 'F' as u8);
+    assert!(elf_header.typ == elf::ElfType::Exec as u16);
+    assert!(elf_header.machine == 62);
+
     loop { }
 }

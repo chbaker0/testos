@@ -1,3 +1,29 @@
+pub enum ElfType {
+    None,
+    Rel,
+    Exec,
+    Dyn,
+    Core,
+}
+
+#[repr(C, packed)]
+pub struct ElfHeaderRaw {
+    ident: [u8; 16],
+    typ: u16,
+    machine: u16,
+    version: u32,
+    entry: u64,
+    phoff: u64,
+    shoff: u64,
+    flags: u32,
+    ehsize: u16,
+    phentsize: u16,
+    phnum: u16,
+    shentsize: u16,
+    shnum: u16,
+    shstrndx: u16,
+}
+
 pub enum SectionType {
     Null,
     ProgBits,

@@ -130,7 +130,11 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     assert!(elf_header.machine == 62);
 
     // Display segments.
-
+    for i in 0..(elf_header.phnum as usize) {
+        let seg_offset = i * (elf_header.phentsize as usize) + (elf_header.phoff as usize);
+        let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel_mod.data, seg_offset);
+        write_terminal(format_args!("{:x} {:x} {:x}", seg_header.offset, seg_header.vaddr, seg_header.memsz));
+    }
 
     loop { }
 }

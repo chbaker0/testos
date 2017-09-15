@@ -70,7 +70,9 @@ impl MemoryMap {
         let mut o = 0;
         let mut new_entries = [Default::default(); MEMORY_MAP_MAX_ENTRIES];
 
-        for e in self.entries.iter() {
+        for i in 0..self.num_entries {
+            let e = &self.entries[i];
+
             if e.base >= base && e.base + e.length <= base + length {
                 // When the input range fully contains entry, delete entry.
             }
@@ -86,7 +88,7 @@ impl MemoryMap {
                 let right_base = cmp::max(base + length, e.base);
                 let right_end = cmp::max(e.base + e.length, base + length);
 
-                if left_end >= left_base {
+                if left_end > left_base {
                     new_entries[o] = MemoryMapEntry {
                         base: left_base,
                         length: left_end - left_base,
@@ -95,7 +97,7 @@ impl MemoryMap {
                     o += 1;
                 }
 
-                if right_end >= right_base {
+                if right_end > right_base {
                     new_entries[o] = MemoryMapEntry {
                         base: right_base,
                         length: right_end - right_base,

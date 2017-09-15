@@ -9,6 +9,7 @@ mod terminal;
 mod vga;
 
 use core::cell;
+use core::cmp;
 use core::fmt::write;
 use core::mem::size_of;
 use core::ops::DerefMut;
@@ -112,6 +113,17 @@ fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
     unsafe { &*(ptr as *const T) }
 }
 
+fn get_loader_extent(mbinfo: &multiboot::Info) -> (u64, u64) {
+    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
+    let bounds = (0..symtab_info.entry_count)
+        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
+        .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
+        .filter(|&(lower, upper)| upper - lower > 0)
+        .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)));
+
+    (bounds.0, bounds.1 - bounds.0)
+}
+
 #[no_mangle]
 pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let mbinfo = unsafe { &*mbinfop };
@@ -138,7 +150,10 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
         write_terminal(format_args!("{:x} {:x} {:x}", seg_header.offset, seg_header.vaddr, seg_header.memsz));
     }
 
-    let mem_map = memory::MemoryMap::from_multiboot(mbinfo);
+    // Set up memory map.
+    let loader_extent = get_loader_extent(mbinfo);
+    let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
+    mem_map.reserve(loader_extent.0, loader_extent.1);
     for i in 0..mem_map.num_entries {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }

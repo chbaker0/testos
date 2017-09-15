@@ -155,6 +155,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
     mem_map.reserve(loader_extent.0, loader_extent.1);
+    mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
     for i in 0..mem_map.num_entries {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }

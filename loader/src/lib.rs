@@ -14,7 +14,9 @@ use core::mem::size_of;
 use core::ops::DerefMut;
 use core::slice::from_raw_parts;
 use core::str::from_utf8;
-use shared::*;
+use shared::elf;
+use shared::memory;
+use shared::multiboot;
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
 
@@ -134,6 +136,11 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
         let seg_offset = i * (elf_header.phentsize as usize) + (elf_header.phoff as usize);
         let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel_mod.data, seg_offset);
         write_terminal(format_args!("{:x} {:x} {:x}", seg_header.offset, seg_header.vaddr, seg_header.memsz));
+    }
+
+    let mem_map = memory::MemoryMap::from_multiboot(mbinfo);
+    for i in 0..mem_map.num_entries {
+        write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }
 
     loop { }

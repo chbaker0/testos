@@ -116,7 +116,7 @@ fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
 fn get_loader_extent(mbinfo: &multiboot::Info) -> (u64, u64) {
     let symtab_info = multiboot::get_section_header_table_info(mbinfo);
     let bounds = (0..symtab_info.entry_count)
-        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
+        .map(|ndx| unsafe { elf::get_section_header_32(symtab_info.addr, symtab_info.entry_size, ndx) })
         .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
         .filter(|&(lower, upper)| upper - lower > 0)
         .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)));
@@ -153,6 +153,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     // Set up memory map.
     let loader_extent = get_loader_extent(mbinfo);
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
+    write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
     mem_map.reserve(loader_extent.0, loader_extent.1);
     for i in 0..mem_map.num_entries {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));

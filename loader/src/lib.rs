@@ -1,4 +1,5 @@
 #![feature(const_fn)]
+#![feature(const_refcell_new)]
 #![feature(lang_items)]
 #![no_std]
 

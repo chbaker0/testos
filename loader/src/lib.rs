@@ -192,12 +192,14 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let loader_extent = get_loader_extent(mbinfo);
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
-    mem_map.reserve(0, 0x100000);
-    mem_map.reserve(loader_extent.0, loader_extent.1);
-    mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
-    mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
+
     let mem_map_start = &mem_map as *const _ as u64;
     mem_map.reserve(mem_map_start, size_of::<memory::MemoryMap>() as u64);
+    mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
+    let mem_map_for_kernel = mem_map.clone();
+    mem_map.reserve(loader_extent.0, loader_extent.1);
+    mem_map.reserve(0, 0x100000);
+    mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
     for i in 0..mem_map.num_entries as usize {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }
@@ -215,7 +217,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let kernel_entry_addr = elf_header.entry;
 
     let boot_info = handoff::BootInfo {
-        mem_map_addr: &mem_map as *const _ as u64,
+        mem_map_addr: &mem_map_for_kernel as *const _ as u64,
     };
 
     write_terminal(format_args!("{:x}", kernel_entry_addr));

@@ -49,6 +49,21 @@ pub struct MemoryMap {
     pub num_entries: u32,
 }
 
+impl Clone for MemoryMap {
+    fn clone(&self) -> Self {
+        let mut new = MemoryMap {
+            entries: [Default::default(); MEMORY_MAP_MAX_ENTRIES],
+            num_entries: self.num_entries,
+        };
+
+        for i in 0..MEMORY_MAP_MAX_ENTRIES {
+            new.entries[i] = self.entries[i];
+        };
+
+        new
+    }
+}
+
 impl MemoryMap {
     pub fn from_multiboot(mbinfo: &multiboot::Info) -> Self {
         let mut memory_map = MemoryMap{entries:[Default::default(); MEMORY_MAP_MAX_ENTRIES], num_entries:0};

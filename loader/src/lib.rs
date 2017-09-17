@@ -6,6 +6,7 @@
 extern crate rlibc;
 extern crate shared;
 
+mod paging;
 mod terminal;
 mod vga;
 

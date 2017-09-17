@@ -9,6 +9,7 @@
 use shared::memory::FrameAllocator;
 use shared::memory::PAGE_SIZE;
 
+use core::default::Default;
 use core::marker::PhantomData;
 use core::option::Option;
 
@@ -38,6 +39,7 @@ impl Page {
 }
 
 #[repr(C, packed)]
+#[derive(Clone, Copy)]
 pub struct Entry(u64);
 
 pub trait TableLevel {}
@@ -112,10 +114,18 @@ impl<L: HierarchicalLevel> Table<L>{
 }
 
 pub struct AddrSpace {
-    p4: Table<Level4>,
+    p4: *mut Table<Level4>,
 }
 
 impl AddrSpace {
+    pub fn new(alloc: &mut FrameAllocator) -> AddrSpace {
+        let table = alloc.get_frame() as *mut Table<Level4>;
+        unsafe { (*table).zero(); }
+        AddrSpace {
+            p4: table,
+        }
+    }
+
     pub fn check_vaddr(addr: u64) -> bool {
         let sign = (addr >> VADDR_BITS) & 1;
         let high_bits = addr >> VADDR_BITS;
@@ -123,10 +133,15 @@ impl AddrSpace {
     }
 
     pub fn map_to(&mut self, page: Page, frame: Frame, flags: u64, alloc: &mut FrameAllocator) {
-        let p3 = self.p4.next_create(page.p4_ndx(), alloc);
+        let p4 = unsafe { &mut *self.p4 };
+        let p3 = p4.next_create(page.p4_ndx(), alloc);
         let p2 = p3.next_create(page.p3_ndx(), alloc);
         let p1 = p2.next_create(page.p2_ndx(), alloc);
         let entry = &mut p1.entries[page.p1_ndx()].0;
         *entry = (frame.0 << 12) | flags | 1;
+    }
+
+    pub fn get_p4_addr(&self) -> u64 {
+        self.p4 as u64
     }
 }

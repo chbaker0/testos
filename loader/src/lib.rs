@@ -21,6 +21,10 @@ use shared::elf;
 use shared::memory;
 use shared::multiboot;
 
+extern {
+    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u64, kernel_entry_addr: *const u64) -> !;
+}
+
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
 
 fn log_terminal(s: &str)
@@ -126,6 +130,48 @@ fn get_loader_extent(mbinfo: &multiboot::Info) -> (u64, u64) {
     (bounds.0, bounds.1 - bounds.0)
 }
 
+fn map_kernel(kernel: &[u8],
+              addr_space: &mut paging::AddrSpace,
+              alloc: &mut memory::FrameAllocator) {
+    // Check alignment.
+    assert!(kernel.as_ptr() as u64 % memory::PAGE_SIZE as u64 == 0);
+
+    let elf_header: &elf::ElfHeaderRaw = read_from_buffer(kernel, 0);
+
+    // Check that the kernel image is what we expect.
+    assert!(elf_header.ident[0] == 0x7f
+            && elf_header.ident[1] == 'E' as u8
+            && elf_header.ident[2] == 'L' as u8
+            && elf_header.ident[3] == 'F' as u8);
+    assert!(elf_header.typ == elf::ElfType::Exec as u16);
+    assert!(elf_header.machine == 62);
+
+    // Map segments.
+    for i in 0..(elf_header.phnum as usize) {
+        let seg_offset = i * (elf_header.phentsize as usize) + (elf_header.phoff as usize);
+        let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel, seg_offset);
+
+        let first_frame = ((kernel.as_ptr() as u64) + seg_header.offset) / memory::PAGE_SIZE as u64;
+        let first_page = seg_header.vaddr / memory::PAGE_SIZE as u64;
+        let last_page = (seg_header.vaddr + seg_header.memsz) / memory::PAGE_SIZE as u64;
+        let num_pages = last_page + 1 - first_page;
+
+        for pndx in 0..num_pages {
+            let page = paging::Page(pndx + first_page);
+            let frame = paging::Frame(pndx + first_frame);
+            addr_space.map_to(page, frame, 0b1000, alloc);
+        }
+    }
+}
+
+fn map_identity(first_page: u64, page_count: u64,
+                addr_space: &mut paging::AddrSpace,
+                alloc: &mut memory::FrameAllocator) {
+    for i in first_page..first_page+page_count {
+        addr_space.map_to(paging::Page(i), paging::Frame(i), 0b1000, alloc);
+    }
+}
+
 #[no_mangle]
 pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let mbinfo = unsafe { &*mbinfop };
@@ -137,30 +183,32 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let kernel_mod = mod_entries.next().expect("Kernel module not loaded.");
     let elf_header: &elf::ElfHeaderRaw = read_from_buffer(kernel_mod.data, 0);
 
-    // Check that the kernel image is what we expect.
-    assert!(elf_header.ident[0] == 0x7f
-            && elf_header.ident[1] == 'E' as u8
-            && elf_header.ident[2] == 'L' as u8
-            && elf_header.ident[3] == 'F' as u8);
-    assert!(elf_header.typ == elf::ElfType::Exec as u16);
-    assert!(elf_header.machine == 62);
-
-    // Display segments.
-    for i in 0..(elf_header.phnum as usize) {
-        let seg_offset = i * (elf_header.phentsize as usize) + (elf_header.phoff as usize);
-        let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel_mod.data, seg_offset);
-        write_terminal(format_args!("{:x} {:x} {:x}", seg_header.offset, seg_header.vaddr, seg_header.memsz));
-    }
-
-    // Set up memory map.
+    // Set up memory map and allocator.
     let loader_extent = get_loader_extent(mbinfo);
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
     mem_map.reserve(loader_extent.0, loader_extent.1);
+    mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
     for i in 0..mem_map.num_entries {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }
+    let mut alloc = memory::FrameAllocator::new(&mem_map);
+
+    // Set up paging for kernel.
+    let mut addr_space = paging::AddrSpace::new(&mut alloc);
+    map_kernel(kernel_mod.data, &mut addr_space, &mut alloc);
+    // Identity map first 16 MiB
+    map_identity(0, 4096, &mut addr_space, &mut alloc);
+
+    // Switch to 64 bit and call kernel.
+    let mbinfo_addr = mbinfop as u64;
+    let page_table_addr = addr_space.get_p4_addr();
+    let kernel_entry_addr = elf_header.entry;
+
+    unsafe { kernel_handoff(&mbinfo_addr as *const u64,
+                            &page_table_addr as *const u64,
+                            &kernel_entry_addr as *const u64); }
 
     loop { }
 }

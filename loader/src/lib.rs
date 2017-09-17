@@ -37,54 +37,58 @@ fn log_terminal(s: &str)
     }
 }
 
-struct BufWriter {
+struct TermWriter {
     buffer: [u8; 80],
     ndx: usize,
 }
 
-impl BufWriter {
-    fn new() -> BufWriter {
-        BufWriter {
+impl TermWriter {
+    fn new() -> TermWriter {
+        TermWriter {
             buffer: [0; 80],
             ndx: 0,
         }
     }
+
+    fn flush(&mut self) {
+        match from_utf8(&self.buffer[0..self.ndx]) {
+            Ok(s) => log_terminal(s),
+            Err(_) => (),
+        }
+        self.ndx = 0;
+    }
+
+    fn write_byte(&mut self, c: u8) {
+        self.buffer[self.ndx] = c;
+        self.ndx += 1;
+        if self.ndx == 80 {
+            self.flush();
+        }
+    }
 }
 
-impl core::fmt::Write for BufWriter {
+impl core::fmt::Write for TermWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let trunc = s.bytes().take(80-self.ndx);
-        for c in trunc {
-            self.buffer[self.ndx] = c;
-            self.ndx += 1;
+        for c in s.bytes() {
+            self.write_byte(c);
         }
         Ok(())
     }
 }
 
 fn write_terminal(args: core::fmt::Arguments) {
-    let mut buf_writer = BufWriter::new();
-    write(&mut buf_writer, args);
-    buf_writer.buffer[79] = 0;
-
-    match from_utf8(&buf_writer.buffer) {
-        Ok(s) => log_terminal(s),
-        Err(_) => panic!(),
-    }
+    let mut term_writer = TermWriter::new();
+    write(&mut term_writer, args);
+    term_writer.flush();
 }
 
 #[lang="panic_fmt"]
 #[no_mangle]
 pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    let mut buf_writer = BufWriter::new();
-    write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
-    write(&mut buf_writer, panic_args);
-    buf_writer.buffer[79] = 0;
-
-    match from_utf8(&buf_writer.buffer) {
-        Ok(s) => log_terminal(s),
-        Err(_) => (), // We're already panicking, there's nothing else to do.
-    }
+    let mut term_writer = TermWriter::new();
+    write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
+    write(&mut term_writer, panic_args);
+    term_writer.flush();
 
     loop { }
 }

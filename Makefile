@@ -9,7 +9,7 @@ out/boot.nasm.o: boot.nasm
 	nasm -f elf64 -o $@  $^
 
 out/kernel.a: FORCE
-	cd kernel; RUST_TARGET_PATH=`pwd`/../targets rustup run nightly xargo rustc --target x86_64-unknown-none -- --emit link=../out/kernel.a
+	cd kernel; RUST_TARGET_PATH=`pwd`/../targets xargo +nightly rustc --target x86_64-unknown-none -- --emit link=../out/kernel.a
 
 out/kernel.bin: linker.ld out/boot.nasm.o out/kernel.a
 	x86_64-elf-gcc -mcmodel=kernel -T linker.ld -z max-page-size=0x1000 -Wl,--gc-sections -nostdlib -lgcc -o $@ out/boot.nasm.o out/rustsrc.a

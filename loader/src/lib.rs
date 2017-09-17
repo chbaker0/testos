@@ -22,7 +22,7 @@ use shared::memory;
 use shared::multiboot;
 
 extern {
-    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u64, kernel_entry_addr: *const u64) -> !;
+    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u32, kernel_entry_addr: *const u64) -> !;
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
@@ -191,6 +191,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let loader_extent = get_loader_extent(mbinfo);
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
+    mem_map.reserve(0, 0x100000);
     mem_map.reserve(loader_extent.0, loader_extent.1);
     mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
@@ -207,11 +208,13 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
 
     // Switch to 64 bit and call kernel.
     let mbinfo_addr = mbinfop as u64;
-    let page_table_addr = addr_space.get_p4_addr();
+    let page_table_addr = addr_space.get_p4_addr() as u32;
     let kernel_entry_addr = elf_header.entry;
 
+    write_terminal(format_args!("{:x}", kernel_entry_addr));
+
     unsafe { kernel_handoff(&mbinfo_addr as *const u64,
-                            &page_table_addr as *const u64,
+                            &page_table_addr as *const u32,
                             &kernel_entry_addr as *const u64); }
 
     loop { }

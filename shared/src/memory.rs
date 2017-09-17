@@ -142,10 +142,14 @@ fn align_address(address: u64, order: u32) -> u64 {
 
 fn next_entry(mem_map: &MemoryMap, ndx: usize) -> usize {
     let mut i = ndx;
-    while mem_map.entries[i].status != MemoryStatus::Available {
-        i += 1;
+    loop {
+        let e = mem_map.entries[i];
+        if e.status == MemoryStatus::Available
+            && align_address(e.base, PAGE_ORDER) < e.base + e.length {
+            return i;
+        }
+        i = i + 1;
     }
-    i
 }
 
 impl<'a> FrameAllocator<'a> {

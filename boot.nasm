@@ -78,3 +78,44 @@ _start:
     .hang:
     hlt
     jmp .hang
+
+global kernel_handoff
+kernel_handoff:
+    push ebp
+    mov ebp, esp
+
+    ; Set page table address.
+    mov eax, [ebp + 12]
+    mov eax, [eax]
+    mov cr3, eax
+
+    ; Enable PAE
+    mov eax, cr4
+    or eax, 0b100000
+    mov cr4, eax
+
+    ; Enable long mode
+    mov ecx, 0xC0000080
+    rdmsr
+    or eax, 1 << 8
+    wrmsr
+
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+
+    lgdt [GDT.pointer]
+    jmp 0x8:long_mode
+
+[bits 64]
+long_mode:
+    xchg bx, bx
+    mov edi, [ebp + 8]
+    mov edi, [edi]
+    mov eax, [ebp + 16]
+    mov rax, [eax]
+    jmp rax
+
+    .hang
+    hlt
+    jmp .hang

@@ -42,6 +42,16 @@ impl Page {
 #[derive(Clone, Copy)]
 pub struct Entry(u64);
 
+impl Entry {
+    pub fn flags(&self) -> u64 {
+        self.0 & 0xfff00000_00000fff
+    }
+
+    pub fn addr(&self) -> u64 {
+        self.0 & 0x000fffff_fffff000
+    }
+}
+
 pub trait TableLevel {}
 
 pub enum Level4 {}
@@ -86,11 +96,10 @@ impl<L: TableLevel> Table<L> {
 
 impl<L: HierarchicalLevel> Table<L>{
     fn next_addr(&self, ndx: usize) -> Option<u64> {
-        let Entry(addr) = self.entries[ndx];
-        if addr & 1 == 0 {
+        if self.entries[ndx].flags() & 1 == 0 {
             None
         } else {
-            Some(addr)
+            Some(self.entries[ndx].addr())
         }
     }
 

@@ -112,6 +112,7 @@ long_mode:
     xchg bx, bx
     mov edi, [ebp + 8]
     mov edi, [edi]
+    mov esi, [ebp + 20]
     mov eax, [ebp + 16]
     mov rax, [eax]
     jmp rax

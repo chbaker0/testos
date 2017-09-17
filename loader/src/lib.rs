@@ -18,11 +18,12 @@ use core::ops::DerefMut;
 use core::slice::from_raw_parts;
 use core::str::from_utf8;
 use shared::elf;
+use shared::handoff;
 use shared::memory;
 use shared::multiboot;
 
 extern {
-    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u32, kernel_entry_addr: *const u64) -> !;
+    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u32, kernel_entry_addr: *const u64, boot_info: *const handoff::BootInfo) -> !;
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
@@ -195,7 +196,9 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     mem_map.reserve(loader_extent.0, loader_extent.1);
     mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
-    for i in 0..mem_map.num_entries {
+    let mem_map_start = &mem_map as *const _ as u64;
+    mem_map.reserve(mem_map_start, size_of::<memory::MemoryMap>() as u64);
+    for i in 0..mem_map.num_entries as usize {
         write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
     }
     let mut alloc = memory::FrameAllocator::new(&mem_map);
@@ -211,11 +214,16 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let page_table_addr = addr_space.get_p4_addr() as u32;
     let kernel_entry_addr = elf_header.entry;
 
+    let boot_info = handoff::BootInfo {
+        mem_map_addr: &mem_map as *const _ as u64,
+    };
+
     write_terminal(format_args!("{:x}", kernel_entry_addr));
 
     unsafe { kernel_handoff(&mbinfo_addr as *const u64,
                             &page_table_addr as *const u32,
-                            &kernel_entry_addr as *const u64); }
+                            &kernel_entry_addr as *const u64,
+                            &boot_info as *const _); }
 
     loop { }
 }

@@ -16,8 +16,8 @@ const ENTRY_BITS: usize = 9;
 const ENTRY_COUNT: usize = 512;
 const VADDR_BITS: usize = 48;
 
-pub struct Frame(u64);
-pub struct Page(u64);
+pub struct Frame(pub u64);
+pub struct Page(pub u64);
 
 impl Page {
     pub fn p4_ndx(&self) -> usize {

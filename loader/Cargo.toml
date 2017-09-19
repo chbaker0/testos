@@ -1,10 +1,10 @@
 [package]
-name = "kernel"
+name = "loader"
 version = "0.0.1"
 authors = ["chbaker0@gmail.com"]
 
 [lib]
-name = "kernel"
+name = "loader"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 

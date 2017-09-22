@@ -164,7 +164,6 @@ fn map_kernel(kernel: &[u8],
         let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel, seg_offset);
 
         let segment_base = seg_header.offset as usize & !(memory::PAGE_SIZE - 1);
-        let first_frame = ((kernel.as_ptr() as u64) + seg_header.offset) / memory::PAGE_SIZE as u64;
         let first_page = seg_header.vaddr / memory::PAGE_SIZE as u64;
         let last_page = (seg_header.vaddr + seg_header.memsz) / memory::PAGE_SIZE as u64;
         let num_pages = last_page + 1 - first_page;
@@ -239,6 +238,4 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
                             &page_table_addr as *const u32,
                             &kernel_entry_addr as *const u64,
                             &boot_info as *const _); }
-
-    loop { }
 }

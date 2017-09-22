@@ -15,6 +15,7 @@ use core::cmp;
 use core::fmt::write;
 use core::mem::size_of;
 use core::ops::DerefMut;
+use core::ptr;
 use core::slice::from_raw_parts;
 use core::str::from_utf8;
 use shared::elf;
@@ -116,6 +117,12 @@ impl Module {
     }
 }
 
+unsafe fn ptr_copy<T: Copy>(dst: *mut T, src: *const T, bytes: usize) {
+    for i in 0..bytes {
+        ptr::write(dst.offset(i as isize), ptr::read(src.offset(i as isize)));
+    }
+}
+
 // T must be repr(C, packed)
 fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
     let sz = size_of::<T>();
@@ -156,6 +163,7 @@ fn map_kernel(kernel: &[u8],
         let seg_offset = i * (elf_header.phentsize as usize) + (elf_header.phoff as usize);
         let seg_header: &elf::ProgramHeaderRaw = read_from_buffer(kernel, seg_offset);
 
+        let segment_base = seg_header.offset as usize & !(memory::PAGE_SIZE - 1);
         let first_frame = ((kernel.as_ptr() as u64) + seg_header.offset) / memory::PAGE_SIZE as u64;
         let first_page = seg_header.vaddr / memory::PAGE_SIZE as u64;
         let last_page = (seg_header.vaddr + seg_header.memsz) / memory::PAGE_SIZE as u64;
@@ -163,7 +171,12 @@ fn map_kernel(kernel: &[u8],
 
         for pndx in 0..num_pages {
             let page = paging::Page(pndx + first_page);
-            let frame = paging::Frame(pndx + first_frame);
+            let copy_offset = segment_base + pndx as usize * memory::PAGE_SIZE;
+            let frame_addr = alloc.get_frame() as u64;
+            unsafe { ptr_copy(frame_addr as *mut u8,
+                              kernel.as_ptr().offset(copy_offset as isize),
+                              memory::PAGE_SIZE); }
+            let frame = paging::Frame(frame_addr / memory::PAGE_SIZE as u64);
             addr_space.map_to(page, frame, 0b1000, alloc);
         }
     }

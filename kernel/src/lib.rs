@@ -4,6 +4,7 @@
 #![no_std]
 
 extern crate rlibc;
+extern crate shared;
 
 use core::cell;
 use core::cmp;
@@ -12,10 +13,12 @@ use core::fmt::write;
 use core::ops::DerefMut;
 use core::option::Option;
 use core::str::from_utf8;
+use shared::elf;
+use shared::handoff;
+use shared::memory;
+use shared::multiboot;
 
-mod elf;
 mod mm;
-mod multiboot;
 mod terminal;
 mod vga;
 
@@ -98,13 +101,16 @@ fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
 }
 
 #[no_mangle]
-pub extern fn kentry(mbinfop: *const multiboot::Info) {
+pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+    let boot_info: &handoff::BootInfo = unsafe { &*boot_infop };
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
     assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
 
     log_terminal("Memory map:");
-    for entry in multiboot::get_memory_map_iterator(mbinfo) {
-        write_terminal(format_args!("    Address {:x} Size {:x}", entry.base_addr, entry.length));
+    let mem_map = unsafe { &*(boot_info.mem_map_addr as *const memory::MemoryMap) };
+    for i in 0..mem_map.num_entries as usize {
+        let entry = &mem_map.entries[i];
+        write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
 
     // Calculate extent of kernel in memory.

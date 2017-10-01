@@ -1,5 +1,5 @@
 [root]
-name = "kernel"
+name = "loader"
 version = "0.0.1"
 dependencies = [
  "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -6,8 +6,8 @@
  * for full source.
  */
 
-use shared::memory::FrameAllocator;
-use shared::memory::PAGE_SIZE;
+use memory::FrameAllocator;
+use memory::PAGE_SIZE;
 
 use core::marker::PhantomData;
 use core::option::Option;

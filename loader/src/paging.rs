@@ -9,13 +9,10 @@
 use shared::memory::FrameAllocator;
 use shared::memory::PAGE_SIZE;
 
-use core::default::Default;
 use core::marker::PhantomData;
 use core::option::Option;
 
-const ENTRY_BITS: usize = 9;
 const ENTRY_COUNT: usize = 512;
-const VADDR_BITS: usize = 48;
 
 pub struct Frame(pub u64);
 pub struct Page(pub u64);
@@ -133,12 +130,6 @@ impl AddrSpace {
         AddrSpace {
             p4: table,
         }
-    }
-
-    pub fn check_vaddr(addr: u64) -> bool {
-        let sign = (addr >> VADDR_BITS) & 1;
-        let high_bits = addr >> VADDR_BITS;
-        high_bits == (sign << (64 - VADDR_BITS)) - 1
     }
 
     pub fn map_to(&mut self, page: Page, frame: Frame, flags: u64, alloc: &mut FrameAllocator) {

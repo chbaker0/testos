@@ -229,7 +229,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let kernel_entry_addr = elf_header.entry;
 
     let boot_info = handoff::BootInfo {
-        mem_map_addr: &mem_map_for_kernel as *const _ as u64,
+        mem_map: mem_map_for_kernel,
     };
 
     write_terminal(format_args!("{:x}", kernel_entry_addr));

@@ -102,12 +102,11 @@ fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
 
 #[no_mangle]
 pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
-    let boot_info: &handoff::BootInfo = unsafe { &*boot_infop };
+    let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
     let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
-    assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
 
     log_terminal("Memory map:");
-    let mem_map = unsafe { &*(boot_info.mem_map_addr as *const memory::MemoryMap) };
+    let mem_map = &boot_info.mem_map;
     for i in 0..mem_map.num_entries as usize {
         let entry = &mem_map.entries[i];
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));

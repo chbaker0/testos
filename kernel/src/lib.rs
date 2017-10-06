@@ -95,7 +95,6 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
 #[no_mangle]
 pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
-    let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
 
     log_terminal("Memory map:");
     let mem_map = &boot_info.mem_map;
@@ -104,7 +103,7 @@ pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
 
-    mm::init(mbinfo);
+    mm::init(mem_map.clone());
 
     let frame1 = mm::get_frame_allocator().get_frame();
     let frame2 = mm::get_frame_allocator().get_frame();

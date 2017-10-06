@@ -6,6 +6,7 @@
 extern crate rlibc;
 extern crate shared;
 
+mod paging;
 mod terminal;
 mod vga;
 
@@ -21,7 +22,6 @@ use shared::elf;
 use shared::handoff;
 use shared::memory;
 use shared::multiboot;
-use shared::paging;
 
 extern {
     fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u32, kernel_entry_addr: *const u64, boot_info: *const handoff::BootInfo) -> !;

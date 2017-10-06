@@ -37,7 +37,7 @@ impl Page {
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
-pub struct Entry(u64);
+pub struct Entry(pub u64);
 
 impl Entry {
     pub fn flags(&self) -> u64 {
@@ -79,8 +79,8 @@ impl HierarchicalLevel for Level2 {
 
 #[repr(C, packed)]
 pub struct Table<L: TableLevel> {
-    entries: [Entry; ENTRY_COUNT],
-    level: PhantomData<L>,
+    pub entries: [Entry; ENTRY_COUNT],
+    pub level: PhantomData<L>,
 }
 
 impl<L: TableLevel> Table<L> {
@@ -88,60 +88,5 @@ impl<L: TableLevel> Table<L> {
         for e in self.entries.iter_mut() {
             e.0 = 0;
         }
-    }
-}
-
-impl<L: HierarchicalLevel> Table<L>{
-    fn next_addr(&self, ndx: usize) -> Option<u64> {
-        if self.entries[ndx].flags() & 1 == 0 {
-            None
-        } else {
-            Some(self.entries[ndx].addr())
-        }
-    }
-
-    pub fn next(&self, ndx: usize) -> Option<&Table<L::NextLevel>> {
-        self.next_addr(ndx).map(|addr| unsafe { &*(addr as *const _) })
-    }
-
-    pub fn next_mut(&mut self, ndx: usize) -> Option<&mut Table<L::NextLevel>> {
-        self.next_addr(ndx).map(|addr| unsafe { &mut *(addr as *mut _) })
-    }
-
-    pub fn next_create(&mut self, ndx: usize, alloc: &mut FrameAllocator)
-                                              -> &mut Table<L::NextLevel> {
-        if self.next(ndx).is_none() {
-            let frame_addr = alloc.get_frame() as u64;
-            self.entries[ndx].0 = frame_addr | 0b1001; // Set writable and present bits.
-            self.next_mut(ndx).unwrap().zero();
-        }
-        self.next_mut(ndx).unwrap()
-    }
-}
-
-pub struct AddrSpace {
-    p4: *mut Table<Level4>,
-}
-
-impl AddrSpace {
-    pub fn new(alloc: &mut FrameAllocator) -> AddrSpace {
-        let table = alloc.get_frame() as *mut Table<Level4>;
-        unsafe { (*table).zero(); }
-        AddrSpace {
-            p4: table,
-        }
-    }
-
-    pub fn map_to(&mut self, page: Page, frame: Frame, flags: u64, alloc: &mut FrameAllocator) {
-        let p4 = unsafe { &mut *self.p4 };
-        let p3 = p4.next_create(page.p4_ndx(), alloc);
-        let p2 = p3.next_create(page.p3_ndx(), alloc);
-        let p1 = p2.next_create(page.p2_ndx(), alloc);
-        let entry = &mut p1.entries[page.p1_ndx()].0;
-        *entry = (frame.0 << 12) | flags | 1;
-    }
-
-    pub fn get_p4_addr(&self) -> u64 {
-        self.p4 as u64
     }
 }

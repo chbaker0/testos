@@ -92,15 +92,6 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
     loop { unsafe { asm!("hlt"); } }
 }
 
-fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
-    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
-    (0..symtab_info.entry_count)
-        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
-        .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
-        .filter(|&(lower, upper)| upper - lower > 0)
-        .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
-}
-
 #[no_mangle]
 pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
@@ -113,9 +104,6 @@ pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
 
-    // Calculate extent of kernel in memory.
-    let (kernel_lower, kernel_upper) = kernel_image_bounds(&mbinfo);
-    write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", kernel_lower, kernel_upper));
     mm::init(mbinfo);
 
     let frame1 = mm::get_frame_allocator().get_frame();

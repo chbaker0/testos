@@ -205,4 +205,8 @@ impl<'a> FrameAllocator<'a> {
 
         addr
     }
+
+    pub fn next_frame(self: &Self) -> usize {
+        self.cur_addr
+    }
 }

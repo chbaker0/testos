@@ -1,3 +1,4 @@
+#![feature(asm)]
 #![feature(const_fn)]
 #![feature(const_refcell_new)]
 #![feature(lang_items)]
@@ -88,7 +89,7 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
         Err(_) => (), // We're already panicking, there's nothing else to do.
     }
 
-    loop { }
+    loop { unsafe { asm!("hlt"); } }
 }
 
 fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
@@ -121,5 +122,5 @@ pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff
     let frame2 = mm::get_frame_allocator().get_frame();
     write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
 
-    loop { }
+    loop { unsafe { asm!("hlt"); } }
 }

@@ -48,10 +48,12 @@ pub struct AddrSpace {
 
 impl AddrSpace {
     pub fn new(alloc: &mut FrameAllocator) -> AddrSpace {
-        let table = alloc.get_frame() as *mut Table<Level4>;
-        unsafe { (*table).0.zero(); }
+        let tablep = alloc.get_frame() as *mut Table<Level4>;
+        let table = unsafe { &mut *tablep };
+        table.0.zero();
+        table.0.entries[510].0 = (tablep as u64) | 0b1001;
         AddrSpace {
-            p4: table,
+            p4: tablep,
         }
     }
 

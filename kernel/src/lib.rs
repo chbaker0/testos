@@ -94,7 +94,7 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
 }
 
 #[no_mangle]
-pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
 
     log_terminal("Memory map:");

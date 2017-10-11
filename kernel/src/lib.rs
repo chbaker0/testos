@@ -116,7 +116,5 @@ pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff:
     let frame2 = mm::get_frame_allocator().get_frame();
     write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
 
-    paging::map_to(paging::Page(0), paging::Frame(0), 0b1010, mm::get_frame_allocator());
-
     loop { unsafe { asm!("hlt"); } }
 }

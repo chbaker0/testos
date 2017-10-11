@@ -123,6 +123,12 @@ unsafe fn ptr_copy<T: Copy>(dst: *mut T, src: *const T, bytes: usize) {
     }
 }
 
+unsafe fn zero_frame(frame: *mut u8) {
+    for i in 0..memory::PAGE_SIZE {
+        *frame.offset(i as isize) = 0;
+    }
+}
+
 // T must be repr(C, packed)
 fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
     let sz = size_of::<T>();
@@ -172,9 +178,12 @@ fn map_kernel(kernel: &[u8],
             let page = paging::Page(pndx + first_page);
             let copy_offset = segment_base + pndx as usize * memory::PAGE_SIZE;
             let frame_addr = alloc.get_frame() as u64;
-            unsafe { ptr_copy(frame_addr as *mut u8,
-                              kernel.as_ptr().offset(copy_offset as isize),
-                              memory::PAGE_SIZE); }
+            unsafe { zero_frame(frame_addr as *mut u8); }
+            if copy_offset < kernel.len() {
+                unsafe { ptr_copy(frame_addr as *mut u8,
+                                  kernel.as_ptr().offset(copy_offset as isize),
+                                  memory::PAGE_SIZE); }
+            }
             let frame = paging::Frame(frame_addr / memory::PAGE_SIZE as u64);
             addr_space.map_to(page, frame, 0b1000, alloc);
         }

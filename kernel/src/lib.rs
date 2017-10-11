@@ -1,3 +1,4 @@
+#![feature(abi_x86_interrupt)]
 #![feature(asm)]
 #![feature(const_fn)]
 #![feature(const_refcell_new)]

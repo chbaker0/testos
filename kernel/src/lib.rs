@@ -21,7 +21,6 @@ use shared::multiboot;
 mod acpi;
 mod mm;
 mod interrupts;
-mod paging;
 mod terminal;
 mod vga;
 

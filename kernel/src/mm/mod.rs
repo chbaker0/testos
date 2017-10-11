@@ -1,5 +1,7 @@
+mod paging;
 mod physmem;
 
+pub use self::paging::map_to;
 pub use self::physmem::get_frame_allocator;
 pub use shared::memory::FrameAllocator;
 pub use shared::memory::MemoryMap;

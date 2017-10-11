@@ -1,3 +1,4 @@
+use x86_64;
 use x86_64::structures::idt;
 
 lazy_static! {
@@ -14,6 +15,7 @@ pub fn init() {
 
 extern "x86-interrupt" fn page_fault_handler(
     _: &mut idt::ExceptionStackFrame,
-    _: idt::PageFaultErrorCode) {
-    panic!("Page fault occurred.");
+    error_code: idt::PageFaultErrorCode) {
+    let addr = x86_64::registers::control_regs::cr2();
+    panic!("Page fault occurred on address {:x}: {:?}", addr, error_code);
 }

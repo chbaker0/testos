@@ -2,6 +2,7 @@
 #![feature(asm)]
 #![feature(const_fn)]
 #![feature(const_refcell_new)]
+#![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![no_std]
 
@@ -23,6 +24,7 @@ use shared::handoff;
 use shared::memory;
 use shared::multiboot;
 
+mod acpi;
 mod mm;
 mod interrupts;
 mod paging;
@@ -116,6 +118,8 @@ pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff:
     let frame1 = mm::get_frame_allocator().get_frame();
     let frame2 = mm::get_frame_allocator().get_frame();
     write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
+
+    acpi::init();
 
     loop { unsafe { asm!("hlt"); } }
 }

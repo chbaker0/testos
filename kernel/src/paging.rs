@@ -3,12 +3,8 @@ use shared::memory::FrameAllocator;
 
 pub use shared::paging::Frame;
 pub use shared::paging::Page;
-use shared::paging::Entry;
-use shared::paging::TableLevel;
 use shared::paging::Level4;
-use shared::paging::Level3;
-use shared::paging::Level2;
-use shared::paging::Level1;
+use shared::paging::TableLevel;
 use shared::paging::HierarchicalLevel;
 
 #[repr(C, packed)]

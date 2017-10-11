@@ -1,8 +1,4 @@
-use core::cmp;
-use core::mem::uninitialized;
-use shared::elf;
 use shared::memory::*;
-use shared::multiboot;
 
 static mut MEMORY_MAP: MemoryMap = MemoryMap {
     entries: [MemoryMapEntry{base:0,length:0,status:MemoryStatus::Unknown}; MEMORY_MAP_MAX_ENTRIES],

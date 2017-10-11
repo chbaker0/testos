@@ -1,7 +1,6 @@
 #![feature(abi_x86_interrupt)]
 #![feature(asm)]
 #![feature(const_fn)]
-#![feature(const_refcell_new)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![no_std]
@@ -13,15 +12,10 @@ extern crate shared;
 extern crate x86_64;
 
 use core::cell;
-use core::cmp;
-use core::fmt::Write;
 use core::fmt::write;
 use core::ops::DerefMut;
-use core::option::Option;
 use core::str::from_utf8;
-use shared::elf;
 use shared::handoff;
-use shared::memory;
 use shared::multiboot;
 
 mod acpi;

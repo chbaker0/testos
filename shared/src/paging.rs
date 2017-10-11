@@ -6,11 +6,7 @@
  * for full source.
  */
 
-use memory::FrameAllocator;
-use memory::PAGE_SIZE;
-
 use core::marker::PhantomData;
-use core::option::Option;
 
 const ENTRY_COUNT: usize = 512;
 

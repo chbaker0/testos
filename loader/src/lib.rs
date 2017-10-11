@@ -213,7 +213,6 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let mut mem_map = memory::MemoryMap::from_multiboot(mbinfo);
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
 
-    let mem_map_start = &mem_map as *const _ as u64;
     let mut mem_map_for_kernel = mem_map.clone();
     mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
     mem_map.reserve(loader_extent.0, loader_extent.1);

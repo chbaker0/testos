@@ -4,8 +4,11 @@
 #![feature(lang_items)]
 #![no_std]
 
+#[macro_use]
+extern crate lazy_static;
 extern crate rlibc;
 extern crate shared;
+extern crate x86_64;
 
 use core::cell;
 use core::cmp;
@@ -20,6 +23,7 @@ use shared::memory;
 use shared::multiboot;
 
 mod mm;
+mod interrupts;
 mod paging;
 mod terminal;
 mod vga;
@@ -103,6 +107,8 @@ pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff:
         let entry = &mem_map.entries[i];
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
+
+    interrupts::init();
 
     mm::init(mem_map.clone());
 

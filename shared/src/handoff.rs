@@ -1,6 +1,7 @@
 use memory;
 
 #[repr(C, packed)]
+#[derive(Clone)]
 pub struct BootInfo {
-    pub mem_map_addr: u64,
+    pub mem_map: memory::MemoryMap,
 }

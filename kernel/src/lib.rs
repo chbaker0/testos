@@ -1,3 +1,4 @@
+#![feature(asm)]
 #![feature(const_fn)]
 #![feature(const_refcell_new)]
 #![feature(lang_items)]
@@ -19,6 +20,7 @@ use shared::memory;
 use shared::multiboot;
 
 mod mm;
+mod paging;
 mod terminal;
 mod vga;
 
@@ -88,39 +90,27 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
         Err(_) => (), // We're already panicking, there's nothing else to do.
     }
 
-    loop { }
-}
-
-fn kernel_image_bounds(mbinfo: &multiboot::Info) -> (u64, u64) {
-    let symtab_info = multiboot::get_section_header_table_info(mbinfo);
-    (0..symtab_info.entry_count)
-        .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
-        .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
-        .filter(|&(lower, upper)| upper - lower > 0)
-        .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
+    loop { unsafe { asm!("hlt"); } }
 }
 
 #[no_mangle]
-pub extern fn kentry(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
-    let boot_info: &handoff::BootInfo = unsafe { &*boot_infop };
-    let mbinfo: &multiboot::Info = unsafe { &*mbinfop };
-    assert!(mbinfo.flags & multiboot::INFO_FLAG_MMAP > 0);
+pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+    let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
 
     log_terminal("Memory map:");
-    let mem_map = unsafe { &*(boot_info.mem_map_addr as *const memory::MemoryMap) };
+    let mem_map = &boot_info.mem_map;
     for i in 0..mem_map.num_entries as usize {
         let entry = &mem_map.entries[i];
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
 
-    // Calculate extent of kernel in memory.
-    let (kernel_lower, kernel_upper) = kernel_image_bounds(&mbinfo);
-    write_terminal(format_args!("Kernel starts at {:x} and ends at {:x}.", kernel_lower, kernel_upper));
-    mm::init(mbinfo);
+    mm::init(mem_map.clone());
 
     let frame1 = mm::get_frame_allocator().get_frame();
     let frame2 = mm::get_frame_allocator().get_frame();
     write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
 
-    loop { }
+    paging::map_to(paging::Page(0), paging::Frame(0), 0b1010, mm::get_frame_allocator());
+
+    loop { unsafe { asm!("hlt"); } }
 }

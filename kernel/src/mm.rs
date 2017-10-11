@@ -19,23 +19,14 @@ static mut FRAME_ALLOCATOR: FrameAllocator = FrameAllocator {
 static mut INITIALIZED: bool = false;
 
 // Public interface for initializing memory manager.
-pub fn init(mbinfo: &multiboot::Info) {
+pub fn init(mem_map: MemoryMap) {
     if unsafe { INITIALIZED } {
         panic!("init called when already initialized.");
     }
 
-    let (_, kernel_end) = {
-        let symtab_info = multiboot::get_section_header_table_info(mbinfo);
-        (0..symtab_info.entry_count)
-            .map(|ndx| unsafe { elf::get_section_header(symtab_info.addr, symtab_info.entry_size, ndx) })
-            .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
-            .filter(|&(lower, upper)| upper - lower > 0)
-            .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)))
-    };
-
     // Set up memory map.
     unsafe {
-        MEMORY_MAP = MemoryMap::from_multiboot(mbinfo);
+        MEMORY_MAP = mem_map;
     }
 
     // Initialize frame allocator.

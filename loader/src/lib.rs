@@ -215,9 +215,8 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
 
     let mem_map_start = &mem_map as *const _ as u64;
-    mem_map.reserve(mem_map_start, size_of::<memory::MemoryMap>() as u64);
+    let mut mem_map_for_kernel = mem_map.clone();
     mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
-    let mem_map_for_kernel = mem_map.clone();
     mem_map.reserve(loader_extent.0, loader_extent.1);
     mem_map.reserve(0, 0x100000);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
@@ -226,11 +225,17 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     }
     let mut alloc = memory::FrameAllocator::new(&mem_map);
 
+    // Track region of memory used for kernel and paging tables.
+    let kernel_begin = alloc.next_frame();
+
     // Set up paging for kernel.
     let mut addr_space = paging::AddrSpace::new(&mut alloc);
     map_kernel(kernel_mod.data, &mut addr_space, &mut alloc);
     // Identity map first 16 MiB
     map_identity(0, 4096, &mut addr_space, &mut alloc);
+
+    let kernel_end = alloc.next_frame();
+    mem_map_for_kernel.reserve(kernel_begin as u64, (kernel_end - kernel_begin) as u64);
 
     // Switch to 64 bit and call kernel.
     let mbinfo_addr = mbinfop as u64;
@@ -238,7 +243,7 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     let kernel_entry_addr = elf_header.entry;
 
     let boot_info = handoff::BootInfo {
-        mem_map_addr: &mem_map_for_kernel as *const _ as u64,
+        mem_map: mem_map_for_kernel,
     };
 
     write_terminal(format_args!("{:x}", kernel_entry_addr));

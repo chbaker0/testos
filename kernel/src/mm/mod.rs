@@ -8,6 +8,10 @@ pub use shared::memory::MemoryMap;
 
 static mut INITIALIZED: bool = false;
 
+// Virtual memory map:
+//   0xffff_ff00_0000_0000 - 0xffff_ff7f_ffff_ffff: Recursive page mapping
+//   0xffff_ffff_8000_0000 - 0xffff_ffff_ffff_ffff: Kernel image
+
 // Public interface for initializing memory manager.
 pub fn init(mem_map: MemoryMap) {
     if unsafe { INITIALIZED } {

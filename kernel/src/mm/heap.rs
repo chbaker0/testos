@@ -1,7 +1,9 @@
 use super::FrameAllocator;
 use super::paging;
+use super::physmem;
 
 use core::mem;
+use spin;
 
 pub const HEAP_START_ADDR: usize = 0xffff_fe80_0000_0000;
 pub const HEAP_END_ADDR: usize = 0xffff_ff00_0000_0000;
@@ -53,5 +55,16 @@ impl Heap {
     }
 }
 
+static HEAP: spin::Mutex<Heap> = spin::Mutex::new(Heap::new(HEAP_START_ADDR, HEAP_END_ADDR));
+
+pub fn allocate_raw(size: usize, align: usize) -> *mut u8 {
+    HEAP.lock().allocate_raw(size, align, physmem::get_frame_allocator())
+}
+
+pub fn allocate<T>() -> *mut T {
+    HEAP.lock().allocate(physmem::get_frame_allocator())
+}
+
 pub fn init() {
+    // Do nothing for now.
 }

@@ -9,6 +9,7 @@
 extern crate lazy_static;
 extern crate rlibc;
 extern crate shared;
+extern crate spin;
 extern crate x86_64;
 
 use core::cell;

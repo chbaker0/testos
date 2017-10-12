@@ -2,6 +2,8 @@ mod heap;
 mod paging;
 mod physmem;
 
+pub use self::paging::Frame;
+pub use self::paging::Page;
 pub use self::paging::map_to;
 pub use self::physmem::get_frame_allocator;
 pub use shared::memory::FrameAllocator;

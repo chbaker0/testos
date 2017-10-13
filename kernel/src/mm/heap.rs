@@ -35,7 +35,7 @@ impl Heap {
             };
 
         self.cur_addr = addr + size;
-        while self.cur_addr < self.cur_break {
+        while self.cur_addr > self.cur_break {
             self.add_page(alloc);
         }
 

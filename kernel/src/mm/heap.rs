@@ -51,6 +51,34 @@ impl Heap {
         alloc_size <= aligned_size
     }
 
+    fn insert_block_at(&mut self, addr: usize, size: usize, prev: *mut BlockHeader) {
+        assert!(size >= mem::size_of::<BlockHeader>());
+        let block_header = addr as *mut BlockHeader;
+        let next_block =
+            if prev == null_mut() {
+                null_mut()
+            } else {
+                unsafe { (*prev).next }
+            };
+
+        unsafe { *block_header = BlockHeader {size: size, next: next_block} };
+        if prev == null_mut() {
+            self.list_head = block_header
+        } else {
+            unsafe { (*prev).next = block_header };
+        }
+    }
+
+    fn remove_block(&mut self, block: *mut BlockHeader, prev: *mut BlockHeader) {
+        assert!(block != null_mut());
+        let next = unsafe { (*block).next };
+        if prev == null_mut() {
+            self.list_head = next;
+        } else {
+            unsafe { (*prev).next = next};
+        }
+    }
+
     fn allocate_raw(&mut self, size: usize, align: usize, alloc: &mut FrameAllocator) -> *mut u8 {
         assert!(align <= paging::PAGE_SIZE);
         let header_size = mem::size_of::<BlockHeader>().next_power_of_two();
@@ -72,28 +100,13 @@ impl Heap {
             // We found a block, use it.
             let addr = block as usize;
             let block_size = unsafe { (*block).size };
-            let next_block = unsafe { (*block).next };
             assert!(block_size >= aligned_size);
+
+            self.remove_block(block, prev_block);
 
             let space_left = block_size - aligned_size;
             if space_left >= header_size {
-                let new_block = (addr + aligned_size) as *mut BlockHeader;
-                unsafe {
-                    *new_block = BlockHeader {size: space_left, next: next_block};
-                    if prev_block != null_mut() {
-                        (*prev_block).next = new_block;
-                    } else {
-                        self.list_head = new_block;
-                    }
-                }
-            } else {
-                unsafe {
-                    if prev_block != null_mut() {
-                        (*prev_block).next = next_block;
-                    } else {
-                        self.list_head = next_block;
-                    }
-                }
+                self.insert_block_at(addr + aligned_size, space_left, prev_block);
             }
 
             addr as *mut u8
@@ -108,15 +121,7 @@ impl Heap {
 
             let space_left = pages * paging::PAGE_SIZE - aligned_size;
             if space_left >= header_size {
-                let new_block = (addr + aligned_size) as *mut BlockHeader;
-                unsafe {
-                    *new_block = BlockHeader {size: space_left, next: null_mut()};
-                    if prev_block != null_mut() {
-                        (*prev_block).next = new_block;
-                    } else {
-                        self.list_head = new_block;
-                    }
-                }
+                self.insert_block_at(addr + aligned_size, space_left, prev_block);
             }
 
             addr as *mut u8

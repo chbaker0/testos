@@ -1,14 +1,20 @@
 #![feature(abi_x86_interrupt)]
+#![feature(alloc)]
+#![feature(allocator_api)]
 #![feature(asm)]
 #![feature(const_fn)]
+#![feature(global_allocator)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![no_std]
 
 #[macro_use]
+extern crate alloc;
+#[macro_use]
 extern crate lazy_static;
 extern crate rlibc;
 extern crate shared;
+extern crate spin;
 extern crate x86_64;
 
 use core::cell;
@@ -23,6 +29,9 @@ mod mm;
 mod interrupts;
 mod terminal;
 mod vga;
+
+#[global_allocator]
+static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 
 // C kernel functions.
 extern {

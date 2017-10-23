@@ -13,6 +13,7 @@ crate-type = ["staticlib"]
 rlibc = "^1"
 x86_64 = "0.1.2"
 shared = { path = "../shared" }
+spin = "0.4.6"
 
 [dependencies.lazy_static]
 version = "0.2.4"

@@ -1,6 +1,7 @@
 use shared;
 use shared::memory::FrameAllocator;
 
+pub use shared::memory::PAGE_SIZE;
 pub use shared::paging::Frame;
 pub use shared::paging::Page;
 use shared::paging::Level4;

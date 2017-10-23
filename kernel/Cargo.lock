@@ -5,6 +5,7 @@ dependencies = [
  "lazy_static 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "shared 0.0.1",
+ "spin 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86_64 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

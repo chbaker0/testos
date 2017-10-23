@@ -2,10 +2,7 @@ mod heap;
 mod paging;
 mod physmem;
 
-pub use self::heap::allocate;
-pub use self::heap::allocate_raw;
-pub use self::heap::deallocate;
-pub use self::heap::deallocate_raw;
+pub use self::heap::GlobalAllocator;
 pub use self::paging::Frame;
 pub use self::paging::Page;
 pub use self::paging::map_to;

@@ -2,6 +2,9 @@ use super::FrameAllocator;
 use super::paging;
 use super::physmem;
 
+use alloc::allocator::Alloc;
+use alloc::allocator::AllocErr;
+use alloc::allocator::Layout;
 use core::mem;
 use core::ptr::null_mut;
 use spin;
@@ -36,7 +39,7 @@ struct BlockHeader {
 unsafe impl Send for BlockHeader {}
 
 impl Heap {
-    const fn new(start_addr: usize, end_addr: usize) -> Heap {
+    pub const fn new(start_addr: usize, end_addr: usize) -> Heap {
         Heap {
             start_addr: start_addr,
             end_addr: end_addr,
@@ -180,22 +183,22 @@ impl Heap {
     }
 }
 
-static HEAP: spin::Mutex<Heap> = spin::Mutex::new(Heap::new(HEAP_START_ADDR, HEAP_END_ADDR));
+pub struct GlobalAllocator(spin::Mutex<Heap>);
 
-pub fn allocate_raw(size: usize, align: usize) -> *mut u8 {
-    HEAP.lock().allocate_raw(size, align, physmem::get_frame_allocator())
+impl GlobalAllocator {
+    pub const unsafe fn new() -> GlobalAllocator {
+        GlobalAllocator(spin::Mutex::new(Heap::new(HEAP_START_ADDR, HEAP_END_ADDR)))
+    }
 }
 
-pub fn allocate<T>() -> *mut T {
-    HEAP.lock().allocate(physmem::get_frame_allocator())
-}
+unsafe impl<'a> Alloc for &'a GlobalAllocator {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        Ok(self.0.lock().allocate_raw(layout.size(), layout.align(), physmem::get_frame_allocator()))
+    }
 
-pub fn deallocate_raw(ptr: *mut u8, size: usize, align: usize) {
-    HEAP.lock().deallocate(ptr, size, align);
-}
-
-pub fn deallocate<T>(ptr: *mut T) {
-    HEAP.lock().deallocate(ptr as *mut u8, mem::size_of::<T>(), mem::align_of::<T>());
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        self.0.lock().deallocate(ptr, layout.size(), layout.align());
+    }
 }
 
 pub fn init() {

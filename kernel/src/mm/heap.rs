@@ -13,7 +13,6 @@ pub const HEAP_START_ADDR: usize = 0xffff_fe80_0000_0000;
 pub const HEAP_END_ADDR: usize = 0xffff_ff00_0000_0000;
 
 struct Heap {
-    start_addr: usize,
     end_addr: usize,
     cur_break: usize,
     list_head: *mut BlockHeader,
@@ -41,7 +40,6 @@ unsafe impl Send for BlockHeader {}
 impl Heap {
     pub const fn new(start_addr: usize, end_addr: usize) -> Heap {
         Heap {
-            start_addr: start_addr,
             end_addr: end_addr,
             cur_break: start_addr,
             list_head: null_mut(),
@@ -176,6 +174,9 @@ impl Heap {
                        paging::Frame((addr / paging::PAGE_SIZE) as u64),
                        0b1010, alloc);
         self.cur_break += paging::PAGE_SIZE;
+        if self.cur_break > self.end_addr {
+            panic!("Ran out of virtual address space for heap.")
+        }
     }
 }
 

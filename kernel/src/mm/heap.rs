@@ -194,6 +194,14 @@ pub fn allocate<T>() -> *mut T {
     HEAP.lock().allocate(physmem::get_frame_allocator())
 }
 
+pub fn deallocate_raw(ptr: *mut u8, size: usize, align: usize) {
+    HEAP.lock().deallocate(ptr, size, align);
+}
+
+pub fn deallocate<T>(ptr: *mut T) {
+    HEAP.lock().deallocate(ptr as *mut u8, mem::size_of::<T>(), mem::align_of::<T>());
+}
+
 pub fn init() {
     // Do nothing for now.
 }

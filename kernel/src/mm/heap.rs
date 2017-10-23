@@ -180,11 +180,7 @@ impl Heap {
     }
 }
 
-lazy_static! {
-    static ref HEAP: spin::Mutex<Heap> = {
-        spin::Mutex::new(Heap::new(HEAP_START_ADDR, HEAP_END_ADDR))
-    };
-}
+static HEAP: spin::Mutex<Heap> = spin::Mutex::new(Heap::new(HEAP_START_ADDR, HEAP_END_ADDR));
 
 pub fn allocate_raw(size: usize, align: usize) -> *mut u8 {
     HEAP.lock().allocate_raw(size, align, physmem::get_frame_allocator())

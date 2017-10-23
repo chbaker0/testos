@@ -79,7 +79,7 @@ impl core::fmt::Write for TermWriter {
 
 fn write_terminal(args: core::fmt::Arguments) {
     let mut term_writer = TermWriter::new();
-    write(&mut term_writer, args);
+    let _ = write(&mut term_writer, args);
     term_writer.flush();
 }
 
@@ -87,8 +87,8 @@ fn write_terminal(args: core::fmt::Arguments) {
 #[no_mangle]
 pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
     let mut term_writer = TermWriter::new();
-    write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
-    write(&mut term_writer, panic_args);
+    let _ = write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
+    let _ = write(&mut term_writer, panic_args);
     term_writer.flush();
 
     loop { }

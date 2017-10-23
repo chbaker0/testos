@@ -8,7 +8,6 @@
 #![feature(lang_items)]
 #![no_std]
 
-#[macro_use]
 extern crate alloc;
 #[macro_use]
 extern crate lazy_static;
@@ -77,7 +76,7 @@ impl core::fmt::Write for BufWriter {
 
 fn write_terminal(args: core::fmt::Arguments) {
     let mut buf_writer = BufWriter::new();
-    write(&mut buf_writer, args);
+    let _ = write(&mut buf_writer, args);
     buf_writer.buffer[79] = 0;
 
     match from_utf8(&buf_writer.buffer) {
@@ -90,8 +89,8 @@ fn write_terminal(args: core::fmt::Arguments) {
 #[no_mangle]
 pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
     let mut buf_writer = BufWriter::new();
-    write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
-    write(&mut buf_writer, panic_args);
+    let _ = write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
+    let _ = write(&mut buf_writer, panic_args);
     buf_writer.buffer[79] = 0;
 
     match from_utf8(&buf_writer.buffer) {
@@ -103,7 +102,7 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
 }
 
 #[no_mangle]
-pub extern fn kinit(mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
 
     log_terminal("Memory map:");

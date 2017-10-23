@@ -128,6 +128,45 @@ impl Heap {
         }
     }
 
+    fn try_merge_with_next(&mut self, block: *mut BlockHeader) {
+        let size = unsafe { (*block).size };
+        let next = unsafe { (*block).next };
+        if next != null_mut() && (block as usize) + size == (next as usize) {
+            unsafe {
+                (*block).size += (*next).size;
+                (*block).next = (*next).next;
+            }
+        }
+    }
+
+    fn deallocate(&mut self, ptr: *mut u8, size: usize, align: usize) {
+        let header_size = mem::size_of::<BlockHeader>().next_power_of_two();
+        let aligned_size = align_up(size, header_size);
+
+        // Find blocks before and after newly freed block.
+        let mut next_block = self.list_head;
+        let mut prev_block = null_mut();
+        while next_block != null_mut() && (next_block as usize) < (ptr as usize) {
+            prev_block = next_block;
+            next_block = unsafe { (*next_block).next };
+        }
+
+        // Insert new block into linked list.
+        let block = ptr as *mut BlockHeader;
+        unsafe { (*block) = BlockHeader{size: aligned_size, next: next_block}; }
+        if prev_block == null_mut() {
+            self.list_head = block;
+        } else {
+            unsafe { (*prev_block).next = block; }
+        }
+
+        // Merge free blocks
+        self.try_merge_with_next(block);
+        if prev_block != null_mut() {
+            self.try_merge_with_next(prev_block);
+        }
+    }
+
     fn allocate<T>(&mut self, alloc: &mut FrameAllocator) -> *mut T {
         self.allocate_raw(mem::size_of::<T>(), mem::align_of::<T>(), alloc) as *mut T
     }

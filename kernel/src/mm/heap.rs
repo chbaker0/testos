@@ -82,7 +82,7 @@ impl Heap {
         }
     }
 
-    fn allocate_raw(&mut self, size: usize, align: usize, alloc: &mut FrameAllocator) -> *mut u8 {
+    fn allocate(&mut self, size: usize, align: usize, alloc: &mut FrameAllocator) -> *mut u8 {
         assert!(align <= paging::PAGE_SIZE);
         let header_size = mem::size_of::<BlockHeader>().next_power_of_two();
         let aligned_size = align_up(size, header_size);
@@ -142,7 +142,7 @@ impl Heap {
         }
     }
 
-    fn deallocate(&mut self, ptr: *mut u8, size: usize, align: usize) {
+    fn deallocate(&mut self, ptr: *mut u8, size: usize, _align: usize) {
         let header_size = mem::size_of::<BlockHeader>().next_power_of_two();
         let aligned_size = align_up(size, header_size);
 
@@ -170,10 +170,6 @@ impl Heap {
         }
     }
 
-    fn allocate<T>(&mut self, alloc: &mut FrameAllocator) -> *mut T {
-        self.allocate_raw(mem::size_of::<T>(), mem::align_of::<T>(), alloc) as *mut T
-    }
-
     fn add_page(&mut self, alloc: &mut FrameAllocator) {
         let addr = alloc.get_frame();
         paging::map_to(paging::Page((self.cur_break / paging::PAGE_SIZE) as u64),
@@ -193,7 +189,7 @@ impl GlobalAllocator {
 
 unsafe impl<'a> Alloc for &'a GlobalAllocator {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
-        Ok(self.0.lock().allocate_raw(layout.size(), layout.align(), physmem::get_frame_allocator()))
+        Ok(self.0.lock().allocate(layout.size(), layout.align(), physmem::get_frame_allocator()))
     }
 
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {

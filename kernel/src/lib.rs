@@ -4,7 +4,6 @@
 #![feature(asm)]
 #![feature(const_fn)]
 #![feature(global_allocator)]
-#![feature(heap_api)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![no_std]

@@ -113,13 +113,7 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     }
 
     interrupts::init();
-
     mm::init(mem_map.clone());
-
-    let frame1 = mm::get_frame_allocator().get_frame();
-    let frame2 = mm::get_frame_allocator().get_frame();
-    write_terminal(format_args!("Allocated frames at {:x} and {:x}.", frame1, frame2));
-
     acpi::init();
 
     loop { unsafe { asm!("hlt"); } }

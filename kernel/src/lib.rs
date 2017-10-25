@@ -3,6 +3,8 @@
 #![feature(allocator_api)]
 #![feature(asm)]
 #![feature(const_fn)]
+#![feature(const_ptr_null_mut)]
+#![feature(const_refcell_new)]
 #![feature(global_allocator)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]

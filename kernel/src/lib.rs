@@ -8,9 +8,12 @@
 #![feature(global_allocator)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
+#![feature(unique)]
 #![no_std]
 
 extern crate alloc;
+#[macro_use]
+extern crate intrusive_collections;
 #[macro_use]
 extern crate lazy_static;
 extern crate rlibc;

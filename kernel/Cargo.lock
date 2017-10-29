@@ -2,6 +2,7 @@
 name = "kernel"
 version = "0.0.1"
 dependencies = [
+ "intrusive-collections 0.6.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "shared 0.0.1",
@@ -12,6 +13,11 @@ dependencies = [
 [[package]]
 name = "bit_field"
 version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "intrusive-collections"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -46,6 +52,7 @@ dependencies = [
 
 [metadata]
 "checksum bit_field 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ff91a64014e1bc53bf643920f2c9ab5f0980d92a0948295f3ee550e9266849ad"
+"checksum intrusive-collections 0.6.8 (registry+https://github.com/rust-lang/crates.io-index)" = "189387e393be1481c3db7bbe333d387e0372945411f7f9744f0388449724f533"
 "checksum lazy_static 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)" = "c9e5e58fa1a4c3b915a561a78a22ee0cac6ab97dca2504428bc1cb074375f8d5"
 "checksum rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fc874b127765f014d792f16763a81245ab80500e2ad921ed4ee9e82481ee08fe"
 "checksum spin 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)" = "7e4deb3c2455c73779e6d3eebceae9599fc70957e54c69fe88f93aa48e62f432"

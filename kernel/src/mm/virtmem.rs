@@ -104,6 +104,27 @@ impl AddressSpace {
         }
     }
 
+    pub fn allocate(&mut self, size: u64) -> Result<u64, ()> {
+        assert!(size > 0);
+        let mut cur = self.free_list.cursor_mut();
+        cur.move_next();
+        while !cur.is_null() {
+            let ref region = cur.get().unwrap();
+            if region.last_addr.get() - region.first_addr.get() + 1 > size {
+                let old = region.first_addr.get();
+                region.first_addr.set(old + size);
+                return Ok(old);
+            } else if region.last_addr.get() - region.first_addr.get() + 1 == size {
+                let old = region.first_addr.get();
+                cur.remove();
+                return Ok(old);
+            }
+            cur.move_next();
+        }
+
+        Err(())
+    }
+
     pub fn iter(&self) -> linked_list::Iter<RegionAdapter> {
         self.free_list.iter()
     }

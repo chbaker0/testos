@@ -1,14 +1,7 @@
-use alloc::allocator::Alloc;
 use alloc::boxed::Box;
-use alloc::heap::Heap;
 use core::cell::Cell;
-use core::option::Option;
-use core::ptr::null_mut;
-use core::ptr::Unique;
 use intrusive_collections::{LinkedList, LinkedListLink};
 use intrusive_collections::linked_list;
-
-use ::ALLOCATOR;
 
 pub struct AddressSpace {
     free_list: LinkedList<RegionAdapter>,

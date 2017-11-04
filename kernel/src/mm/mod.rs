@@ -56,5 +56,5 @@ pub fn init(mem_map: MemoryMap) {
 
 pub fn allocate_address_space(num_pages: u64) -> Result<u64, ()> {
     let mut addr_space = KERNEL_ADDR_SPACE.lock();
-    addr_space.allocate(num_pages);
+    addr_space.allocate(num_pages)
 }

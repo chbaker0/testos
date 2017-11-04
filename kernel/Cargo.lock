@@ -1,4 +1,14 @@
-[root]
+[[package]]
+name = "bit_field"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "intrusive-collections"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "kernel"
 version = "0.0.1"
 dependencies = [
@@ -9,16 +19,6 @@ dependencies = [
  "spin 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86_64 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "bit_field"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "intrusive-collections"
-version = "0.6.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "lazy_static"

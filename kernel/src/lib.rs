@@ -40,6 +40,7 @@ static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 // C kernel functions.
 extern {
     pub fn print_line(str: *const u8);
+    pub fn switch_stacks(func: extern fn() -> !, stack: *mut u8) -> !;
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
@@ -106,13 +107,15 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
     loop { unsafe { asm!("hlt"); } }
 }
 
-const STACK_PAGES = 1024;
+const STACK_PAGES: u64 = 1024;
 
 fn allocate_kernel_stack() -> *mut u8 {
     let first_page = mm::allocate_address_space(STACK_PAGES).unwrap();
     for i in 0..STACK_PAGES {
         let frame = mm::get_frame_allocator().get_frame() as u64;
+        mm::map_to(mm::Page(first_page + i), mm::Frame(frame >> 12), 0b1001, mm::get_frame_allocator());
     }
+    ((first_page + STACK_PAGES) << 12) as *mut u8
 }
 
 #[no_mangle]
@@ -129,6 +132,13 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     interrupts::init();
     mm::init(mem_map.clone());
     acpi::init();
+
+    let stack = allocate_kernel_stack();
+    unsafe { switch_stacks(kmain, stack); }
+}
+
+pub extern fn kmain() -> ! {
+    write_terminal(format_args!("In kmain"));
 
     loop { unsafe { asm!("hlt"); } }
 }

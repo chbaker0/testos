@@ -10,6 +10,10 @@ kernel_stack_end:
 
 section .text
 
+hang:
+    hlt
+    jmp hang
+
 extern kinit
 global kentry
 kentry:
@@ -18,6 +22,11 @@ kentry:
 
     call kinit
 
-.hang:
-    hlt
-    jmp .hang
+    jmp hang
+
+global switch_stacks
+switch_stacks:
+    ; Parameters: function pointer, stack pointer
+    mov rbp, rsi
+    mov rsp, rsi
+    call rdi

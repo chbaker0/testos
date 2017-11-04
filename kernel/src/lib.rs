@@ -106,6 +106,15 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
     loop { unsafe { asm!("hlt"); } }
 }
 
+const STACK_PAGES = 1024;
+
+fn allocate_kernel_stack() -> *mut u8 {
+    let first_page = mm::allocate_address_space(STACK_PAGES).unwrap();
+    for i in 0..STACK_PAGES {
+        let frame = mm::get_frame_allocator().get_frame() as u64;
+    }
+}
+
 #[no_mangle]
 pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };

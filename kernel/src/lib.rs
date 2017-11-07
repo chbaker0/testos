@@ -24,7 +24,6 @@ extern crate x86_64;
 use core::cell;
 use core::fmt::write;
 use core::ops::DerefMut;
-use core::ptr::null_mut;
 use core::str::from_utf8;
 use shared::handoff;
 use shared::multiboot;
@@ -42,8 +41,6 @@ static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 // C kernel functions.
 extern {
     pub fn print_line(str: *const u8);
-    pub fn context_init(stack: *mut u8, entry: extern fn() -> !) -> *mut u8;
-    pub fn context_switch(stack: *mut u8, stack: *mut *mut u8);
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
@@ -112,15 +109,6 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
 
 const STACK_PAGES: u64 = 1024;
 
-fn allocate_kernel_stack() -> *mut u8 {
-    let first_page = mm::allocate_address_space(STACK_PAGES).unwrap();
-    for i in 0..STACK_PAGES {
-        let frame = mm::get_frame_allocator().get_frame() as u64;
-        mm::map_to(mm::Page(first_page + i), mm::Frame(frame >> 12), 0b1001, mm::get_frame_allocator());
-    }
-    ((first_page + STACK_PAGES) << 12) as *mut u8
-}
-
 #[no_mangle]
 pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
@@ -136,12 +124,8 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     mm::init(mem_map.clone());
     acpi::init();
 
-    let stack = allocate_kernel_stack();
-    unsafe {
-        let adj_stack = context_init(stack, kmain);
-        let mut old_stack = null_mut();
-        context_switch(adj_stack, &mut old_stack as *mut _);
-    }
+    let mut kernel_context = context::Context::new(STACK_PAGES, kmain);
+    kernel_context.switch_to_nosave();
 
     panic!("Context switched back to kinit");
 }

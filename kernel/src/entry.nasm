@@ -24,8 +24,8 @@ kentry:
 
     jmp hang
 
-global context_init
-context_init:
+global context_init_asm
+context_init_asm:
     ; Parameters: new context's stack pointer, entry point
     ; Returns: modified stack pointer
 
@@ -47,8 +47,8 @@ context_init:
 
     ret
 
-global context_switch
-context_switch:
+global context_switch_asm
+context_switch_asm:
     ; Parameters: stack pointer, pointer to location to store old stack pointer
 
     ; Save current context's registers

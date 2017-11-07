@@ -24,11 +24,13 @@ extern crate x86_64;
 use core::cell;
 use core::fmt::write;
 use core::ops::DerefMut;
+use core::ptr::null_mut;
 use core::str::from_utf8;
 use shared::handoff;
 use shared::multiboot;
 
 mod acpi;
+mod context;
 mod mm;
 mod interrupts;
 mod terminal;
@@ -40,7 +42,8 @@ static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 // C kernel functions.
 extern {
     pub fn print_line(str: *const u8);
-    pub fn switch_stacks(func: extern fn() -> !, stack: *mut u8) -> !;
+    pub fn context_init(stack: *mut u8, entry: extern fn() -> !) -> *mut u8;
+    pub fn context_switch(stack: *mut u8, stack: *mut *mut u8);
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
@@ -134,7 +137,13 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     acpi::init();
 
     let stack = allocate_kernel_stack();
-    unsafe { switch_stacks(kmain, stack); }
+    unsafe {
+        let adj_stack = context_init(stack, kmain);
+        let mut old_stack = null_mut();
+        context_switch(adj_stack, &mut old_stack as *mut _);
+    }
+
+    panic!("Context switched back to kinit");
 }
 
 pub extern fn kmain() -> ! {

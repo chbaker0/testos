@@ -6,9 +6,6 @@ extern {
 }
 
 pub struct Context {
-    stack_base: *mut u8,
-    stack_size: u64,
-
     rsp: u64,
 }
 
@@ -33,8 +30,6 @@ impl Context {
         };
 
         Context {
-            stack_base: stack_base,
-            stack_size: stack_size,
             rsp: rsp,
         }
     }

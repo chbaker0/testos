@@ -144,3 +144,24 @@ pub fn yield_cur() {
 
     unsafe { switch_to(ThreadStatus::Ready, next_id); }
 }
+
+pub fn block_cur() {
+    let next_id = {
+        let mut ready_queue = READY_QUEUE.lock();
+        ready_queue.pop_front().unwrap()
+    };
+
+    unsafe { switch_to(ThreadStatus::Blocked, next_id); }
+}
+
+pub fn unblock(id: u64) {
+    {
+        let mut threads = THREADS.lock();
+        let thread = threads.get_mut(id).unwrap();
+        assert!(thread.status == ThreadStatus::Blocked);
+        thread.status = ThreadStatus::Ready;
+    }
+
+    let mut ready_queue = READY_QUEUE.lock();
+    ready_queue.push_back(id);
+}

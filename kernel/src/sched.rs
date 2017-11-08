@@ -8,6 +8,7 @@ use spin::Mutex;
 
 use context::Context;
 
+#[derive(PartialEq, Eq)]
 enum ThreadStatus {
     Running,
     Ready,
@@ -98,7 +99,7 @@ pub fn init() {
 // Switches from current thread to new thread with ID
 // `next_id`. Caller must ensure neither thread will be removed from
 // the thread list.
-unsafe fn switch_to(next_id: u64) {
+unsafe fn switch_to(new_status: ThreadStatus, next_id: u64) {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
     assert!(cur_id != next_id);
 
@@ -112,7 +113,8 @@ unsafe fn switch_to(next_id: u64) {
 
     THREAD_ID.store(next_id, Ordering::SeqCst);
 
-    (*cur_ptr).status = ThreadStatus::Ready;
+    assert!((*next_ptr).status == ThreadStatus::Ready);
+    (*cur_ptr).status = new_status;
     (*next_ptr).status = ThreadStatus::Running;
     (*cur_ptr).context.switch(&mut (*next_ptr).context);
 }
@@ -140,11 +142,5 @@ pub fn yield_cur() {
         ready_queue.pop_front().unwrap()
     };
 
-    {
-        let mut threads = THREADS.lock();
-        threads.get_mut(cur_id).unwrap().status = ThreadStatus::Ready;
-        threads.get_mut(cur_id).unwrap().status = ThreadStatus::Running;
-    }
-
-    unsafe { switch_to(next_id); }
+    unsafe { switch_to(ThreadStatus::Ready, next_id); }
 }

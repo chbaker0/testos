@@ -126,16 +126,31 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     acpi::init();
 
     sched::init();
-    let new_tid = sched::spawn(kmain);
-    unsafe { sched::yield_cur(); }
+    let new_tid = sched::spawn(thread1);
+    sched::spawn(thread2);
+    sched::spawn(thread3);
+    loop { sched::yield_cur(); }
 
     panic!("Context switched back to kinit");
 }
 
-pub extern fn kmain() -> ! {
-    write_terminal(format_args!("In kmain"));
+pub extern fn thread1() -> ! {
+    loop {
+        write_terminal(format_args!("1"));
+        sched::yield_cur();
+    }
+}
 
-    sched::yield_cur();
+pub extern fn thread2() -> ! {
+    loop {
+        write_terminal(format_args!("2"));
+        sched::yield_cur();
+    }
+}
 
-    loop { unsafe { asm!("hlt"); } }
+pub extern fn thread3() -> ! {
+    loop {
+        write_terminal(format_args!("3"));
+        sched::yield_cur();
+    }
 }

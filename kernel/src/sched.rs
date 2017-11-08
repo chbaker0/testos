@@ -1,5 +1,4 @@
 use core::ops::DerefMut;
-use core::ptr::null_mut;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc::boxed::Box;
@@ -97,8 +96,8 @@ pub fn init() {
 pub unsafe fn switch_to(next_id: u64) {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
-    let mut cur_ptr: *mut ThreadInfo = null_mut();
-    let mut next_ptr: *mut ThreadInfo = null_mut();
+    let cur_ptr: *mut ThreadInfo;
+    let next_ptr: *mut ThreadInfo;
     {
         let mut threads = THREADS.lock();
         cur_ptr = threads.get_mut(cur_id).unwrap().deref_mut() as *mut ThreadInfo;

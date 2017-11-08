@@ -3,6 +3,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc::boxed::Box;
 use alloc::btree_map::BTreeMap;
+use alloc::vec_deque::VecDeque;
 use spin::Mutex;
 
 use context::Context;
@@ -75,6 +76,10 @@ lazy_static! {
     static ref THREADS: Mutex<ThreadList> = {
         Mutex::new(ThreadList::new())
     };
+
+    static ref READY_QUEUE: Mutex<VecDeque<u64>> = {
+        Mutex::new(VecDeque::new())
+    };
 }
 
 static THREAD_ID: AtomicU64 = AtomicU64::new(0);
@@ -112,6 +117,13 @@ pub unsafe fn switch_to(next_id: u64) {
 const STACK_PAGES: u64 = 64;
 
 pub fn spawn(entry: extern fn() -> !) -> u64 {
-    let mut threads = THREADS.lock();
-    threads.create_thread(STACK_PAGES, entry)
+    let id = {
+        let mut threads = THREADS.lock();
+        threads.create_thread(STACK_PAGES, entry)
+    };
+
+    let mut ready_queue = READY_QUEUE.lock();
+    ready_queue.push_back(id);
+
+    id
 }

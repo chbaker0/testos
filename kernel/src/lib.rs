@@ -2,10 +2,12 @@
 #![feature(alloc)]
 #![feature(allocator_api)]
 #![feature(asm)]
+#![feature(const_atomic_u64_new)]
 #![feature(const_fn)]
 #![feature(const_ptr_null_mut)]
 #![feature(const_refcell_new)]
 #![feature(global_allocator)]
+#![feature(integer_atomics)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![feature(unique)]
@@ -32,6 +34,7 @@ mod acpi;
 mod context;
 mod mm;
 mod interrupts;
+mod sched;
 mod terminal;
 mod vga;
 
@@ -107,8 +110,6 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
     loop { unsafe { asm!("hlt"); } }
 }
 
-const STACK_PAGES: u64 = 1024;
-
 #[no_mangle]
 pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
@@ -124,14 +125,17 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     mm::init(mem_map.clone());
     acpi::init();
 
-    let mut kernel_context = context::Context::new(STACK_PAGES, kmain);
-    kernel_context.switch_to_nosave();
+    sched::init();
+    let new_tid = sched::spawn(kmain);
+    unsafe { sched::switch_to(new_tid); }
 
     panic!("Context switched back to kinit");
 }
 
 pub extern fn kmain() -> ! {
     write_terminal(format_args!("In kmain"));
+
+    unsafe { sched::switch_to(1); }
 
     loop { unsafe { asm!("hlt"); } }
 }

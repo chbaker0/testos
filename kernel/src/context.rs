@@ -34,6 +34,12 @@ impl Context {
         }
     }
 
+    pub fn new_empty() -> Context {
+        Context {
+            rsp: 0,
+        }
+    }
+
     pub fn switch(&mut self, new_context: &mut Context) {
         unsafe {
             context_switch_asm(new_context.rsp, &mut self.rsp as *mut _);

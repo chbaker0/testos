@@ -105,6 +105,8 @@ pub unsafe fn switch_to(next_id: u64) {
         next_ptr = threads.get_mut(next_id).unwrap().deref_mut() as *mut ThreadInfo;
     };
 
+    (*cur_ptr).status = ThreadStatus::Ready;
+    (*next_ptr).status = ThreadStatus::Running;
     (*cur_ptr).context.switch(&mut (*next_ptr).context);
 }
 

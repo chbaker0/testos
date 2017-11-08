@@ -98,7 +98,7 @@ pub fn init() {
 // Switches from current thread to new thread with ID
 // `next_id`. Caller must ensure neither thread will be removed from
 // the thread list.
-pub unsafe fn switch_to(next_id: u64) {
+unsafe fn switch_to(next_id: u64) {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
     let cur_ptr: *mut ThreadInfo;
@@ -108,6 +108,8 @@ pub unsafe fn switch_to(next_id: u64) {
         cur_ptr = threads.get_mut(cur_id).unwrap().deref_mut() as *mut ThreadInfo;
         next_ptr = threads.get_mut(next_id).unwrap().deref_mut() as *mut ThreadInfo;
     };
+
+    THREAD_ID.store(next_id, Ordering::SeqCst);
 
     (*cur_ptr).status = ThreadStatus::Ready;
     (*next_ptr).status = ThreadStatus::Running;
@@ -126,4 +128,22 @@ pub fn spawn(entry: extern fn() -> !) -> u64 {
     ready_queue.push_back(id);
 
     id
+}
+
+pub fn yield_cur() {
+    let cur_id = THREAD_ID.load(Ordering::SeqCst);
+
+    let next_id = {
+        let mut ready_queue = READY_QUEUE.lock();
+        ready_queue.push_back(cur_id);
+        ready_queue.pop_front().unwrap()
+    };
+
+    {
+        let mut threads = THREADS.lock();
+        threads.get_mut(cur_id).unwrap().status = ThreadStatus::Ready;
+        threads.get_mut(cur_id).unwrap().status = ThreadStatus::Running;
+    }
+
+    unsafe { switch_to(next_id); }
 }

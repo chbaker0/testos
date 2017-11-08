@@ -127,7 +127,7 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
 
     sched::init();
     let new_tid = sched::spawn(kmain);
-    unsafe { sched::switch_to(new_tid); }
+    unsafe { sched::yield_cur(); }
 
     panic!("Context switched back to kinit");
 }
@@ -135,7 +135,7 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
 pub extern fn kmain() -> ! {
     write_terminal(format_args!("In kmain"));
 
-    unsafe { sched::switch_to(1); }
+    sched::yield_cur();
 
     loop { unsafe { asm!("hlt"); } }
 }

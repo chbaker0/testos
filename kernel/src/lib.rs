@@ -31,7 +31,6 @@ use shared::handoff;
 use shared::multiboot;
 
 mod acpi;
-mod context;
 mod mm;
 mod interrupts;
 mod sched;

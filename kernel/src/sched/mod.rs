@@ -1,3 +1,5 @@
+mod context;
+
 use core::ops::DerefMut;
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -6,7 +8,7 @@ use alloc::btree_map::BTreeMap;
 use alloc::vec_deque::VecDeque;
 use spin::Mutex;
 
-use context::Context;
+use self::context::Context;
 
 #[derive(PartialEq, Eq)]
 enum ThreadStatus {

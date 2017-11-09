@@ -126,31 +126,40 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     acpi::init();
 
     sched::init();
-    let new_tid = sched::spawn(thread1);
+    sched::spawn(thread1);
     sched::spawn(thread2);
     sched::spawn(thread3);
-    loop { sched::yield_cur(); }
+    loop {
+        sched::yield_cur();
+        SEMAPHORE.signal();
+    }
 
     panic!("Context switched back to kinit");
 }
 
+lazy_static! {
+    static ref SEMAPHORE: sync::Semaphore = {
+        sync::Semaphore::new(0)
+    };
+}
+
 pub extern fn thread1() -> ! {
     loop {
+        SEMAPHORE.wait();
         write_terminal(format_args!("1"));
-        sched::yield_cur();
     }
 }
 
 pub extern fn thread2() -> ! {
     loop {
+        SEMAPHORE.wait();
         write_terminal(format_args!("2"));
-        sched::yield_cur();
     }
 }
 
 pub extern fn thread3() -> ! {
     loop {
+        SEMAPHORE.wait();
         write_terminal(format_args!("3"));
-        sched::yield_cur();
     }
 }

@@ -13,7 +13,6 @@ use self::context::Context;
 #[derive(PartialEq, Eq)]
 enum ThreadStatus {
     Running,
-    Ready,
     Blocked,
 }
 
@@ -65,7 +64,7 @@ impl ThreadList {
 
         let thread_info = Box::new(ThreadInfo {
             id: id,
-            status: ThreadStatus::Ready,
+            status: ThreadStatus::Running,
             context: Context::new(stack_pages, entry),
         });
 
@@ -115,7 +114,7 @@ unsafe fn switch_to(new_status: ThreadStatus, next_id: u64) {
 
     THREAD_ID.store(next_id, Ordering::SeqCst);
 
-    assert!((*next_ptr).status == ThreadStatus::Ready);
+    assert!((*next_ptr).status == ThreadStatus::Running);
     (*cur_ptr).status = new_status;
     (*next_ptr).status = ThreadStatus::Running;
     (*cur_ptr).context.switch(&mut (*next_ptr).context);
@@ -144,7 +143,7 @@ pub fn yield_cur() {
         ready_queue.pop_front().unwrap()
     };
 
-    unsafe { switch_to(ThreadStatus::Ready, next_id); }
+    unsafe { switch_to(ThreadStatus::Running, next_id); }
 }
 
 pub fn block_cur() {
@@ -161,7 +160,7 @@ pub fn unblock(id: u64) {
         let mut threads = THREADS.lock();
         let thread = threads.get_mut(id).unwrap();
         assert!(thread.status == ThreadStatus::Blocked);
-        thread.status = ThreadStatus::Ready;
+        thread.status = ThreadStatus::Running;
     }
 
     let mut ready_queue = READY_QUEUE.lock();

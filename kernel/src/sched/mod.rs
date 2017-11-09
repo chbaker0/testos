@@ -10,7 +10,7 @@ use spin::Mutex;
 
 use self::context::Context;
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ThreadStatus {
     Running,
     Blocked,
@@ -137,9 +137,16 @@ pub fn spawn(entry: extern fn() -> !) -> u64 {
 pub fn yield_cur() {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
+    let cur_status = {
+        let mut threads = THREADS.lock();
+        threads.get(cur_id).unwrap().status
+    };
+
     let next_id = {
         let mut ready_queue = READY_QUEUE.lock();
-        ready_queue.push_back(cur_id);
+        if cur_status == ThreadStatus::Running {
+            ready_queue.push_back(cur_id);
+        }
         ready_queue.pop_front().unwrap()
     };
 
@@ -147,12 +154,10 @@ pub fn yield_cur() {
 }
 
 pub fn block_cur() {
-    let next_id = {
-        let mut ready_queue = READY_QUEUE.lock();
-        ready_queue.pop_front().unwrap()
-    };
+    let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
-    unsafe { switch_to(ThreadStatus::Blocked, next_id); }
+    let mut threads = THREADS.lock();
+    threads.get_mut(cur_id).unwrap().status = ThreadStatus::Blocked;
 }
 
 pub fn unblock(id: u64) {

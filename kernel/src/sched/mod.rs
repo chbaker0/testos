@@ -137,6 +137,10 @@ pub fn spawn(entry: extern fn() -> !) -> u64 {
     id
 }
 
+pub fn cur_thread() -> u64 {
+    THREAD_ID.load(Ordering::SeqCst)
+}
+
 pub fn yield_cur() {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
@@ -173,4 +177,12 @@ pub fn unblock(id: u64) {
 
     let mut ready_queue = READY_QUEUE.lock();
     ready_queue.push_back(id);
+}
+
+pub fn unblock_cur() {
+    let cur_id = THREAD_ID.load(Ordering::SeqCst);
+    let mut threads = THREADS.lock();
+    let thread = threads.get_mut(cur_id).unwrap();
+    assert!(thread.status == ThreadStatus::Blocked);
+    thread.status = ThreadStatus::Running;
 }

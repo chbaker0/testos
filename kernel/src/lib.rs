@@ -34,6 +34,7 @@ mod acpi;
 mod mm;
 mod interrupts;
 mod sched;
+mod sync;
 mod terminal;
 mod vga;
 

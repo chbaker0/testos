@@ -100,7 +100,7 @@ pub fn init() {
 // Switches from current thread to new thread with ID
 // `next_id`. Caller must ensure neither thread will be removed from
 // the thread list.
-unsafe fn switch_to(new_status: ThreadStatus, next_id: u64) {
+unsafe fn switch_to(next_id: u64) {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
 
     if cur_id == next_id {
@@ -118,8 +118,6 @@ unsafe fn switch_to(new_status: ThreadStatus, next_id: u64) {
     THREAD_ID.store(next_id, Ordering::SeqCst);
 
     assert!((*next_ptr).status == ThreadStatus::Running);
-    (*cur_ptr).status = new_status;
-    (*next_ptr).status = ThreadStatus::Running;
     (*cur_ptr).context.switch(&mut (*next_ptr).context);
 }
 
@@ -157,7 +155,7 @@ pub fn yield_cur() {
         ready_queue.pop_front().unwrap()
     };
 
-    unsafe { switch_to(ThreadStatus::Running, next_id); }
+    unsafe { switch_to(next_id); }
 }
 
 pub fn block_cur() {

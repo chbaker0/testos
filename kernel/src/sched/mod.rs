@@ -102,7 +102,10 @@ pub fn init() {
 // the thread list.
 unsafe fn switch_to(new_status: ThreadStatus, next_id: u64) {
     let cur_id = THREAD_ID.load(Ordering::SeqCst);
-    assert!(cur_id != next_id);
+
+    if cur_id == next_id {
+        return;
+    }
 
     let cur_ptr: *mut ThreadInfo;
     let next_ptr: *mut ThreadInfo;

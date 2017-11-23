@@ -17,7 +17,6 @@ enum ThreadStatus {
 }
 
 struct ThreadInfo {
-    id: u64,
     status: ThreadStatus,
     context: Context,
 }
@@ -48,7 +47,6 @@ impl ThreadList {
         self.next_id += 1;
 
         let thread_info = Box::new(ThreadInfo {
-            id: id,
             status: ThreadStatus::Running,
             context: Context::new_empty(),
         });
@@ -63,7 +61,6 @@ impl ThreadList {
         self.next_id += 1;
 
         let thread_info = Box::new(ThreadInfo {
-            id: id,
             status: ThreadStatus::Running,
             context: Context::new(stack_pages, entry),
         });

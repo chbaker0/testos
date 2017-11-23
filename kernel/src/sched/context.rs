@@ -45,11 +45,4 @@ impl Context {
             context_switch_asm(new_context.rsp, &mut self.rsp as *mut _);
         }
     }
-
-    pub fn switch_to_nosave(&mut self) {
-        let mut dummy: u64 = 0;
-        unsafe {
-            context_switch_asm(self.rsp, &mut dummy as *mut _);
-        }
-    }
 }

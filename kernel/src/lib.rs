@@ -2,10 +2,12 @@
 #![feature(alloc)]
 #![feature(allocator_api)]
 #![feature(asm)]
+#![feature(const_atomic_u64_new)]
 #![feature(const_fn)]
 #![feature(const_ptr_null_mut)]
 #![feature(const_refcell_new)]
 #![feature(global_allocator)]
+#![feature(integer_atomics)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
 #![feature(unique)]
@@ -31,6 +33,8 @@ use shared::multiboot;
 mod acpi;
 mod mm;
 mod interrupts;
+mod sched;
+mod sync;
 mod terminal;
 mod vga;
 
@@ -121,5 +125,41 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     mm::init(mem_map.clone());
     acpi::init();
 
-    loop { unsafe { asm!("hlt"); } }
+    sched::init();
+    sched::spawn(thread1);
+    sched::spawn(thread2);
+    sched::spawn(thread3);
+    loop {
+        sched::yield_cur();
+        SEMAPHORE.signal();
+    }
+
+    panic!("Context switched back to kinit");
+}
+
+lazy_static! {
+    static ref SEMAPHORE: sync::Semaphore = {
+        sync::Semaphore::new(0)
+    };
+}
+
+pub extern fn thread1() -> ! {
+    loop {
+        SEMAPHORE.wait();
+        write_terminal(format_args!("1"));
+    }
+}
+
+pub extern fn thread2() -> ! {
+    loop {
+        SEMAPHORE.wait();
+        write_terminal(format_args!("2"));
+    }
+}
+
+pub extern fn thread3() -> ! {
+    loop {
+        SEMAPHORE.wait();
+        write_terminal(format_args!("3"));
+    }
 }

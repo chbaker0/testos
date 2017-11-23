@@ -6,6 +6,7 @@ mod virtmem;
 pub use self::heap::GlobalAllocator;
 pub use self::paging::Frame;
 pub use self::paging::Page;
+pub use self::paging::PAGE_SIZE;
 pub use self::paging::map_to;
 pub use self::physmem::get_frame_allocator;
 pub use shared::memory::FrameAllocator;

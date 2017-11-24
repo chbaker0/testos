@@ -1,5 +1,5 @@
 mod heap;
-mod paging;
+pub mod paging;
 mod physmem;
 mod virtmem;
 

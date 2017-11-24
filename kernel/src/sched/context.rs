@@ -17,7 +17,7 @@ impl Context {
         let first_page = mm::allocate_address_space(stack_pages).unwrap();
         for i in 0..stack_pages {
             let frame = mm::get_frame_allocator().get_frame() as u64;
-            mm::map_to(mm::Page(first_page + i), mm::Frame(frame >> 12), 0b1001,
+            mm::map_to(mm::Page(first_page + i), mm::Frame(frame >> 12), mm::paging::PAGE_FLAG_WRITABLE,
                        mm::get_frame_allocator());
         }
 

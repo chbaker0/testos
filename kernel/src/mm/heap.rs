@@ -172,7 +172,7 @@ impl Heap {
         let addr = alloc.get_frame();
         paging::map_to(paging::Page((self.cur_break / paging::PAGE_SIZE) as u64),
                        paging::Frame((addr / paging::PAGE_SIZE) as u64),
-                       0b1010, alloc);
+                       paging::PAGE_FLAG_WRITABLE, alloc);
         self.cur_break += paging::PAGE_SIZE;
         if self.cur_break > self.end_addr {
             panic!("Ran out of virtual address space for heap.")

@@ -40,6 +40,10 @@ impl<L: HierarchicalLevel> Table<L>{
     }
 }
 
+pub const PAGE_FLAG_PRESENT: u64 = 0x01;
+pub const PAGE_FLAG_WRITABLE: u64 = 0x02;
+pub const PAGE_FLAG_CACHE_DISABLE: u64 = 0x10;
+
 // We assume paging is already set up and that the second-to-last
 // entry of P4 is mapped to itself.
 const P4: *mut Table<Level4> = 0o177777_776_776_776_776_0000 as *mut _;
@@ -50,5 +54,5 @@ pub fn map_to(page: Page, frame: Frame, flags: u64, alloc: &mut FrameAllocator) 
     let p2 = p3.next_create(page.p3_ndx(), alloc);
     let p1 = p2.next_create(page.p2_ndx(), alloc);
     let entry = &mut p1.0.entries[page.p1_ndx()].0;
-    *entry = (frame.0 << 12) | flags | 1;
+    *entry = (frame.0 << 12) | flags | PAGE_FLAG_PRESENT;
 }

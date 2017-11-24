@@ -121,9 +121,9 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
         write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
     }
 
-    interrupts::init();
     mm::init(mem_map.clone());
     acpi::init();
+    interrupts::init();
 
     sched::init();
     sched::spawn(thread1);

@@ -1,3 +1,6 @@
+mod pic;
+mod apic;
+
 use x86_64;
 use x86_64::structures::idt;
 
@@ -12,6 +15,7 @@ lazy_static! {
 
 pub fn init() {
     IDT.load();
+    apic::init();
 }
 
 extern "x86-interrupt" fn page_fault_handler(

@@ -21,9 +21,6 @@ fn write_local_apic_reg(reg: u64, val: u32) {
 }
 
 pub fn init() {
-    // Disable PIC.
-    super::pic::disable();
-
     // Enable local APIC.
     unsafe {
         msr::wrmsr(msr::IA32_APIC_BASE, LOCAL_APIC_PHYSICAL_BASE | 0x800);

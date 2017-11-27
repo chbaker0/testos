@@ -15,6 +15,7 @@ lazy_static! {
 
 pub fn init() {
     IDT.load();
+    pic::init();
     apic::init();
 }
 

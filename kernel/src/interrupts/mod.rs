@@ -36,8 +36,6 @@ pub fn init() {
     // Initializes PIC with IRQs starting at interrupt 32. All IRQs are masked by default.
     pic::init();
 
-    apic::init();
-
     unsafe { asm!("sti"); }
 }
 

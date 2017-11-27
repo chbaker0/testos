@@ -37,6 +37,8 @@ pub fn init() {
     pic::init();
 
     apic::init();
+
+    unsafe { asm!("sti"); }
 }
 
 extern "x86-interrupt" fn page_fault_handler(

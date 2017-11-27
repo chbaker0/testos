@@ -1,5 +1,4 @@
 mod pic;
-mod apic;
 mod irq;
 
 use x86_64;

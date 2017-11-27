@@ -12,6 +12,8 @@ const ICW1_IC4: u8 = 0x01;
 
 const ICW4_8086: u8 = 0x01;
 
+const OCW3_READ_ISR: u8 = 0x0b;
+
 const VECTOR_OFFSET: u8 = 32;
 
 pub fn init() {
@@ -52,6 +54,26 @@ pub fn eoi(irq: u8, spurious: bool) {
             outb(PIC1_CMD, EOI);
         }
     }
+}
+
+pub fn in_service(mut irq: u8) -> bool {
+    assert!(irq < 16);
+
+    let port: u16;
+
+    if irq < 8 {
+        port = PIC1_CMD;
+    } else {
+        port = PIC2_CMD;
+        irq -= 8;
+    }
+
+    let isr = unsafe {
+        outb(port, OCW3_READ_ISR);
+        inb(port)
+    };
+
+    (isr & (1 << irq)) != 0
 }
 
 pub fn mask(mut irq: u8) {

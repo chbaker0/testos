@@ -55,7 +55,7 @@ GDT:
     ; Base 23:16
     db 0
     ; Access
-    db 0b10011010
+    db 0b10010010
     ; Flags and limit 19:16
     db 0b00001111
     ; Base 31:24
@@ -105,6 +105,12 @@ kernel_handoff:
     mov cr0, eax
 
     lgdt [GDT.pointer]
+    mov ax, 0x10
+    mov ss, ax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     jmp 0x8:long_mode
 
 [bits 64]

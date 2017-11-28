@@ -9,6 +9,7 @@ lazy_static! {
         let mut idt = idt::Idt::new();
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt.double_fault.set_handler_fn(double_fault_handler);
+        idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
         idt[32].set_handler_fn(irq::irq0_handler);
         idt[33].set_handler_fn(irq::irq1_handler);
         idt[34].set_handler_fn(irq::irq2_handler);
@@ -54,4 +55,10 @@ extern "x86-interrupt" fn double_fault_handler(
     _: u64) {
     unsafe { asm!("cli"); }
     panic!("Double fault");
+}
+
+extern "x86-interrupt" fn general_protection_fault_handler(
+    _: &mut idt::ExceptionStackFrame,
+    seg: u64) {
+    panic!("GPF on segment {}", seg);
 }

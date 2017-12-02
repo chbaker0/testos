@@ -56,3 +56,18 @@ pub fn map_to(page: Page, frame: Frame, flags: u64, alloc: &mut FrameAllocator) 
     let entry = &mut p1.0.entries[page.p1_ndx()].0;
     *entry = (frame.0 << 12) | flags | PAGE_FLAG_PRESENT;
 }
+
+fn join<T>(x: Option<Option<T>>) -> Option<T> {
+    match x {
+        Some(y) => y,
+        None => None,
+    }
+}
+
+pub fn unmap(page: Page) {
+    let p4 = unsafe { &mut *P4 };
+    let p3 = p4.next_mut(page.p4_ndx());
+    let p2 = join(p3.map(|x| x.next_mut(page.p3_ndx())));
+    let p1 = join(p2.map(|x| x.next_mut(page.p2_ndx())));
+    p1.map(|x| x.0.entries[page.p1_ndx()].0 = 0);
+}

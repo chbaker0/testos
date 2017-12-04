@@ -1,3 +1,5 @@
+pub mod osl;
+
 use ::write_terminal;
 use core::ptr::null_mut;
 use core::slice;

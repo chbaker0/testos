@@ -38,6 +38,9 @@ mod sync;
 mod terminal;
 mod vga;
 
+// Needed for linking ACPICA with kernel.
+pub use acpi::osl::*;
+
 #[global_allocator]
 static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 

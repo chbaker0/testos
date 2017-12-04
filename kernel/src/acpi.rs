@@ -1,5 +1,38 @@
 use ::write_terminal;
+use core::ptr::null_mut;
 use core::slice;
+
+type AcpiStatus = u32;
+
+#[repr(C, packed)]
+struct AcpiTableHeader {
+    signature: [u8; 4],
+    length: u32,
+    revision: u8,
+    checksum: u8,
+    oem_id: [u8; 6],
+    oem_table_id: [u8; 8],
+    oem_revision: u32,
+    creator_id: u32,
+    creator_revision: u32,
+}
+
+#[repr(C, packed)]
+struct AcpiTableDesc {
+    physical_address: u64,
+    header: *mut AcpiTableHeader,
+    length: u32,
+    signature: u32,
+    owner_id: u8,
+    flags: u8,
+    validation_count: u16,
+}
+
+extern "C" {
+    fn AcpiInitializeTables(initial_table_array: *mut AcpiTableDesc,
+                            initial_table_count: u32,
+                            allow_resize: bool);
+}
 
 #[repr(C, packed)]
 struct RSDP {
@@ -42,4 +75,7 @@ fn find_rsdp() -> *const RSDP {
 pub fn init() {
     let rsdpp = find_rsdp();
     write_terminal(format_args!("RSDP found at {:x}.", rsdpp as usize));
+    unsafe {
+        AcpiInitializeTables(null_mut(), 0, false);
+    }
 }

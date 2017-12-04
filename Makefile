@@ -21,7 +21,7 @@ out/loader.a: FORCE
 	cd loader; RUST_TARGET_PATH=`pwd`/../targets xargo +nightly rustc $(CARGO_BUILD_FLAGS) --target i686-unknown-none -- --emit link=../out/loader.a
 
 out/kernel.bin: kernel.ld out/kernel.a
-	x86_64-elf-gcc -g -mcmodel=kernel -T kernel.ld -z max-page-size=0x1000 -Wl,--gc-sections -nostdlib -lgcc -o $@ out/kernel.a
+	x86_64-elf-gcc -g -mcmodel=kernel -T kernel.ld -z max-page-size=0x1000 -Wl,--gc-sections -nostdlib -lgcc -o $@ out/kernel.a out/acpica.a
 	objcopy --only-keep-debug out/kernel.bin out/kernel.sym
 	objcopy --strip-debug out/kernel.bin
 
@@ -36,6 +36,15 @@ out/kernel.iso: out/kernel.bin out/loader.bin grub.cfg
 	cp out/kernel.bin out/iso/boot
 	cp grub.cfg out/iso/boot/grub
 	grub-mkrescue -o out/kernel.iso -d /usr/lib/grub/i386-pc out/iso
+
+ACPICA_SOURCES := $(wildcard acpica/*.c)
+ACPICA_OBJECTS := $(patsubst acpica/%.c, out/acpica/%.o, $(ACPICA_SOURCES))
+
+out/acpica/%.o: acpica/%.c
+	x86_64-elf-gcc -c -o $@ -Iacpica $<
+
+out/acpica.a: $(ACPICA_OBJECTS)
+	x86_64-elf-ar rcs out/acpica.a $^
 
 .PHONY: FORCE
 FORCE:

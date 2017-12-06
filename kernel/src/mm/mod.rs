@@ -8,6 +8,7 @@ pub use self::paging::Frame;
 pub use self::paging::Page;
 pub use self::paging::PAGE_SIZE;
 pub use self::paging::map_to;
+pub use self::paging::unmap;
 pub use self::physmem::get_frame_allocator;
 pub use shared::memory::FrameAllocator;
 pub use shared::memory::MemoryMap;
@@ -58,4 +59,9 @@ pub fn init(mem_map: MemoryMap) {
 pub fn allocate_address_space(num_pages: u64) -> Result<u64, ()> {
     let mut addr_space = KERNEL_ADDR_SPACE.lock();
     addr_space.allocate(num_pages)
+}
+
+pub fn deallocate_address_space(first_page: u64, num_pages: u64) {
+    let mut addr_space = KERNEL_ADDR_SPACE.lock();
+    addr_space.unreserve(first_page, first_page + num_pages);
 }

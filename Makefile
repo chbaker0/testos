@@ -41,7 +41,7 @@ ACPICA_SOURCES := $(wildcard acpica/*.c)
 ACPICA_OBJECTS := $(patsubst acpica/%.c, out/acpica/%.o, $(ACPICA_SOURCES))
 
 out/acpica/%.o: acpica/%.c
-	x86_64-elf-gcc -c -o $@ -Iacpica $<
+	x86_64-elf-gcc -mcmodel=kernel -c -o $@ -Iacpica $<
 
 out/acpica.a: $(ACPICA_OBJECTS)
 	x86_64-elf-ar rcs out/acpica.a $^

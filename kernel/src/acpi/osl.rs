@@ -1,7 +1,19 @@
 use alloc::allocator::Alloc;
 use alloc::allocator::Layout;
+use alloc::boxed::Box;
+use core::mem;
+use core::ptr::null_mut;
+use spin;
 
 use mm;
+
+type ACPI_STATUS = u32;
+
+const AE_CODE_ENVIRONMENTAL: u32 = 0x0000;
+const AE_CODE_PROGRAMMER: u32 = 0x1000;
+
+const AE_OK: ACPI_STATUS = 0x0000;
+const AE_BAD_PARAMETER: ACPI_STATUS = 0x0001 | AE_CODE_PROGRAMMER;
 
 #[no_mangle]
 pub extern "C" fn AcpiOsPrintf(format: *const u8) {
@@ -56,4 +68,30 @@ pub extern "C" fn AcpiOsUnmapMemory(logical_address: u64, length: u64) {
         mm::unmap(mm::Page(first_page + i));
     }
     mm::deallocate_address_space(first_page * mm::PAGE_SIZE as u64, num_pages);
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsCreateLock(out_handle: *mut *mut spin::Mutex<()>) -> ACPI_STATUS {
+    if out_handle == null_mut() {
+        return AE_BAD_PARAMETER;
+    } else {
+        unsafe { *out_handle = Box::into_raw(Box::new(spin::Mutex::new(()))) };
+        AE_OK
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsDeleteLock(handle: *mut spin::Mutex<()>) {
+    mem::drop(unsafe { Box::from_raw(handle) });
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsAcquireLock(handle: *mut spin::Mutex<()>) -> u64 {
+    mem::forget(unsafe { (*handle).lock() });
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsReleaseLock(handle: *mut spin::Mutex<()>, _: u64) {
+    unsafe { (*handle).force_unlock(); }
 }

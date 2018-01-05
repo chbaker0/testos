@@ -8,4 +8,6 @@
 #define ACPI_DISASSEMBLER
 #define ACPI_DEBUGGER
 
+#define ACPI_USE_LOCAL_CACHE
+
 #endif // __ACTESTOS_H__

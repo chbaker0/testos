@@ -171,6 +171,11 @@
  */
 
 /*
+ * TestOS configuration options
+ */
+#define ACPI_USE_LOCAL_CACHE
+
+/*
  * OS name, used for the _OS object. The _OS object is essentially obsolete,
  * but there is a large base of ASL/AML code in existing machines that check
  * for the string below. The use of this string usually guarantees that

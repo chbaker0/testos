@@ -6,6 +6,7 @@ use core::ptr::null_mut;
 use spin;
 
 use mm;
+use sync;
 
 type ACPI_STATUS = u32;
 
@@ -14,6 +15,7 @@ const AE_CODE_PROGRAMMER: u32 = 0x1000;
 
 const AE_OK: ACPI_STATUS = 0x0000;
 const AE_BAD_PARAMETER: ACPI_STATUS = 0x0001 | AE_CODE_PROGRAMMER;
+const AE_NO_MEMORY: ACPI_STATUS = 0x0004 | AE_CODE_ENVIRONMENTAL;
 
 #[no_mangle]
 pub extern "C" fn AcpiOsPrintf(format: *const u8) {
@@ -94,4 +96,24 @@ pub extern "C" fn AcpiOsAcquireLock(handle: *mut spin::Mutex<()>) -> u64 {
 #[no_mangle]
 pub extern "C" fn AcpiOsReleaseLock(handle: *mut spin::Mutex<()>, _: u64) {
     unsafe { (*handle).force_unlock(); }
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsCreateSemaphore(_max_units: u32, _initial_units: u32, _out_handle: *mut *mut sync::Semaphore) -> ACPI_STATUS {
+    AE_NO_MEMORY
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsDeleteSemaphore(_handle: *mut sync::Semaphore) -> ACPI_STATUS {
+    AE_BAD_PARAMETER
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsWaitSemaphore(_handle: *mut sync::Semaphore, _units: u32, _timeout: u16) -> ACPI_STATUS {
+    AE_BAD_PARAMETER
+}
+
+#[no_mangle]
+pub extern "C" fn AcpiOsSignalSemaphore(_handle: *mut sync::Semaphore, _units: u32) -> ACPI_STATUS {
+    AE_BAD_PARAMETER
 }

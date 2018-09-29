@@ -4,17 +4,15 @@ version = "0.0.1"
 authors = ["chbaker0@gmail.com"]
 build = "build.rs"
 
-[lib]
-name = "kernel"
-path = "src/lib.rs"
-crate-type = ["staticlib"]
-
 [dependencies]
-rlibc = "^1"
 x86_64 = "0.1.2"
-intrusive-collections = { version = "0.6", features = ["nightly"] }
+intrusive-collections = { version = "0.7", features = ["nightly"] }
 shared = { path = "../shared" }
 spin = "0.4.6"
+
+[dependencies.compiler_builtins]
+git = "https://github.com/rust-lang-nursery/compiler-builtins"
+features = ["c", "no-lang-items"]
 
 [dependencies.lazy_static]
 version = "0.2.4"

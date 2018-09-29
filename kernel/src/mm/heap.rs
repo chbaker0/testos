@@ -2,9 +2,9 @@ use super::FrameAllocator;
 use super::paging;
 use super::physmem;
 
-use alloc::allocator::Alloc;
-use alloc::allocator::AllocErr;
-use alloc::allocator::Layout;
+use alloc::alloc::AllocErr;
+use alloc::alloc::GlobalAlloc;
+use alloc::alloc::Layout;
 use core::mem;
 use core::ptr::null_mut;
 use spin;
@@ -188,12 +188,12 @@ impl GlobalAllocator {
     }
 }
 
-unsafe impl<'a> Alloc for &'a GlobalAllocator {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
-        Ok(self.0.lock().allocate(layout.size(), layout.align(), physmem::get_frame_allocator()))
+unsafe impl GlobalAlloc for GlobalAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.0.lock().allocate(layout.size(), layout.align(), physmem::get_frame_allocator())
     }
 
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.0.lock().deallocate(ptr, layout.size(), layout.align());
     }
 }

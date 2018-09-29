@@ -1,9 +1,9 @@
 #![feature(const_fn)]
-#![feature(const_refcell_new)]
+#![feature(core_panic_info)]
 #![feature(lang_items)]
+#![no_main]
 #![no_std]
 
-extern crate rlibc;
 extern crate shared;
 
 mod paging;
@@ -15,6 +15,7 @@ use core::cmp;
 use core::fmt::write;
 use core::mem::size_of;
 use core::ops::DerefMut;
+use core::panic;
 use core::ptr;
 use core::slice::from_raw_parts;
 use core::str::from_utf8;
@@ -84,14 +85,15 @@ fn write_terminal(args: core::fmt::Arguments) {
     term_writer.flush();
 }
 
-#[lang="panic_fmt"]
+#[panic_handler]
 #[no_mangle]
-pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+pub extern fn panic_fmt(_info: &panic::PanicInfo) -> ! {
+/*
     let mut term_writer = TermWriter::new();
     let _ = write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
     let _ = write(&mut term_writer, panic_args);
     term_writer.flush();
-
+*/
     loop { }
 }
 

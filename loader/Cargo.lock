@@ -1,19 +1,28 @@
 [[package]]
-name = "loader"
-version = "0.0.1"
+name = "cc"
+version = "1.0.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "compiler_builtins"
+version = "0.1.0"
+source = "git+https://github.com/rust-lang-nursery/compiler-builtins#b69172a8baf47948dca6057235a5c9cdd337d6c1"
 dependencies = [
- "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "shared 0.0.1",
+ "cc 1.0.25 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
-name = "rlibc"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+name = "loader"
+version = "0.0.1"
+dependencies = [
+ "compiler_builtins 0.1.0 (git+https://github.com/rust-lang-nursery/compiler-builtins)",
+ "shared 0.0.1",
+]
 
 [[package]]
 name = "shared"
 version = "0.0.1"
 
 [metadata]
-"checksum rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fc874b127765f014d792f16763a81245ab80500e2ad921ed4ee9e82481ee08fe"
+"checksum cc 1.0.25 (registry+https://github.com/rust-lang/crates.io-index)" = "f159dfd43363c4d08055a07703eb7a3406b0dac4d0584d96965a3262db3c9d16"
+"checksum compiler_builtins 0.1.0 (git+https://github.com/rust-lang-nursery/compiler-builtins)" = "<none>"

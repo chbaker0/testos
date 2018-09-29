@@ -1,16 +1,15 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc)]
+#![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(asm)]
-#![feature(const_atomic_u64_new)]
 #![feature(const_fn)]
-#![feature(const_ptr_null_mut)]
-#![feature(const_refcell_new)]
+#![feature(core_panic_info)]
 #![feature(global_allocator)]
 #![feature(integer_atomics)]
 #![feature(iterator_step_by)]
 #![feature(lang_items)]
-#![feature(unique)]
+#![no_main]
 #![no_std]
 
 extern crate alloc;
@@ -18,7 +17,6 @@ extern crate alloc;
 extern crate intrusive_collections;
 #[macro_use]
 extern crate lazy_static;
-extern crate rlibc;
 extern crate shared;
 extern crate spin;
 extern crate x86_64;
@@ -26,6 +24,7 @@ extern crate x86_64;
 use core::cell;
 use core::fmt::write;
 use core::ops::DerefMut;
+use core::panic;
 use core::str::from_utf8;
 use shared::handoff;
 use shared::multiboot;
@@ -94,9 +93,10 @@ fn write_terminal(args: core::fmt::Arguments) {
     }
 }
 
-#[lang="panic_fmt"]
+#[panic_handler]
 #[no_mangle]
-pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+pub extern fn panic_fmt(_info: &panic::PanicInfo) -> ! {
+/*
     let mut buf_writer = BufWriter::new();
     let _ = write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
     let _ = write(&mut buf_writer, panic_args);
@@ -106,8 +106,13 @@ pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, 
         Ok(s) => log_terminal(s),
         Err(_) => (), // We're already panicking, there's nothing else to do.
     }
-
+*/
     loop { unsafe { asm!("hlt"); } }
+}
+
+#[alloc_error_handler]
+fn alloc_handler(_: core::alloc::Layout) -> ! {
+    panic!("fml haha");
 }
 
 #[no_mangle]

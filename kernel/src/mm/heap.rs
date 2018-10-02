@@ -2,7 +2,6 @@ use super::FrameAllocator;
 use super::paging;
 use super::physmem;
 
-use alloc::alloc::AllocErr;
 use alloc::alloc::GlobalAlloc;
 use alloc::alloc::Layout;
 use core::mem;

@@ -5,11 +5,8 @@
 #![feature(asm)]
 #![feature(const_fn)]
 #![feature(core_panic_info)]
-#![feature(global_allocator)]
 #![feature(integer_atomics)]
-#![feature(iterator_step_by)]
 #![feature(lang_items)]
-#![no_main]
 #![no_std]
 
 extern crate alloc;

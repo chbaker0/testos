@@ -4,6 +4,11 @@ version = "0.0.1"
 authors = ["chbaker0@gmail.com"]
 build = "build.rs"
 
+[lib]
+name = "kernel"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
 [dependencies]
 x86_64 = "0.1.2"
 intrusive-collections = { version = "0.7", features = ["nightly"] }

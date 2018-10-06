@@ -1,16 +1,13 @@
 use x86_64::structures::idt;
 
-lazy_static! {
-    static ref IDT: idt::InterruptDescriptorTable = {
-        let mut idt = idt::InterruptDescriptorTable::new();
-        idt.page_fault.set_handler_fn(page_fault_handler);
-        idt.double_fault.set_handler_fn(double_fault_handler);
-        idt
-    };
-}
+static mut IDT: idt::InterruptDescriptorTable = idt::InterruptDescriptorTable::new();
 
 pub fn init() {
-    IDT.load();
+    unsafe {
+        IDT.page_fault.set_handler_fn(page_fault_handler);
+        IDT.double_fault.set_handler_fn(double_fault_handler);
+        IDT.load();
+    }
 }
 
 extern "x86-interrupt" fn page_fault_handler(

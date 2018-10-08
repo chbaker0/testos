@@ -1,7 +1,6 @@
 #![feature(const_fn)]
 #![feature(core_panic_info)]
 #![feature(lang_items)]
-#![no_main]
 #![no_std]
 
 extern crate shared;

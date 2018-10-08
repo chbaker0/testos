@@ -42,16 +42,13 @@ extern {
     pub fn print_line(str: *const u8);
 }
 
-static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
+static TERMBUF: spin::Mutex<terminal::Buffer> = spin::Mutex::new(terminal::Buffer::new());
 
 fn log_terminal(s: &str)
 {
-    // Currently only one thread exists, so this is safe.
-    unsafe {
-        let mut termbuf = TERMBUF.borrow_mut();
-        termbuf.write_line(s);
-        vga::display_terminal(termbuf.deref_mut());
-    }
+    let mut termbuf = TERMBUF.lock();
+    termbuf.write_line(s);
+    vga::display_terminal(termbuf.deref_mut());
 }
 
 struct BufWriter {

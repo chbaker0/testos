@@ -117,7 +117,10 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     let mem_map = &boot_info.mem_map;
     for i in 0..mem_map.num_entries as usize {
         let entry = &mem_map.entries[i];
-        write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
+        // We need to do this to avoid borrowing packed fields
+        let base = entry.base;
+        let length = entry.length;
+        write_terminal(format_args!("    Address {:x} Size {:x}", base, length));
     }
 
     interrupts::init();

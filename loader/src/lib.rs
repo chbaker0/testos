@@ -222,7 +222,9 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     mem_map.reserve(0, 0x100000);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
     for i in 0..mem_map.num_entries as usize {
-        write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
+        let base = mem_map.entries[i].base;
+        let length = mem_map.entries[i].length;
+        write_terminal(format_args!("{:x} {:x}", base, length));
     }
     let mut alloc = memory::FrameAllocator::new(&mem_map);
 

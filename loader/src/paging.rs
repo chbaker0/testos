@@ -58,8 +58,7 @@ impl AddrSpace {
         let p3 = p4.next_create(page.p4_ndx(), alloc);
         let p2 = p3.next_create(page.p3_ndx(), alloc);
         let p1 = p2.next_create(page.p2_ndx(), alloc);
-        let entry = &mut p1.0.entries[page.p1_ndx()].0;
-        *entry = (frame.0 << 12) | flags | 1;
+        p1.0.entries[page.p1_ndx()].0 = (frame.0 << 12) | flags | 1;
     }
 
     pub fn get_p4_addr(&self) -> u64 {

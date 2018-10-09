@@ -48,7 +48,8 @@ fn log_terminal(s: &str)
 {
     let mut termbuf = TERMBUF.lock();
     termbuf.write_line(s);
-    vga::display_terminal(termbuf.deref_mut());
+    let mut terminal = vga::VGA_TERMINAL.lock();
+    terminal::display_buffer(terminal.deref_mut(), &termbuf);
 }
 
 struct BufWriter {

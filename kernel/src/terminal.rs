@@ -1,6 +1,28 @@
 use core::iter;
 use core::str;
 
+pub struct Vector {
+    pub x: usize,
+    pub y: usize,
+}
+
+pub trait Terminal {
+    fn size(&self) -> Vector;
+    fn blank_elem(&self) -> u8;
+
+    fn write_at(&mut self, c: u8, pos: Vector);
+
+    fn clear(&mut self) {
+        let sz = self.size();
+        for y in 0..sz.y {
+            for x in 0..sz.x {
+                let blank_elem = self.blank_elem();
+                self.write_at(blank_elem, Vector { x: x, y: y });
+            }
+        }
+    }
+}
+
 pub const WIDTH: usize = 80;
 pub const HEIGHT: usize = 1024;
 
@@ -48,5 +70,24 @@ impl Buffer {
             *a = b;
         }
         self.bottom_line = (self.bottom_line + 1) % HEIGHT;
+    }
+}
+
+pub fn display_buffer<T: Terminal>(term: &mut T, buffer: &Buffer) {
+    term.clear();
+
+    let top_line =
+        if buffer.bottom_line >= term.size().y {
+            buffer.bottom_line - term.size().y
+        } else {
+            HEIGHT - term.size().y + buffer.bottom_line
+        };
+
+    for y in 0..term.size().y {
+        let term_line = (y + top_line) % HEIGHT;
+        let BufferLine(ref line) = buffer.data[term_line];
+        for x in 0..term.size().x {
+            term.write_at(line[x], Vector { x: x, y: y });
+        }
     }
 }

@@ -8,43 +8,38 @@ const WIDTH: usize = 80;
 
 const COLOR: u8 = 7;
 
-fn make_elem(ch: u8, color: u8) -> u16 {
-    let ch16 = ch as u16;
-    let color16 = color as u16;
-    ch16 | (color16 << 8)
+pub struct VgaTerminal {
+    mem: *mut u16,
 }
 
-fn set_at(x: usize, y: usize, ch: u8) {
-    let e = make_elem(ch, COLOR);
-    unsafe {
-        let p = VGA_MEMORY.offset((y*WIDTH + x) as isize);
-        write_volatile(p, e);
+impl VgaTerminal {
+    fn make_elem(ch: u8, color: u8) -> u16 {
+        let ch16 = ch as u16;
+        let color16 = color as u16;
+        ch16 | (color16 << 8)
     }
 }
 
-pub fn clear() {
-    for y in 0..HEIGHT {
-        for x in 0..WIDTH {
-            set_at(x, y, 0);
+unsafe impl Send for VgaTerminal {}
+
+impl terminal::Terminal for VgaTerminal {
+    fn size(&self) -> terminal::Vector {
+        terminal::Vector {
+            x: WIDTH,
+            y: HEIGHT,
+        }
+    }
+    fn blank_elem(&self) -> u8 {
+        0
+    }
+
+    fn write_at(&mut self, c: u8, pos: terminal::Vector) {
+        let e = Self::make_elem(c, COLOR);
+        unsafe {
+            let p = self.mem.offset((pos.y * self.size().x + pos.x) as isize);
+            write_volatile(p, e);
         }
     }
 }
 
-pub fn display_terminal(term: &terminal::Buffer) {
-    clear();
-
-    let top_line =
-        if term.bottom_line >= 25 {
-            term.bottom_line - 25
-        } else {
-            terminal::HEIGHT - 25 + term.bottom_line
-        };
-
-    for y in 0..HEIGHT {
-        let term_line = (y + top_line) % terminal::HEIGHT;
-        let terminal::BufferLine(ref line) = term.data[term_line];
-        for x in 0..WIDTH {
-            set_at(x, y, line[x]);
-        }
-    }
-}
+pub static VGA_TERMINAL: spin::Mutex<VgaTerminal> = spin::Mutex::new(VgaTerminal { mem: VGA_MEMORY });

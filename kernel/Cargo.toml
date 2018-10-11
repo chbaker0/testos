@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 [dependencies]
 x86_64 = "0.2.11"
 intrusive-collections = { version = "0.7", features = ["nightly"] }
+log = "0.4.5"
 shared = { path = "../shared" }
 spin = "0.4.9"
 

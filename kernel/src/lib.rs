@@ -14,6 +14,8 @@ extern crate alloc;
 extern crate intrusive_collections;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate log;
 extern crate shared;
 extern crate spin;
 extern crate x86_64;
@@ -29,6 +31,7 @@ use shared::multiboot;
 mod acpi;
 mod mm;
 mod interrupts;
+mod logging;
 mod sched;
 mod selftest;
 mod sync;
@@ -47,10 +50,7 @@ static TERMBUF: spin::Mutex<terminal::Buffer> = spin::Mutex::new(terminal::Buffe
 
 fn log_terminal(s: &str)
 {
-    let mut termbuf = TERMBUF.lock();
-    termbuf.write_line(s);
-    let mut terminal = vga::VGA_TERMINAL.lock();
-    terminal::display_buffer(terminal.deref_mut(), &termbuf);
+    info!("{}", s);
 }
 
 struct BufWriter {
@@ -79,14 +79,7 @@ impl core::fmt::Write for BufWriter {
 }
 
 fn write_terminal(args: core::fmt::Arguments) {
-    let mut buf_writer = BufWriter::new();
-    let _ = write(&mut buf_writer, args);
-    buf_writer.buffer[79] = 0;
-
-    match from_utf8(&buf_writer.buffer) {
-        Ok(s) => log_terminal(s),
-        Err(_) => panic!(),
-    }
+    log::logger().log(&log::Record::builder().args(args).level(log::Level::Info).build());
 }
 
 #[panic_handler]
@@ -114,6 +107,8 @@ fn alloc_handler(_: core::alloc::Layout) -> ! {
 #[no_mangle]
 pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
+
+    logging::init();
 
     log_terminal("Memory map:");
     let mem_map = &boot_info.mem_map;

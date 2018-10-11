@@ -30,6 +30,7 @@ mod acpi;
 mod mm;
 mod interrupts;
 mod sched;
+mod selftest;
 mod sync;
 mod terminal;
 mod vga;
@@ -127,6 +128,8 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
     interrupts::init();
     mm::init(mem_map.clone());
     acpi::init();
+
+    selftest::run_tests();
 
     sched::init();
     sched::spawn(thread1);

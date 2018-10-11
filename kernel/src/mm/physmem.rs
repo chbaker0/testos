@@ -1,7 +1,11 @@
 use shared::memory::*;
 
 static mut MEMORY_MAP: MemoryMap = MemoryMap {
-    entries: [MemoryMapEntry{base:0,length:0,status:MemoryStatus::Unknown}; MEMORY_MAP_MAX_ENTRIES],
+    entries: [MemoryMapEntry {
+        base: 0,
+        length: 0,
+        status: MemoryStatus::Unknown,
+    }; MEMORY_MAP_MAX_ENTRIES],
     num_entries: 0,
 };
 
@@ -9,10 +13,10 @@ static mut MEMORY_MAP: MemoryMap = MemoryMap {
 static mut FRAME_ALLOCATOR: FrameAllocator = FrameAllocator {
     cur_addr: 0,
     mem_map: unsafe { &MEMORY_MAP },
-    cur_map_entry: 0
+    cur_map_entry: 0,
 };
 
-pub fn init(mem_map:MemoryMap) {
+pub fn init(mem_map: MemoryMap) {
     // Set up memory map.
     unsafe {
         MEMORY_MAP = mem_map;

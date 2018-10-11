@@ -3,15 +3,15 @@ use shared::memory::FrameAllocator;
 
 pub use shared::memory::PAGE_SIZE;
 pub use shared::paging::Frame;
-pub use shared::paging::Page;
-use shared::paging::Level4;
-use shared::paging::TableLevel;
 use shared::paging::HierarchicalLevel;
+use shared::paging::Level4;
+pub use shared::paging::Page;
+use shared::paging::TableLevel;
 
 #[repr(C, packed)]
 struct Table<L: TableLevel>(pub shared::paging::Table<L>);
 
-impl<L: HierarchicalLevel> Table<L>{
+impl<L: HierarchicalLevel> Table<L> {
     fn next_addr(&self, ndx: usize) -> Option<u64> {
         if self.0.entries[ndx].flags() & 1 == 0 {
             None
@@ -22,15 +22,20 @@ impl<L: HierarchicalLevel> Table<L>{
     }
 
     pub fn next(&self, ndx: usize) -> Option<&Table<L::NextLevel>> {
-        self.next_addr(ndx).map(|addr| unsafe { &*(addr as *const _) })
+        self.next_addr(ndx)
+            .map(|addr| unsafe { &*(addr as *const _) })
     }
 
     pub fn next_mut(&mut self, ndx: usize) -> Option<&mut Table<L::NextLevel>> {
-        self.next_addr(ndx).map(|addr| unsafe { &mut *(addr as *mut _) })
+        self.next_addr(ndx)
+            .map(|addr| unsafe { &mut *(addr as *mut _) })
     }
 
-    pub fn next_create(&mut self, ndx: usize, alloc: &mut FrameAllocator)
-                                              -> &mut Table<L::NextLevel> {
+    pub fn next_create(
+        &mut self,
+        ndx: usize,
+        alloc: &mut FrameAllocator,
+    ) -> &mut Table<L::NextLevel> {
         if self.next(ndx).is_none() {
             let frame_addr = alloc.get_frame() as u64;
             self.0.entries[ndx].0 = frame_addr | 0b1001; // Set writable and present bits.

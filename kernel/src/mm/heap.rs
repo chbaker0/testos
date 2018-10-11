@@ -1,6 +1,6 @@
-use super::FrameAllocator;
 use super::paging;
 use super::physmem;
+use super::FrameAllocator;
 
 use alloc::alloc::GlobalAlloc;
 use alloc::alloc::Layout;
@@ -54,14 +54,18 @@ impl Heap {
     fn insert_block_at(&mut self, addr: usize, size: usize, prev: *mut BlockHeader) {
         assert!(size >= mem::size_of::<BlockHeader>());
         let block_header = addr as *mut BlockHeader;
-        let next_block =
-            if prev == null_mut() {
-                null_mut()
-            } else {
-                unsafe { (*prev).next }
-            };
+        let next_block = if prev == null_mut() {
+            null_mut()
+        } else {
+            unsafe { (*prev).next }
+        };
 
-        unsafe { *block_header = BlockHeader {size: size, next: next_block} };
+        unsafe {
+            *block_header = BlockHeader {
+                size: size,
+                next: next_block,
+            }
+        };
         if prev == null_mut() {
             self.list_head = block_header
         } else {
@@ -75,7 +79,7 @@ impl Heap {
         if prev == null_mut() {
             self.list_head = next;
         } else {
-            unsafe { (*prev).next = next};
+            unsafe { (*prev).next = next };
         }
     }
 
@@ -88,7 +92,9 @@ impl Heap {
         let mut prev_block = null_mut();
         let mut block = self.list_head;
         while block != null_mut() {
-            if Heap::fits(aligned_size, align, block as usize, unsafe { (*block).size }) {
+            if Heap::fits(aligned_size, align, block as usize, unsafe {
+                (*block).size
+            }) {
                 break;
             } else {
                 prev_block = block;
@@ -110,7 +116,6 @@ impl Heap {
             }
 
             addr as *mut u8
-
         } else {
             // No block found, move break and possibly add a new free block at end.
             let addr = self.cur_break;
@@ -153,11 +158,18 @@ impl Heap {
 
         // Insert new block into linked list.
         let block = ptr as *mut BlockHeader;
-        unsafe { (*block) = BlockHeader{size: aligned_size, next: next_block}; }
+        unsafe {
+            (*block) = BlockHeader {
+                size: aligned_size,
+                next: next_block,
+            };
+        }
         if prev_block == null_mut() {
             self.list_head = block;
         } else {
-            unsafe { (*prev_block).next = block; }
+            unsafe {
+                (*prev_block).next = block;
+            }
         }
 
         // Merge free blocks
@@ -169,9 +181,12 @@ impl Heap {
 
     fn add_page(&mut self, alloc: &mut FrameAllocator) {
         let addr = alloc.get_frame();
-        paging::map_to(paging::Page((self.cur_break / paging::PAGE_SIZE) as u64),
-                       paging::Frame((addr / paging::PAGE_SIZE) as u64),
-                       paging::PAGE_FLAG_WRITABLE, alloc);
+        paging::map_to(
+            paging::Page((self.cur_break / paging::PAGE_SIZE) as u64),
+            paging::Frame((addr / paging::PAGE_SIZE) as u64),
+            paging::PAGE_FLAG_WRITABLE,
+            alloc,
+        );
         self.cur_break += paging::PAGE_SIZE;
         if self.cur_break > self.end_addr {
             panic!("Ran out of virtual address space for heap.")
@@ -189,7 +204,11 @@ impl GlobalAllocator {
 
 unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.0.lock().allocate(layout.size(), layout.align(), physmem::get_frame_allocator())
+        self.0.lock().allocate(
+            layout.size(),
+            layout.align(),
+            physmem::get_frame_allocator(),
+        )
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

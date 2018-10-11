@@ -12,15 +12,21 @@ pub fn init() {
 
 extern "x86-interrupt" fn page_fault_handler(
     _: &mut idt::ExceptionStackFrame,
-    error_code: idt::PageFaultErrorCode) {
+    error_code: idt::PageFaultErrorCode,
+) {
     let addr: u64;
-    unsafe { asm!("mov %cr2, $0" : "=r"(addr)); }
-    panic!("Page fault occurred on address {:x}: {:?}", addr, error_code);
+    unsafe {
+        asm!("mov %cr2, $0" : "=r"(addr));
+    }
+    panic!(
+        "Page fault occurred on address {:x}: {:?}",
+        addr, error_code
+    );
 }
 
-extern "x86-interrupt" fn double_fault_handler(
-    _: &mut idt::ExceptionStackFrame,
-    _: u64) {
-    unsafe { asm!("cli"); }
+extern "x86-interrupt" fn double_fault_handler(_: &mut idt::ExceptionStackFrame, _: u64) {
+    unsafe {
+        asm!("cli");
+    }
     panic!("Double fault");
 }

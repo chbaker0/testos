@@ -13,7 +13,7 @@ impl Clone for BufferLine {
     }
 }
 
-impl Copy for BufferLine { }
+impl Copy for BufferLine {}
 
 pub struct Buffer {
     pub bottom_line: usize,
@@ -29,13 +29,13 @@ impl Clone for Buffer {
     }
 }
 
-impl Copy for Buffer { }
+impl Copy for Buffer {}
 
 impl Buffer {
     pub const fn new() -> Buffer {
         Buffer {
             bottom_line: 25,
-            data: [BufferLine([0; WIDTH]); HEIGHT]
+            data: [BufferLine([0; WIDTH]); HEIGHT],
         }
     }
 

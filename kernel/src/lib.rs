@@ -29,9 +29,9 @@ use shared::handoff;
 use shared::multiboot;
 
 mod acpi;
-mod mm;
 mod interrupts;
 mod logging;
+mod mm;
 mod sched;
 mod selftest;
 mod sync;
@@ -45,9 +45,13 @@ static TERMBUF: spin::Mutex<terminal::Buffer> = spin::Mutex::new(terminal::Buffe
 
 #[panic_handler]
 #[no_mangle]
-pub extern fn panic_fmt(info: &panic::PanicInfo) -> ! {
+pub extern "C" fn panic_fmt(info: &panic::PanicInfo) -> ! {
     info!("{}", info);
-    loop { unsafe { asm!("hlt"); } }
+    loop {
+        unsafe {
+            asm!("hlt");
+        }
+    }
 }
 
 #[alloc_error_handler]
@@ -56,7 +60,7 @@ fn alloc_handler(_: core::alloc::Layout) -> ! {
 }
 
 #[no_mangle]
-pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+pub extern "C" fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
 
     logging::init();
@@ -90,26 +94,24 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
 }
 
 lazy_static! {
-    static ref SEMAPHORE: sync::Semaphore = {
-        sync::Semaphore::new(0)
-    };
+    static ref SEMAPHORE: sync::Semaphore = { sync::Semaphore::new(0) };
 }
 
-pub extern fn thread1() -> ! {
+pub extern "C" fn thread1() -> ! {
     loop {
         SEMAPHORE.wait();
         info!("1");
     }
 }
 
-pub extern fn thread2() -> ! {
+pub extern "C" fn thread2() -> ! {
     loop {
         SEMAPHORE.wait();
         info!("2");
     }
 }
 
-pub extern fn thread3() -> ! {
+pub extern "C" fn thread3() -> ! {
     loop {
         SEMAPHORE.wait();
         info!("3");

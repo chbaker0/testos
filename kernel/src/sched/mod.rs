@@ -56,7 +56,7 @@ impl ThreadList {
         id
     }
 
-    fn create_thread(&mut self, stack_pages: u64, entry: extern fn() -> !) -> u64 {
+    fn create_thread(&mut self, stack_pages: u64, entry: extern "C" fn() -> !) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -72,13 +72,8 @@ impl ThreadList {
 }
 
 lazy_static! {
-    static ref THREADS: Mutex<ThreadList> = {
-        Mutex::new(ThreadList::new())
-    };
-
-    static ref READY_QUEUE: Mutex<VecDeque<u64>> = {
-        Mutex::new(VecDeque::new())
-    };
+    static ref THREADS: Mutex<ThreadList> = { Mutex::new(ThreadList::new()) };
+    static ref READY_QUEUE: Mutex<VecDeque<u64>> = { Mutex::new(VecDeque::new()) };
 }
 
 static THREAD_ID: AtomicU64 = AtomicU64::new(0);
@@ -120,7 +115,7 @@ unsafe fn switch_to(next_id: u64) {
 
 const STACK_PAGES: u64 = 64;
 
-pub fn spawn(entry: extern fn() -> !) -> u64 {
+pub fn spawn(entry: extern "C" fn() -> !) -> u64 {
     let id = {
         let mut threads = THREADS.lock();
         threads.create_thread(STACK_PAGES, entry)
@@ -152,7 +147,9 @@ pub fn yield_cur() {
         ready_queue.pop_front().unwrap()
     };
 
-    unsafe { switch_to(next_id); }
+    unsafe {
+        switch_to(next_id);
+    }
 }
 
 pub fn block_cur() {

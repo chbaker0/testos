@@ -35,7 +35,7 @@ impl Clone for BufferLine {
     }
 }
 
-impl Copy for BufferLine { }
+impl Copy for BufferLine {}
 
 pub struct Buffer {
     pub bottom_line: usize,
@@ -51,13 +51,13 @@ impl Clone for Buffer {
     }
 }
 
-impl Copy for Buffer { }
+impl Copy for Buffer {}
 
 impl Buffer {
     pub const fn new() -> Buffer {
         Buffer {
             bottom_line: 25,
-            data: [BufferLine([0; WIDTH]); HEIGHT]
+            data: [BufferLine([0; WIDTH]); HEIGHT],
         }
     }
 
@@ -76,12 +76,11 @@ impl Buffer {
 pub fn display_buffer<T: Terminal>(term: &mut T, buffer: &Buffer) {
     term.clear();
 
-    let top_line =
-        if buffer.bottom_line >= term.size().y {
-            buffer.bottom_line - term.size().y
-        } else {
-            HEIGHT - term.size().y + buffer.bottom_line
-        };
+    let top_line = if buffer.bottom_line >= term.size().y {
+        buffer.bottom_line - term.size().y
+    } else {
+        HEIGHT - term.size().y + buffer.bottom_line
+    };
 
     for y in 0..term.size().y {
         let term_line = (y + top_line) % HEIGHT;

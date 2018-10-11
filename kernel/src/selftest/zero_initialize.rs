@@ -5,5 +5,5 @@ static mut TEST_MUT: usize = 0;
 
 pub fn test() {
     assert!(TEST == 0);
-    assert!(unsafe {TEST_MUT} == 0);
+    assert!(unsafe { TEST_MUT } == 0);
 }

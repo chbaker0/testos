@@ -42,4 +42,5 @@ impl terminal::Terminal for VgaTerminal {
     }
 }
 
-pub static VGA_TERMINAL: spin::Mutex<VgaTerminal> = spin::Mutex::new(VgaTerminal { mem: VGA_MEMORY });
+pub static VGA_TERMINAL: spin::Mutex<VgaTerminal> =
+    spin::Mutex::new(VgaTerminal { mem: VGA_MEMORY });

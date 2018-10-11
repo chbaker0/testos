@@ -1,4 +1,3 @@
-use ::write_terminal;
 use core::slice;
 
 #[repr(C, packed)]
@@ -41,5 +40,5 @@ fn find_rsdp() -> *const RSDP {
 
 pub fn init() {
     let rsdpp = find_rsdp();
-    write_terminal(format_args!("RSDP found at {:x}.", rsdpp as usize));
+    info!("RSDP found at {:x}.", rsdpp as usize);
 }

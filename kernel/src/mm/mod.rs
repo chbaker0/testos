@@ -44,9 +44,9 @@ pub fn init(mem_map: MemoryMap) {
         addr_space.reserve(0xffff_ff00_0000_0, 0xffff_ff7f_ffff_f);
         addr_space.reserve(0xffff_ffff_8000_0, 0xffff_ffff_ffff_f);
 
-        ::write_terminal(format_args!("Kernel virtual memory map:"));
+        info!("Kernel virtual memory map:");
         for r in addr_space.iter() {
-            ::write_terminal(format_args!("    {:x} {:x}", r.first_addr.get(), r.last_addr.get()));
+            info!("    {:x} {:x}", r.first_addr.get(), r.last_addr.get());
         }
     }
 

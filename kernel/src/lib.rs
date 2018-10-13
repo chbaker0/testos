@@ -26,17 +26,17 @@ use core::ops::DerefMut;
 use core::panic;
 use core::str::from_utf8;
 use shared::handoff;
+use shared::logging;
 use shared::multiboot;
+use shared::terminal;
+use shared::vga;
 
 mod acpi;
 mod interrupts;
-mod logging;
 mod mm;
 mod sched;
 mod selftest;
 mod sync;
-mod terminal;
-mod vga;
 
 #[global_allocator]
 static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };

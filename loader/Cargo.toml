@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 [dependencies]
 shared = { path = "../shared" }
 
-[dependencies.compiler_builtins]
-git = "https://github.com/rust-lang-nursery/compiler-builtins"
-features = ["c", "no-lang-items"]
+# This is getting pulled in from somewhere else...
+# [dependencies.compiler_builtins]
+# git = "https://github.com/rust-lang-nursery/compiler-builtins"
+# features = ["c", "no-lang-items"]

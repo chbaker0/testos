@@ -1,11 +1,9 @@
 use terminal;
 use vga;
 
-use core::default::Default;
 use core::fmt::*;
 use core::ops::DerefMut;
 use log::Log;
-use spin::Mutex;
 
 static VGA_LOG: VgaLog = VgaLog {
     buffer: spin::Mutex::new(terminal::Buffer::new()),

@@ -20,16 +20,10 @@ extern crate shared;
 extern crate spin;
 extern crate x86_64;
 
-use core::cell;
-use core::fmt::write;
-use core::ops::DerefMut;
 use core::panic;
-use core::str::from_utf8;
 use shared::handoff;
 use shared::logging;
 use shared::multiboot;
-use shared::terminal;
-use shared::vga;
 
 mod acpi;
 mod interrupts;
@@ -40,8 +34,6 @@ mod sync;
 
 #[global_allocator]
 static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
-
-static TERMBUF: spin::Mutex<terminal::Buffer> = spin::Mutex::new(terminal::Buffer::new());
 
 #[panic_handler]
 #[no_mangle]

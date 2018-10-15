@@ -7,8 +7,10 @@
 #![feature(core_panic_info)]
 #![feature(integer_atomics)]
 #![feature(lang_items)]
-#![no_std]
 
+#![cfg_attr(not(test), no_std)]
+
+#[cfg(not(test))]
 extern crate alloc;
 #[macro_use]
 extern crate intrusive_collections;
@@ -19,6 +21,11 @@ extern crate log;
 extern crate shared;
 extern crate spin;
 extern crate x86_64;
+
+#[cfg(test)]
+use std as core;
+#[cfg(test)]
+use std as alloc;
 
 use core::panic;
 use shared::handoff;
@@ -32,9 +39,11 @@ mod sched;
 mod selftest;
 mod sync;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 
+#[cfg(not(test))]
 #[panic_handler]
 #[no_mangle]
 pub extern "C" fn panic_fmt(info: &panic::PanicInfo) -> ! {
@@ -46,6 +55,7 @@ pub extern "C" fn panic_fmt(info: &panic::PanicInfo) -> ! {
     }
 }
 
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_handler(_: core::alloc::Layout) -> ! {
     panic!("Failed alloc");

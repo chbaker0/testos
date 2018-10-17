@@ -8,6 +8,11 @@ pub fn init() {
     // Do nothing for now.
 }
 
+pub fn set_irq_handler(irq: u8, f: Option<fn()>) {
+    let mut irq_map = IRQ_MAP.lock();
+    irq_map[irq as usize] = f;
+}
+
 fn handle_irq(irq: u8) {
     assert!(irq < 16);
 

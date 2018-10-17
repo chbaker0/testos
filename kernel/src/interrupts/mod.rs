@@ -4,6 +4,8 @@ mod irq;
 use x86_64;
 use x86_64::structures::idt;
 
+pub use irq::set_irq_handler;
+
 static mut IDT: idt::InterruptDescriptorTable = idt::InterruptDescriptorTable::new();
 
 pub fn init() {
@@ -32,6 +34,8 @@ pub fn init() {
 
     // Initializes PIC with IRQs starting at interrupt 32. All IRQs are masked by default.
     pic::init();
+
+    irq::init();
 
     for i in 0..15 {
         pic::unmask(i);

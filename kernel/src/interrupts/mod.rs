@@ -4,7 +4,7 @@ mod irq;
 use x86_64;
 use x86_64::structures::idt;
 
-pub use irq::set_irq_handler;
+pub use self::irq::set_irq_handler;
 
 static mut IDT: idt::InterruptDescriptorTable = idt::InterruptDescriptorTable::new();
 

@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::cell::Cell;
-use intrusive_collections::{LinkedList, LinkedListLink};
 use intrusive_collections::linked_list;
+use intrusive_collections::{LinkedList, LinkedListLink};
 
 pub struct AddressSpace {
     free_list: LinkedList<RegionAdapter>,
@@ -40,16 +40,16 @@ impl AddressSpace {
             let ref region = cur.get().unwrap();
             if first > region.first_addr.get() && last < region.last_addr.get() {
                 // Input range is completely contained in current region.
-                let old_last = region.last_addr.replace(first-1);
-                cur.insert_after(Self::create_node(last+1, old_last));
+                let old_last = region.last_addr.replace(first - 1);
+                cur.insert_after(Self::create_node(last + 1, old_last));
                 break;
             } else if first > region.first_addr.get() && last == region.last_addr.get() {
                 // Input range ends where current region ends.
-                region.last_addr.set(first-1);
+                region.last_addr.set(first - 1);
                 break;
             } else if first == region.first_addr.get() && last < region.last_addr.get() {
                 // Input range starts where current region starts.
-                region.first_addr.set(last+1);
+                region.first_addr.set(last + 1);
                 break;
             } else if first == region.first_addr.get() && last == region.last_addr.get() {
                 // Input range equals current region.
@@ -89,7 +89,7 @@ impl AddressSpace {
             let next = cur.peek_next();
             if !next.is_null() {
                 let ref region = next.get().unwrap();
-                if region.first_addr.get() == last+1 {
+                if region.first_addr.get() == last + 1 {
                     cur.get().unwrap().last_addr.set(region.last_addr.get());
                     remove_next = true;
                 } else if region.first_addr.get() <= last {

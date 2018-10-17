@@ -1,31 +1,27 @@
 use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef};
 use spin;
 
-use ::sched;
+use sched;
 
 struct WaitListNode {
     thread: u64,
-    link: LinkedListLink
+    link: LinkedListLink,
 }
 
 intrusive_adapter!(WaitListAdapter = UnsafeRef<WaitListNode>: WaitListNode { link: LinkedListLink });
 
 struct SemaphoreInternal {
     value: i64,
-    wait_list: LinkedList<WaitListAdapter>
+    wait_list: LinkedList<WaitListAdapter>,
 }
 
 pub struct Semaphore {
     lock: spin::Mutex<SemaphoreInternal>,
 }
 
-unsafe impl Send for Semaphore {
+unsafe impl Send for Semaphore {}
 
-}
-
-unsafe impl Sync for Semaphore {
-
-}
+unsafe impl Sync for Semaphore {}
 
 impl Semaphore {
     pub fn new(value: i64) -> Semaphore {
@@ -50,7 +46,8 @@ impl Semaphore {
             lock.value -= 1;
 
             if lock.value < 0 {
-                lock.wait_list.push_back(unsafe { UnsafeRef::from_raw(&wait_list_node as *const _) });
+                lock.wait_list
+                    .push_back(unsafe { UnsafeRef::from_raw(&wait_list_node as *const _) });
             } else {
                 sched::unblock_cur();
                 return;

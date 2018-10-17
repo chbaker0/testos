@@ -1,129 +1,86 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc)]
+#![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(asm)]
-#![feature(const_atomic_u64_new)]
 #![feature(const_fn)]
-#![feature(const_ptr_null_mut)]
-#![feature(const_refcell_new)]
-#![feature(global_allocator)]
+#![feature(core_panic_info)]
 #![feature(integer_atomics)]
-#![feature(iterator_step_by)]
 #![feature(lang_items)]
-#![feature(unique)]
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
+#[cfg(not(test))]
 extern crate alloc;
 #[macro_use]
 extern crate intrusive_collections;
 #[macro_use]
 extern crate lazy_static;
-extern crate rlibc;
+#[macro_use]
+extern crate log;
 extern crate shared;
 extern crate spin;
 extern crate x86_64;
 
-use core::cell;
-use core::fmt::write;
-use core::ops::DerefMut;
-use core::str::from_utf8;
+#[cfg(test)]
+use std as core;
+#[cfg(test)]
+use std as alloc;
+
+use core::panic;
 use shared::handoff;
+use shared::logging;
 use shared::multiboot;
 
 mod acpi;
-mod mm;
 mod interrupts;
+mod mm;
 mod sched;
+mod selftest;
 mod sync;
-mod terminal;
-mod vga;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: mm::GlobalAllocator = unsafe { mm::GlobalAllocator::new() };
 
-// C kernel functions.
-extern {
-    pub fn print_line(str: *const u8);
-}
-
-static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
-
-fn log_terminal(s: &str)
-{
-    // Currently only one thread exists, so this is safe.
-    unsafe {
-        let mut termbuf = TERMBUF.borrow_mut();
-        termbuf.write_line(s);
-        vga::display_terminal(termbuf.deref_mut());
-    }
-}
-
-struct BufWriter {
-    buffer: [u8; 80],
-    ndx: usize,
-}
-
-impl BufWriter {
-    fn new() -> BufWriter {
-        BufWriter {
-            buffer: [0; 80],
-            ndx: 0,
+#[cfg(not(test))]
+#[panic_handler]
+#[no_mangle]
+pub extern "C" fn panic_fmt(info: &panic::PanicInfo) -> ! {
+    info!("{}", info);
+    loop {
+        unsafe {
+            asm!("hlt");
         }
     }
 }
 
-impl core::fmt::Write for BufWriter {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let trunc = s.bytes().take(80-self.ndx);
-        for c in trunc {
-            self.buffer[self.ndx] = c;
-            self.ndx += 1;
-        }
-        Ok(())
-    }
-}
-
-fn write_terminal(args: core::fmt::Arguments) {
-    let mut buf_writer = BufWriter::new();
-    let _ = write(&mut buf_writer, args);
-    buf_writer.buffer[79] = 0;
-
-    match from_utf8(&buf_writer.buffer) {
-        Ok(s) => log_terminal(s),
-        Err(_) => panic!(),
-    }
-}
-
-#[lang="panic_fmt"]
-#[no_mangle]
-pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    let mut buf_writer = BufWriter::new();
-    let _ = write(&mut buf_writer, format_args!("Panic in {} at line {}: ", file, line));
-    let _ = write(&mut buf_writer, panic_args);
-    buf_writer.buffer[79] = 0;
-
-    match from_utf8(&buf_writer.buffer) {
-        Ok(s) => log_terminal(s),
-        Err(_) => (), // We're already panicking, there's nothing else to do.
-    }
-
-    loop { unsafe { asm!("hlt"); } }
+#[cfg(not(test))]
+#[alloc_error_handler]
+fn alloc_handler(_: core::alloc::Layout) -> ! {
+    panic!("Failed alloc");
 }
 
 #[no_mangle]
-pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
+pub extern "C" fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff::BootInfo) {
     let boot_info: handoff::BootInfo = unsafe { (*boot_infop).clone() };
 
-    log_terminal("Memory map:");
+    logging::init();
+
+    info!("Memory map:");
     let mem_map = &boot_info.mem_map;
     for i in 0..mem_map.num_entries as usize {
         let entry = &mem_map.entries[i];
-        write_terminal(format_args!("    Address {:x} Size {:x}", entry.base, entry.length));
+        // We need to do this to avoid borrowing packed fields
+        let base = entry.base;
+        let length = entry.length;
+        info!("    Address {:x} Size {:x}", base, length);
     }
 
     mm::init(mem_map.clone());
     acpi::init();
     interrupts::init();
+
+    selftest::run_tests();
 
     sched::init();
     sched::spawn(thread1);
@@ -138,28 +95,26 @@ pub extern fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const handoff
 }
 
 lazy_static! {
-    static ref SEMAPHORE: sync::Semaphore = {
-        sync::Semaphore::new(0)
-    };
+    static ref SEMAPHORE: sync::Semaphore = { sync::Semaphore::new(0) };
 }
 
-pub extern fn thread1() -> ! {
+pub extern "C" fn thread1() -> ! {
     loop {
         SEMAPHORE.wait();
-        write_terminal(format_args!("1"));
+        info!("1");
     }
 }
 
-pub extern fn thread2() -> ! {
+pub extern "C" fn thread2() -> ! {
     loop {
         SEMAPHORE.wait();
-        write_terminal(format_args!("2"));
+        info!("2");
     }
 }
 
-pub extern fn thread3() -> ! {
+pub extern "C" fn thread3() -> ! {
     loop {
         SEMAPHORE.wait();
-        write_terminal(format_args!("3"));
+        info!("3");
     }
 }

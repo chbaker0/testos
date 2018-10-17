@@ -9,5 +9,9 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
-rlibc = "^1"
 shared = { path = "../shared" }
+
+# This is getting pulled in from somewhere else...
+# [dependencies.compiler_builtins]
+# git = "https://github.com/rust-lang-nursery/compiler-builtins"
+# features = ["c", "no-lang-items"]

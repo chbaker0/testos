@@ -16,11 +16,11 @@ pub const PAGE_SIZE: usize = 1 << (PAGE_ORDER);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryStatus {
     Unknown = 0, // Memory is unvailable because it is of unknown
-                 // type.
-    Available,   // Memory is available for use by the frame allocator.
-    Kernel,      // Memory is unavailable because it is used by the
-                 // kernel image.
-    Reserved,    // Memory is unavailable because it is reserved.
+    // type.
+    Available, // Memory is available for use by the frame allocator.
+    Kernel,    // Memory is unavailable because it is used by the
+    // kernel image.
+    Reserved, // Memory is unavailable because it is reserved.
 }
 
 #[repr(C, packed)]
@@ -58,7 +58,7 @@ impl Clone for MemoryMap {
 
         for i in 0..MEMORY_MAP_MAX_ENTRIES {
             new.entries[i] = self.entries[i];
-        };
+        }
 
         new
     }
@@ -66,7 +66,10 @@ impl Clone for MemoryMap {
 
 impl MemoryMap {
     pub fn from_multiboot(mbinfo: &multiboot::Info) -> Self {
-        let mut memory_map = MemoryMap{entries:[Default::default(); MEMORY_MAP_MAX_ENTRIES], num_entries:0};
+        let mut memory_map = MemoryMap {
+            entries: [Default::default(); MEMORY_MAP_MAX_ENTRIES],
+            num_entries: 0,
+        };
 
         let mut i = 0;
         for e in multiboot::get_memory_map_iterator(mbinfo) {
@@ -93,13 +96,11 @@ impl MemoryMap {
 
             if e.base >= base && e.base + e.length <= base + length {
                 // When the input range fully contains entry, delete entry.
-            }
-            else if e.base >= base + length || e.base + e.length <= base {
+            } else if e.base >= base + length || e.base + e.length <= base {
                 // When the ranges are disjoint, copy original entry.
                 new_entries[o] = *e;
                 o += 1;
-            }
-            else {
+            } else {
                 // Subtract input interval from entry interval.
                 let left_base = e.base;
                 let left_end = cmp::min(base, e.base + e.length);
@@ -157,13 +158,13 @@ fn align_address(address: u64, order: u32) -> u64 {
     new_address
 }
 
-
 fn next_entry(mem_map: &MemoryMap, ndx: usize) -> u32 {
     let mut i = ndx;
     loop {
         let e = mem_map.entries[i];
         if e.status == MemoryStatus::Available
-            && align_address(e.base, PAGE_ORDER) < e.base + e.length {
+            && align_address(e.base, PAGE_ORDER) < e.base + e.length
+        {
             return i as u32;
         }
         i = i + 1;

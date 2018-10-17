@@ -17,7 +17,7 @@ fn make_elem(ch: u8, color: u8) -> u16 {
 fn set_at(x: usize, y: usize, ch: u8) {
     let e = make_elem(ch, COLOR);
     unsafe {
-        let p = VGA_MEMORY.offset((y*WIDTH + x) as isize);
+        let p = VGA_MEMORY.offset((y * WIDTH + x) as isize);
         write_volatile(p, e);
     }
 }
@@ -33,12 +33,11 @@ pub fn clear() {
 pub fn display_terminal(term: &terminal::Buffer) {
     clear();
 
-    let top_line =
-        if term.bottom_line >= 25 {
-            term.bottom_line - 25
-        } else {
-            terminal::HEIGHT - 25 + term.bottom_line
-        };
+    let top_line = if term.bottom_line >= 25 {
+        term.bottom_line - 25
+    } else {
+        terminal::HEIGHT - 25 + term.bottom_line
+    };
 
     for y in 0..HEIGHT {
         let term_line = (y + top_line) % terminal::HEIGHT;

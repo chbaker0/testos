@@ -96,12 +96,20 @@ pub struct SectionHeader32Raw {
     pub entsize: u64,
 }
 
-pub unsafe fn get_section_header(base: *const u8, entry_size: usize, ndx: usize) -> SectionHeaderRaw {
+pub unsafe fn get_section_header(
+    base: *const u8,
+    entry_size: usize,
+    ndx: usize,
+) -> SectionHeaderRaw {
     let ptr = base.offset((entry_size * ndx) as isize) as *const SectionHeaderRaw;
     *ptr
 }
 
-pub unsafe fn get_section_header_32(base: *const u8, entry_size: usize, ndx: usize) -> SectionHeader32Raw {
+pub unsafe fn get_section_header_32(
+    base: *const u8,
+    entry_size: usize,
+    ndx: usize,
+) -> SectionHeader32Raw {
     let ptr = base.offset((entry_size * ndx) as isize) as *const SectionHeader32Raw;
     *ptr
 }

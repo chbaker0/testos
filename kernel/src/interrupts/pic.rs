@@ -1,4 +1,12 @@
-use x86_64::instructions::port::{inb, outb};
+unsafe fn outb(port: u16, value: u8) {
+    asm!("outb %al, %dx" :: "{al}"(value), "{dx}"(port));
+}
+
+unsafe fn inb(port: u16) -> u8 {
+    let value: u8;
+    asm!("inb %dx, %al" : "={al}"(value) : "{dx}"(port));
+    value
+}
 
 const PIC1_CMD: u16 = 0x20;
 const PIC1_DATA: u16 = 0x21;

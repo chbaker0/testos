@@ -1,9 +1,8 @@
 #![feature(const_fn)]
-#![feature(const_refcell_new)]
+#![feature(core_panic_info)]
 #![feature(lang_items)]
 #![no_std]
 
-extern crate rlibc;
 extern crate shared;
 
 mod paging;
@@ -15,6 +14,7 @@ use core::cmp;
 use core::fmt::write;
 use core::mem::size_of;
 use core::ops::DerefMut;
+use core::panic;
 use core::ptr;
 use core::slice::from_raw_parts;
 use core::str::from_utf8;
@@ -23,14 +23,18 @@ use shared::handoff;
 use shared::memory;
 use shared::multiboot;
 
-extern {
-    fn kernel_handoff(mbinfo_addr: *const u64, page_table_addr: *const u32, kernel_entry_addr: *const u64, boot_info: *const handoff::BootInfo) -> !;
+extern "C" {
+    fn kernel_handoff(
+        mbinfo_addr: *const u64,
+        page_table_addr: *const u32,
+        kernel_entry_addr: *const u64,
+        boot_info: *const handoff::BootInfo,
+    ) -> !;
 }
 
 static mut TERMBUF: cell::RefCell<terminal::Buffer> = cell::RefCell::new(terminal::Buffer::new());
 
-fn log_terminal(s: &str)
-{
+fn log_terminal(s: &str) {
     // Currently only one thread exists, so this is safe.
     unsafe {
         let mut termbuf = TERMBUF.borrow_mut();
@@ -84,15 +88,16 @@ fn write_terminal(args: core::fmt::Arguments) {
     term_writer.flush();
 }
 
-#[lang="panic_fmt"]
+#[panic_handler]
 #[no_mangle]
-pub extern fn panic_fmt(panic_args: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    let mut term_writer = TermWriter::new();
-    let _ = write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
-    let _ = write(&mut term_writer, panic_args);
-    term_writer.flush();
-
-    loop { }
+pub extern "C" fn panic_fmt(_info: &panic::PanicInfo) -> ! {
+    /*
+        let mut term_writer = TermWriter::new();
+        let _ = write(&mut term_writer, format_args!("Panic in {} at line {}: ", file, line));
+        let _ = write(&mut term_writer, panic_args);
+        term_writer.flush();
+    */
+    loop {}
 }
 
 #[repr(C, packed)]
@@ -140,27 +145,35 @@ fn read_from_buffer<T>(buf: &[u8], off: usize) -> &T {
 fn get_loader_extent(mbinfo: &multiboot::Info) -> (u64, u64) {
     let symtab_info = multiboot::get_section_header_table_info(mbinfo);
     let bounds = (0..symtab_info.entry_count)
-        .map(|ndx| unsafe { elf::get_section_header_32(symtab_info.addr, symtab_info.entry_size, ndx) })
+        .map(|ndx| unsafe {
+            elf::get_section_header_32(symtab_info.addr, symtab_info.entry_size, ndx)
+        })
         .map(|header| (header.addr as u64, (header.addr + header.size) as u64))
         .filter(|&(lower, upper)| upper - lower > 0)
-        .fold((u64::max_value(), 0), |(a, b), (c, d)| (cmp::min(a, c), cmp::max(b, d)));
+        .fold((u64::max_value(), 0), |(a, b), (c, d)| {
+            (cmp::min(a, c), cmp::max(b, d))
+        });
 
     (bounds.0, bounds.1 - bounds.0)
 }
 
-fn map_kernel(kernel: &[u8],
-              addr_space: &mut paging::AddrSpace,
-              alloc: &mut memory::FrameAllocator) {
+fn map_kernel(
+    kernel: &[u8],
+    addr_space: &mut paging::AddrSpace,
+    alloc: &mut memory::FrameAllocator,
+) {
     // Check alignment.
     assert!(kernel.as_ptr() as u64 % memory::PAGE_SIZE as u64 == 0);
 
     let elf_header: &elf::ElfHeaderRaw = read_from_buffer(kernel, 0);
 
     // Check that the kernel image is what we expect.
-    assert!(elf_header.ident[0] == 0x7f
+    assert!(
+        elf_header.ident[0] == 0x7f
             && elf_header.ident[1] == 'E' as u8
             && elf_header.ident[2] == 'L' as u8
-            && elf_header.ident[3] == 'F' as u8);
+            && elf_header.ident[3] == 'F' as u8
+    );
     assert!(elf_header.typ == elf::ElfType::Exec as u16);
     assert!(elf_header.machine == 62);
 
@@ -178,11 +191,17 @@ fn map_kernel(kernel: &[u8],
             let page = paging::Page(pndx + first_page);
             let copy_offset = segment_base + pndx as usize * memory::PAGE_SIZE;
             let frame_addr = alloc.get_frame() as u64;
-            unsafe { zero_frame(frame_addr as *mut u8); }
+            unsafe {
+                zero_frame(frame_addr as *mut u8);
+            }
             if copy_offset < kernel.len() {
-                unsafe { ptr_copy(frame_addr as *mut u8,
-                                  kernel.as_ptr().offset(copy_offset as isize),
-                                  memory::PAGE_SIZE); }
+                unsafe {
+                    ptr_copy(
+                        frame_addr as *mut u8,
+                        kernel.as_ptr().offset(copy_offset as isize),
+                        memory::PAGE_SIZE,
+                    );
+                }
             }
             let frame = paging::Frame(frame_addr / memory::PAGE_SIZE as u64);
             addr_space.map_to(page, frame, 0b1000, alloc);
@@ -190,19 +209,25 @@ fn map_kernel(kernel: &[u8],
     }
 }
 
-fn map_identity(first_page: u64, page_count: u64,
-                addr_space: &mut paging::AddrSpace,
-                alloc: &mut memory::FrameAllocator) {
-    for i in first_page..first_page+page_count {
+fn map_identity(
+    first_page: u64,
+    page_count: u64,
+    addr_space: &mut paging::AddrSpace,
+    alloc: &mut memory::FrameAllocator,
+) {
+    for i in first_page..first_page + page_count {
         addr_space.map_to(paging::Page(i), paging::Frame(i), 0b1000, alloc);
     }
 }
 
 #[no_mangle]
-pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
+pub extern "C" fn loader_entry(mbinfop: *const multiboot::Info) {
     let mbinfo = unsafe { &*mbinfop };
     let mod_raw_entries = unsafe {
-        from_raw_parts(mbinfo.mods_addr as *const ModuleRaw, mbinfo.mods_count as usize)
+        from_raw_parts(
+            mbinfo.mods_addr as *const ModuleRaw,
+            mbinfo.mods_count as usize,
+        )
     };
     let mut mod_entries = mod_raw_entries.into_iter().map(Module::from_raw);
     // Kernel should be first (and only) module.
@@ -215,12 +240,17 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
     write_terminal(format_args!("{:x} {:x}", loader_extent.0, loader_extent.1));
 
     let mut mem_map_for_kernel = mem_map.clone();
-    mem_map.reserve(kernel_mod.data.as_ptr() as u64, kernel_mod.data.len() as u64);
+    mem_map.reserve(
+        kernel_mod.data.as_ptr() as u64,
+        kernel_mod.data.len() as u64,
+    );
     mem_map.reserve(loader_extent.0, loader_extent.1);
     mem_map.reserve(0, 0x100000);
     mem_map.reserve(mbinfop as u64, size_of::<multiboot::Info>() as u64);
     for i in 0..mem_map.num_entries as usize {
-        write_terminal(format_args!("{:x} {:x}", mem_map.entries[i].base, mem_map.entries[i].length));
+        let base = mem_map.entries[i].base;
+        let length = mem_map.entries[i].length;
+        write_terminal(format_args!("{:x} {:x}", base, length));
     }
     let mut alloc = memory::FrameAllocator::new(&mem_map);
 
@@ -247,8 +277,12 @@ pub extern fn loader_entry(mbinfop: *const multiboot::Info) {
 
     write_terminal(format_args!("{:x}", kernel_entry_addr));
 
-    unsafe { kernel_handoff(&mbinfo_addr as *const u64,
-                            &page_table_addr as *const u32,
-                            &kernel_entry_addr as *const u64,
-                            &boot_info as *const _); }
+    unsafe {
+        kernel_handoff(
+            &mbinfo_addr as *const u64,
+            &page_table_addr as *const u32,
+            &kernel_entry_addr as *const u64,
+            &boot_info as *const _,
+        );
+    }
 }

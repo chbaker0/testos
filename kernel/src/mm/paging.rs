@@ -47,6 +47,7 @@ impl<L: HierarchicalLevel> Table<L> {
 
 pub const PAGE_FLAG_PRESENT: u64 = 0x01;
 pub const PAGE_FLAG_WRITABLE: u64 = 0x02;
+pub const PAGE_FLAG_WRITE_THROUGH: u64 = 0x08;
 pub const PAGE_FLAG_CACHE_DISABLE: u64 = 0x10;
 
 // We assume paging is already set up and that the second-to-last

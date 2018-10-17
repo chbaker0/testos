@@ -76,9 +76,9 @@ pub extern "C" fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const han
         info!("    Address {:x} Size {:x}", base, length);
     }
 
-    interrupts::init();
     mm::init(mem_map.clone());
     acpi::init();
+    interrupts::init();
 
     selftest::run_tests();
 

@@ -37,6 +37,7 @@ mod mm;
 mod sched;
 mod selftest;
 mod sync;
+mod x86_util;
 
 #[cfg(not(test))]
 #[global_allocator]

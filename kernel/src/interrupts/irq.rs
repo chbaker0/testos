@@ -2,6 +2,12 @@ use super::pic;
 
 use x86_64::structures::idt::ExceptionStackFrame;
 
+static IRQ_MAP: spin::Mutex<[Option<fn()>; 16]> = spin::Mutex::new([None; 16]);
+
+pub fn init() {
+    // Do nothing for now.
+}
+
 fn handle_irq(irq: u8) {
     assert!(irq < 16);
 
@@ -12,6 +18,15 @@ fn handle_irq(irq: u8) {
     }
 
     assert!(pic::in_service(irq));
+
+    {
+        let irq_map = IRQ_MAP.lock();
+        let maybe_f = irq_map[irq as usize];
+        match maybe_f {
+            Some(f) => f(),
+            None => (),
+        };
+    }
 
     pic::eoi(irq, false);
 }

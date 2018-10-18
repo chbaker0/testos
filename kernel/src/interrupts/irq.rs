@@ -9,8 +9,12 @@ pub fn init() {
 }
 
 pub fn set_irq_handler(irq: u8, f: Option<fn()>) {
-    let mut irq_map = IRQ_MAP.lock();
-    irq_map[irq as usize] = f;
+    unsafe { asm!("cli"); }
+    {
+        let mut irq_map = IRQ_MAP.lock();
+        irq_map[irq as usize] = f;
+    }
+    unsafe { asm!("sti"); }
 }
 
 fn handle_irq(irq: u8) {

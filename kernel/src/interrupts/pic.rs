@@ -43,15 +43,20 @@ pub fn init() {
 pub fn eoi(irq: u8, spurious: bool) {
     assert!(irq < 16);
 
-    if irq >= 8 && !spurious {
-        unsafe {
-            outb(PIC2_CMD, EOI);
+    if !spurious {
+        if irq >= 8 {
+            unsafe {
+                outb(PIC2_CMD, EOI);
+            }
         }
-    }
-
-    else if !spurious || irq >= 8 {
         unsafe {
             outb(PIC1_CMD, EOI);
+        }
+    } else {
+        if irq >= 8 {
+            unsafe {
+                outb(PIC1_CMD, EOI);
+            }
         }
     }
 }

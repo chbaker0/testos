@@ -17,6 +17,19 @@ pub fn set_irq_handler(irq: u8, f: Option<fn()>) {
     unsafe { asm!("sti"); }
 }
 
+fn get_irq_handler(irq: u8) -> Option<fn()> {
+    let handler;
+
+    unsafe { asm!("cli"); }
+    {
+        let irq_map = IRQ_MAP.lock();
+        handler = irq_map[irq as usize];
+    }
+    unsafe { asm!("sti"); }
+
+    handler
+}
+
 fn handle_irq(irq: u8) {
     assert!(irq < 16);
 
@@ -29,8 +42,7 @@ fn handle_irq(irq: u8) {
     assert!(pic::in_service(irq));
 
     {
-        let irq_map = IRQ_MAP.lock();
-        let maybe_f = irq_map[irq as usize];
+        let maybe_f = get_irq_handler(irq);
         match maybe_f {
             Some(f) => f(),
             None => (),

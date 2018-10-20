@@ -54,6 +54,14 @@ pub fn get_time() -> RtcTime {
 /// Handler for the RTC Update Interrupt.
 /// The default is for the interrupt to fire every second.
 fn rtc_interrupt_handler() {
+    let seconds: u8;
+    let minutes: u8;
+    let hours: u8;
+    let day_of_week: u8;
+    let date_of_month: u8;
+    let month: u8;
+    let year: u8;
+
     unsafe {
         // The b register sets 24 hour mode and bcd/binary mode.
         outb(0x70, 0x8B);
@@ -61,19 +69,19 @@ fn rtc_interrupt_handler() {
         let bcd: bool = reg_b & 0x04 == 0;
 
         outb(0x70, 0x00);
-        let seconds = normalize(inb(0x71), bcd);
+        seconds = normalize(inb(0x71), bcd);
         outb(0x70, 0x02);
-        let minutes = normalize(inb(0x71), bcd);
+        minutes = normalize(inb(0x71), bcd);
         outb(0x70, 0x04);
-        let hours = normalize(inb(0x71), bcd);
+        hours = normalize(inb(0x71), bcd);
         outb(0x70, 0x06);
-        let day_of_week = normalize(inb(0x71), bcd);
+        day_of_week = normalize(inb(0x71), bcd);
         outb(0x70, 0x07);
-        let date_of_month = normalize(inb(0x71), bcd);
+        date_of_month = normalize(inb(0x71), bcd);
         outb(0x70, 0x08);
-        let month = normalize(inb(0x71), bcd);
+        month = normalize(inb(0x71), bcd);
         outb(0x70, 0x09);
-        let year = normalize(inb(0x71), bcd);
+        year = normalize(inb(0x71), bcd);
 
         // Register c must be read after each interrupt or another will not occur.
         outb(0x70, 0x0C);
@@ -86,13 +94,16 @@ fn rtc_interrupt_handler() {
         asm!("cli");
     }
 
-    let mut time = TIME.lock();
-    time.seconds = seconds;
-    time.minutes = minutes;
-    time.hours = hours;
-    time.day_of_week = day_of_week;
-    time.date_of_month = date_of_month;
-    time.year = year;
+    {
+        let mut time = TIME.lock();
+        time.seconds = seconds;
+        time.minutes = minutes;
+        time.hours = hours;
+        time.day_of_week = day_of_week;
+        time.date_of_month = date_of_month;
+        time.year = year;
+        time.count += 1;
+    }
 
     unsafe {
         asm!("sti");

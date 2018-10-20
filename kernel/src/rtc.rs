@@ -1,11 +1,12 @@
 use interrupts;
 use x86_util::{inb, outb};
 
-//Rate controls the interrupt frequency
-//Calculate with `frequency =  32768 >> (rate-1);`
-//Rate must be between 3 and 15 inclusice
+/// Rate controls the interrupt frequency.
+/// You can calculate the frequency with `frequency =  32768 >> (rate-1)`.
+/// Rate must be between 3 and 15 inclusice.
 const RATE: u8 = 6;
 
+/// Struct with values from the Real Time Clock.
 #[derive(Copy, Clone)]
 pub struct RtcTime {
     pub seconds: u8,
@@ -40,53 +41,69 @@ pub fn init() {
 }
 
 pub fn get_time() -> RtcTime {
-    let time = TIME.lock();
-    *time
+    let return_time: RtcTime;
+    unsafe {
+        asm!("cli");
+        let time = TIME.lock();
+        return_time = *time;
+        asm!("sti");
+    }
+    return_time
 }
 
+/// Handler for the RTC Update Interrupt.
+/// The default is for the interrupt to fire every second.
 fn rtc_interrupt_handler() {
+    unsafe {
+        // The b register sets 24 hour mode and bcd/binary mode.
+        outb(0x70, 0x8B);
+        let reg_b: u8 = inb(0x71);
+        let bcd: bool = reg_b & 0x04 == 0;
+
+        outb(0x70, 0x00);
+        let seconds = normalize(inb(0x71), bcd);
+        outb(0x70, 0x02);
+        let minutes = normalize(inb(0x71), bcd);
+        outb(0x70, 0x04);
+        let hours = normalize(inb(0x71), bcd);
+        outb(0x70, 0x06);
+        let day_of_week = normalize(inb(0x71), bcd);
+        outb(0x70, 0x07);
+        let date_of_month = normalize(inb(0x71), bcd);
+        outb(0x70, 0x08);
+        let month = normalize(inb(0x71), bcd);
+        outb(0x70, 0x09);
+        let year = normalize(inb(0x71), bcd);
+
+        // Register c must be read after each interrupt or another will not occur.
+        outb(0x70, 0x0C);
+        inb(0x71);
+    }
+
+    // This is separate from reading the values in order to disable interrupts
+    // for the least amount of time.
     unsafe {
         asm!("cli");
     }
 
-    {
-        let mut time = TIME.lock();
-        unsafe {
-            //the b register sets 24 hour mode and bcd/binary mode
-            outb(0x70, 0x8B);
-            let reg_b: u8 = inb(0x71);
-            let bcd: bool = reg_b & 0x04 == 0;
-
-            outb(0x70, 0x00);
-            time.seconds = normalize(inb(0x71), bcd);
-            outb(0x70, 0x02);
-            time.minutes = normalize(inb(0x71), bcd);
-            outb(0x70, 0x04);
-            time.hours = normalize(inb(0x71), bcd);
-            outb(0x70, 0x06);
-            time.day_of_week = normalize(inb(0x71), bcd);
-            outb(0x70, 0x07);
-            time.date_of_month = normalize(inb(0x71), bcd);
-            outb(0x70, 0x08);
-            time.month = normalize(inb(0x71), bcd);
-            outb(0x70, 0x09);
-            time.year = normalize(inb(0x71), bcd);
-        }
-    }
+    let mut time = TIME.lock();
+    time.seconds = seconds;
+    time.minutes = minutes;
+    time.hours = hours;
+    time.day_of_week = day_of_week;
+    time.date_of_month = date_of_month;
+    time.year = year;
 
     unsafe {
-        //register c must be read after each interrupt or another will not occur
-        outb(0x70, 0x0C);
-        inb(0x71);
         asm!("sti");
     }
 }
 
-//values _might_ be in binary coded decimal format, normalize them if they are
-//else, return without modifying
+/// The values retreived from the RTC might be in BCD format.
+/// If so, This will convery it to binary format.
 fn normalize(value: u8, binary_coded_decimal: bool) -> u8 {
     if binary_coded_decimal {
-        ((value & 0xF0) >> 1) + ((value & 0xF0) >> 3) + (value & 0xf)
+        ((value & 0xF0) >> 1) + ((value & 0xF0) >> 3) + (value & 0xF)
     } else {
         value
     }
@@ -95,13 +112,13 @@ fn normalize(value: u8, binary_coded_decimal: bool) -> u8 {
 unsafe fn enable_irq8() {
     nmi_disable();
 
-    //turn on irq8
+    // Turn on periodic interrupts to IRQ8.
     outb(0x70, 0x8B);
     let prev: u8 = inb(0x71);
     outb(0x70, 0x8B);
     outb(0x71, prev | 0x40);
 
-    //set the rate of the interrupt
+    // Set the rate of the periodic interrupt.
     outb(0x70, 0x8A);
     let prev: u8 = inb(0x71);
     outb(0x70, 0x8A);

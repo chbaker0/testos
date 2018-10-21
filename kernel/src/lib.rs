@@ -34,6 +34,7 @@ use shared::multiboot;
 mod acpi;
 mod interrupts;
 mod mm;
+mod rtc;
 mod sched;
 mod selftest;
 mod sync;
@@ -82,6 +83,7 @@ pub extern "C" fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const han
     acpi::init();
     interrupts::init();
     time::init();
+    rtc::init();
 
     selftest::run_tests();
 

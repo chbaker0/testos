@@ -55,7 +55,12 @@ impl TickSource for Pit {
     }
 }
 
-static PIT: Pit = Pit {data: spin::Mutex::new(PitData { ticks: 0, handler: None })};
+static PIT: Pit = Pit {
+    data: spin::Mutex::new(PitData {
+        ticks: 0,
+        handler: None,
+    }),
+};
 
 pub fn init() {
     // The PIT IRQ is 0. Set our handler for that IRQ.

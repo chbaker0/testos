@@ -38,6 +38,7 @@ mod rtc;
 mod sched;
 mod selftest;
 mod sync;
+mod time;
 mod x86_util;
 
 #[cfg(not(test))]
@@ -81,6 +82,7 @@ pub extern "C" fn kinit(_mbinfop: *const multiboot::Info, boot_infop: *const han
     mm::init(mem_map.clone());
     acpi::init();
     interrupts::init();
+    time::init();
     rtc::init();
 
     selftest::run_tests();

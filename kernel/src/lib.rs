@@ -7,6 +7,7 @@
 #![feature(core_panic_info)]
 #![feature(integer_atomics)]
 #![feature(lang_items)]
+#![feature(optin_builtin_traits)]
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(not(test))]

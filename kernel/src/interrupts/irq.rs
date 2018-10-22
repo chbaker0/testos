@@ -1,3 +1,4 @@
+use x86_util::ScopedInterruptDisabler;
 use super::pic;
 
 use x86_64::structures::idt::ExceptionStackFrame;
@@ -9,25 +10,17 @@ pub fn init() {
 }
 
 pub fn set_irq_handler(irq: u8, f: Option<fn()>) {
-    unsafe { asm!("cli"); }
-    {
-        let mut irq_map = IRQ_MAP.lock();
-        irq_map[irq as usize] = f;
-    }
-    unsafe { asm!("sti"); }
+    let _disable_interrupts = ScopedInterruptDisabler::new();
+    let mut irq_map = IRQ_MAP.lock();
+
+    irq_map[irq as usize] = f;
 }
 
 fn get_irq_handler(irq: u8) -> Option<fn()> {
-    let handler;
+    let _disable_interrupts = ScopedInterruptDisabler::new();
+    let irq_map = IRQ_MAP.lock();
 
-    unsafe { asm!("cli"); }
-    {
-        let irq_map = IRQ_MAP.lock();
-        handler = irq_map[irq as usize];
-    }
-    unsafe { asm!("sti"); }
-
-    handler
+    irq_map[irq as usize]
 }
 
 fn handle_irq(irq: u8) {

@@ -1,5 +1,5 @@
 use interrupts;
-use x86_util::{inb, outb};
+use x86_util::*;
 
 /// Rate controls the interrupt frequency.
 /// You can calculate the frequency with `frequency =  32768 >> (rate-1)`.
@@ -41,14 +41,9 @@ pub fn init() {
 }
 
 pub fn get_time() -> RtcTime {
-    let return_time: RtcTime;
-    unsafe {
-        asm!("cli");
-        let time = TIME.lock();
-        return_time = *time;
-        asm!("sti");
-    }
-    return_time
+    let _disable_interrupts = ScopedInterruptDisabler::new();
+    let time = TIME.lock();
+    *time
 }
 
 /// Handler for the RTC Update Interrupt.
@@ -90,24 +85,16 @@ fn rtc_interrupt_handler() {
 
     // This is separate from reading the values in order to disable interrupts
     // for the least amount of time.
-    unsafe {
-        asm!("cli");
-    }
+    let _disable_interrupts = ScopedInterruptDisabler::new();
 
-    {
-        let mut time = TIME.lock();
-        time.seconds = seconds;
-        time.minutes = minutes;
-        time.hours = hours;
-        time.day_of_week = day_of_week;
-        time.date_of_month = date_of_month;
-        time.year = year;
-        time.count += 1;
-    }
-
-    unsafe {
-        asm!("sti");
-    }
+    let mut time = TIME.lock();
+    time.seconds = seconds;
+    time.minutes = minutes;
+    time.hours = hours;
+    time.day_of_week = day_of_week;
+    time.date_of_month = date_of_month;
+    time.year = year;
+    time.count += 1;
 }
 
 /// The values retreived from the RTC might be in BCD format.
@@ -121,6 +108,7 @@ fn normalize(value: u8, binary_coded_decimal: bool) -> u8 {
 }
 
 unsafe fn enable_irq8() {
+    let _disable_interrupts = ScopedInterruptDisabler::new();
     nmi_disable();
 
     // Turn on periodic interrupts to IRQ8.
@@ -139,11 +127,9 @@ unsafe fn enable_irq8() {
 }
 
 unsafe fn nmi_enable() {
-    asm!("sti");
     outb(0x70, inb(0x70) & 0x7F);
 }
 
 unsafe fn nmi_disable() {
-    asm!("cli");
     outb(0x70, inb(0x70) | 0x80);
 }

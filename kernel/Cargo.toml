@@ -11,14 +11,10 @@ crate-type = ["staticlib"]
 
 [dependencies]
 x86_64 = "0.2.11"
-intrusive-collections = { version = "0.7", features = ["nightly"] }
+intrusive-collections = { version = "0.9", features = ["nightly"] }
 log = "0.4.5"
 shared = { path = "../shared" }
 spin = "0.4.9"
-
-[dependencies.compiler_builtins]
-git = "https://github.com/rust-lang-nursery/compiler-builtins"
-features = ["c", "no-lang-items"]
 
 [dependencies.lazy_static]
 version = "1.1.0"

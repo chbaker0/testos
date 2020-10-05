@@ -11,6 +11,7 @@ name = "loader"
 version = "0.1.0"
 dependencies = [
  "nasm-rs",
+ "static_assertions",
 ]
 
 [[package]]
@@ -21,3 +22,9 @@ checksum = "a76f43faa0d13f9c89f72e1972446d558f003cfffb80eb16bb444231de1becd1"
 dependencies = [
  "arrayvec",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"

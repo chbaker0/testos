@@ -68,8 +68,9 @@ extern loader_main
 
 global _start
 _start:
-    mov byte [0xb8000], 'A'
+    mov byte [0xb8000], 'Z'
 
+    ; Pass multiboot info structure
     push ebx
     call loader_main
 

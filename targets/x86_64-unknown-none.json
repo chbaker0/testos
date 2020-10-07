@@ -8,12 +8,10 @@
     "os": "none",
     "executables": true,
     "code-model": "kernel",
-    "linker-flavor": "ld",
+    "linker-flavor": "ld.lld",
+    "linker": "rust-lld",
     "panic-strategy": "abort",
     "disable-redzone": true,
     "features": "-mmx,-sse,+soft-float",
-    "eliminate-frame-pointer": false,
-    "no-compiler-rt": true,
-    "no-default-libraries": true,
-    "relocation-model": "static"
+    "eliminate-frame-pointer": false
 }

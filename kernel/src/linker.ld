@@ -1,6 +1,6 @@
-ENTRY(kernel_main)
+ENTRY(_start)
 
-KERNEL_BASE = -2048M
+KERNEL_BASE = -2048M;
 
 SECTIONS
 {

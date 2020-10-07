@@ -6,6 +6,7 @@ use core::iter::Iterator;
 use core::panic::PanicInfo;
 
 use static_assertions::assert_eq_size;
+use xmas_elf::ElfFile;
 
 const VMEM: *mut u8 = 0xb8000 as *mut u8;
 
@@ -25,6 +26,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const BootInfo) -> ! {
     // Print the bootloader-provided memory map
     write!(&mut writer, "Memory map:").unwrap();
 
+    // Assume we won't overwrite the memory map.
     let mmap_iter = unsafe { MemMapIter::from_boot_info(boot_info) };
     for entry in mmap_iter {
         write!(
@@ -33,6 +35,24 @@ pub extern "C" fn loader_main(boot_info_ptr: *const BootInfo) -> ! {
             entry.base_addr, entry.mem_length, entry.mem_type
         )
         .unwrap();
+    }
+
+    if !get_bit(boot_info.flags, BOOT_FLAGS_MODS_BIT) || boot_info.mods_count == 0 {
+        panic!("no kernel module provided");
+    }
+
+    // Assume we won't overwrite the module.
+    let kernel_data = unsafe { get_module(boot_info) };
+
+    writeln!(&mut writer, "\n").unwrap();
+    writeln!(&mut writer, "Kernel addr: {:p}", kernel_data.as_ptr()).unwrap();
+    writeln!(&mut writer, "Kernel size: {}", kernel_data.len()).unwrap();
+
+    let kernel_elf = ElfFile::new(kernel_data).unwrap();
+
+    write!(&mut writer, "Kernel sections:").unwrap();
+    for section in kernel_elf.section_iter() {
+        write!(&mut writer, " {}", section.get_name(&kernel_elf).unwrap_or("<null>")).unwrap();
     }
 
     loop {}
@@ -127,6 +147,22 @@ impl Iterator for MemMapIter {
     }
 }
 
+#[repr(C, packed)]
+struct ModEntry {
+    start: u32,
+    end: u32,
+    string: u32,
+    reserved: u32,
+}
+
+unsafe fn get_module(boot_info: &BootInfo) -> &'static [u8] {
+    assert!(get_bit(boot_info.flags, BOOT_FLAGS_MODS_BIT));
+    assert!(boot_info.mods_count > 0);
+
+    let entry = &*(boot_info.mods_addr as *const ModEntry);
+    core::slice::from_raw_parts(entry.start as *const u8, (entry.end - entry.start) as usize)
+}
+
 // Writes a string directly to the framebuffer, up to the max 80*25 = 2000
 // characters. Very unsafe.
 struct ScreenWriter {
@@ -138,6 +174,11 @@ impl Write for ScreenWriter {
         for c in s.chars() {
             if self.offset >= 80 * 25 {
                 return Err(core::fmt::Error);
+            }
+
+            if c == '\n' {
+                self.offset = ((self.offset + 79) / 80) * 80;
+                return Ok(());
             }
 
             let b = if c.is_ascii() { c as u8 } else { '?' as u8 };

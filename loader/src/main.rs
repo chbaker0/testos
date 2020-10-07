@@ -52,7 +52,12 @@ pub extern "C" fn loader_main(boot_info_ptr: *const BootInfo) -> ! {
 
     write!(&mut writer, "Kernel sections:").unwrap();
     for section in kernel_elf.section_iter() {
-        write!(&mut writer, " {}", section.get_name(&kernel_elf).unwrap_or("<null>")).unwrap();
+        write!(
+            &mut writer,
+            " {}",
+            section.get_name(&kernel_elf).unwrap_or("<null>")
+        )
+        .unwrap();
     }
 
     loop {}

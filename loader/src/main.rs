@@ -1,12 +1,12 @@
 #![no_std]
 #![no_main]
 
-use core::default::Default;
+mod physmem;
+
 use core::fmt::Write;
 use core::iter::Iterator;
 use core::panic::PanicInfo;
 
-use arrayvec::ArrayVec;
 use static_assertions::assert_eq_size;
 use xmas_elf::ElfFile;
 
@@ -27,24 +27,17 @@ pub extern "C" fn loader_main(boot_info_ptr: *const BootInfo) -> ! {
 
     // Copy the memory map from multiboot structures to our own memory.
 
-    // Assume we won't overwrite the memory map.
-    let mmap_iter = unsafe { MemMapIter::from_boot_info(boot_info) };
-
-    let memory_map = {
-        let mut memory_map = ArrayVec::<[MemMapEntry; 128]>::new();
-        for entry in mmap_iter {
-            memory_map.push(entry);
-        }
-        memory_map
-    };
+    let memory_map = unsafe { parse_memory_map(boot_info) };
 
     // Print the memory map
     write!(&mut writer, "Memory map:").unwrap();
-    for entry in memory_map {
+    for entry in memory_map.entries() {
         write!(
             &mut writer,
-            " ({}, {}, {})",
-            entry.base_addr, entry.mem_length, entry.mem_type
+            " ({}, {}, {:?})",
+            entry.extent.address.as_raw(),
+            entry.extent.length.as_raw(),
+            entry.mem_type
         )
         .unwrap();
     }
@@ -105,6 +98,39 @@ fn get_bit(flags: u32, bit: usize) -> bool {
     (flags & (1 << bit)) > 0
 }
 
+unsafe fn parse_memory_map(boot_info: &BootInfo) -> physmem::Map {
+    assert!(get_bit(boot_info.flags, BOOT_FLAGS_MMAP_BIT));
+    let iter = RawMemMapIter {
+        next_entry: boot_info.mmap_addr as *const MemMapEntryRaw,
+        length_remaining: boot_info.mmap_length as usize,
+    };
+
+    physmem::Map::from_entries(iter.map(parse_memory_entry))
+}
+
+fn parse_memory_entry(raw: MemMapEntryRaw) -> physmem::MapEntry {
+    physmem::MapEntry {
+        extent: physmem::Extent::new(
+            physmem::Address::from_raw(raw.base_addr),
+            physmem::Length::from_raw(raw.mem_length),
+        ),
+        mem_type: parse_memory_type(raw.mem_type),
+    }
+}
+
+fn parse_memory_type(raw: u32) -> physmem::MemoryType {
+    use physmem::MemoryType;
+
+    match raw {
+        1 => MemoryType::Available,
+        3 => MemoryType::Acpi,
+        4 => MemoryType::ReservedPreserveOnHibernation,
+        5 => MemoryType::Defective,
+        _ => MemoryType::Reserved,
+    }
+}
+
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct MemMapEntryRaw {
     entry_size: u32,
@@ -113,30 +139,13 @@ struct MemMapEntryRaw {
     mem_type: u32,
 }
 
-#[derive(Clone, Copy, Default)]
-struct MemMapEntry {
-    base_addr: u64,
-    mem_length: u64,
-    mem_type: u32,
-}
-
-struct MemMapIter {
+struct RawMemMapIter {
     next_entry: *const MemMapEntryRaw,
     length_remaining: usize,
 }
 
-impl MemMapIter {
-    pub unsafe fn from_boot_info(boot_info: &BootInfo) -> MemMapIter {
-        assert!(get_bit(boot_info.flags, BOOT_FLAGS_MMAP_BIT));
-        MemMapIter {
-            next_entry: boot_info.mmap_addr as *const MemMapEntryRaw,
-            length_remaining: boot_info.mmap_length as usize,
-        }
-    }
-}
-
-impl Iterator for MemMapIter {
-    type Item = MemMapEntry;
+impl Iterator for RawMemMapIter {
+    type Item = MemMapEntryRaw;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.length_remaining == 0 {
@@ -157,11 +166,7 @@ impl Iterator for MemMapIter {
                 as *const MemMapEntryRaw;
         self.length_remaining -= (raw_entry.entry_size + 4) as usize;
 
-        Some(MemMapEntry {
-            base_addr: raw_entry.base_addr,
-            mem_length: raw_entry.mem_length,
-            mem_type: raw_entry.mem_type,
-        })
+        Some(*raw_entry)
     }
 }
 

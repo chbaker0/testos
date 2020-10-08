@@ -2,12 +2,13 @@
 #![no_main]
 
 mod multiboot;
-mod physmem;
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
 use xmas_elf::ElfFile;
+
+use shared::physmem;
 
 const VMEM: *mut u8 = 0xb8000 as *mut u8;
 

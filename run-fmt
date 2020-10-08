@@ -2,3 +2,4 @@
 
 cargo fmt --manifest-path loader/Cargo.toml
 cargo fmt --manifest-path kernel/Cargo.toml
+cargo fmt --manifest-path shared/Cargo.toml

@@ -11,8 +11,16 @@ name = "loader"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "shared",
  "static_assertions",
  "xmas-elf",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
 ]
 
 [[package]]

@@ -5,6 +5,7 @@ authors = ["Collin <chbaker0@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+shared = { path = "../shared" }
 static_assertions = "1.1.0"
 xmas-elf = "0.7.0"
 

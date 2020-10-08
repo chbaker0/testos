@@ -1,0 +1,12 @@
+[package]
+name = "shared"
+version = "0.1.0"
+authors = ["Collin <chbaker0@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+[dependencies.arrayvec]
+version = "0.5.1"
+default-features = false
+features = ["array-sizes-33-128"]

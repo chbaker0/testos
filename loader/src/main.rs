@@ -1,10 +1,12 @@
 #![no_std]
 #![no_main]
 
+use core::default::Default;
 use core::fmt::Write;
 use core::iter::Iterator;
 use core::panic::PanicInfo;
 
+use arrayvec::ArrayVec;
 use static_assertions::assert_eq_size;
 use xmas_elf::ElfFile;
 
@@ -23,12 +25,22 @@ pub extern "C" fn loader_main(boot_info_ptr: *const BootInfo) -> ! {
         panic!("boot info has no memory map");
     }
 
-    // Print the bootloader-provided memory map
-    write!(&mut writer, "Memory map:").unwrap();
+    // Copy the memory map from multiboot structures to our own memory.
 
     // Assume we won't overwrite the memory map.
     let mmap_iter = unsafe { MemMapIter::from_boot_info(boot_info) };
-    for entry in mmap_iter {
+
+    let memory_map = {
+        let mut memory_map = ArrayVec::<[MemMapEntry; 128]>::new();
+        for entry in mmap_iter {
+            memory_map.push(entry);
+        }
+        memory_map
+    };
+
+    // Print the memory map
+    write!(&mut writer, "Memory map:").unwrap();
+    for entry in memory_map {
         write!(
             &mut writer,
             " ({}, {}, {})",
@@ -101,6 +113,7 @@ struct MemMapEntryRaw {
     mem_type: u32,
 }
 
+#[derive(Clone, Copy, Default)]
 struct MemMapEntry {
     base_addr: u64,
     mem_length: u64,

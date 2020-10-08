@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+cargo fmt --manifest-path loader/Cargo.toml
+cargo fmt --manifest-path kernel/Cargo.toml

@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+#
+# Checks code formatting. Returns failure if any code is formatted incorrectly.
+
+set -e
+
+cargo fmt --manifest-path loader/Cargo.toml -- --check
+cargo fmt --manifest-path kernel/Cargo.toml -- --check

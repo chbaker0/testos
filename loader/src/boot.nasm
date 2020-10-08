@@ -124,6 +124,6 @@ long_mode:
     mov rax, [eax]
     jmp rax
 
-    .hang
+    .hang:
     hlt
     jmp .hang

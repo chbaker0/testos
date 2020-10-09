@@ -14,16 +14,31 @@ impl Address {
         self.0
     }
 
+    pub fn distance_from(&self, right: &Address) -> Length {
+        assert!(self >= right);
+        Length::from_raw(self.as_raw() - right.as_raw())
+    }
+
+    pub fn distance_to(&self, right: &Address) -> Length {
+        assert!(self <= right);
+        Length::from_raw(right.as_raw() - self.as_raw())
+    }
+
+    pub fn offset_by(&self, length: &Length) -> Address {
+        assert!(length.as_raw() <= u64::MAX - self.as_raw());
+        Self::from_raw(self.as_raw() + length.as_raw())
+    }
+
     /// Returns the first address below `self` that is aligned to `alignment`,
     /// which must be a power of two.
     pub fn align_down(&self, alignment: usize) -> Address {
-        Address(align_u64_down(self.0, alignment))
+        Self::from_raw(align_u64_down(self.as_raw(), alignment))
     }
 
     /// Returns the first address above `self` that is aligned to `alignment`,
     /// which must be a power of two.
     pub fn align_up(&self, alignment: usize) -> Address {
-        Address(align_u64_up(self.0, alignment))
+        Self::from_raw(align_u64_up(self.as_raw(), alignment))
     }
 }
 
@@ -41,14 +56,14 @@ impl Length {
 
     /// Returns the first length lesser than `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_down(&self, alignment: usize) -> Address {
-        Address(align_u64_down(self.0, alignment))
+    pub fn align_down(&self, alignment: usize) -> Length {
+        Length::from_raw(align_u64_down(self.as_raw(), alignment))
     }
 
     /// Returns the first length greater than `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_up(&self, alignment: usize) -> Address {
-        Address(align_u64_up(self.0, alignment))
+    pub fn align_up(&self, alignment: usize) -> Length {
+        Length::from_raw(align_u64_up(self.as_raw(), alignment))
     }
 }
 
@@ -67,11 +82,32 @@ impl Extent {
         }
     }
 
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn length(&self) -> Length {
+        self.length
+    }
+
+    pub fn end_address(&self) -> Address {
+        self.address.offset_by(&self.length)
+    }
+
     /// Returns the largest extent completely contained in `self` whose start
     /// and end addresses are aligned to `alignment`. `alignment` must be a
     /// power of two.
     pub fn shrink_to_alignment(&self, alignment: usize) -> Option<Extent> {
-        let new_address = self.address.align_up(alignment);
+        let start_address = self.address.align_up(alignment);
+        let end_address = self.end_address().align_down(alignment);
+        if end_address <= start_address {
+            None
+        } else {
+            Some(Extent {
+                address: start_address,
+                length: start_address.distance_to(&end_address),
+            })
+        }
     }
 }
 
@@ -131,15 +167,118 @@ impl BumpAllocator {
         map: &Map,
         reserved: T,
     ) -> BumpAllocator {
+        panic!("...");
     }
 }
 
+/// Given power-of-two `alignment`, returns the largest value below `x` aligned
+/// to `alignment`
 const fn align_u64_down(x: u64, alignment: usize) -> u64 {
-    assert!(alignment.is_power_of_two());
     let mask = !(alignment as u64 - 1);
     x & mask
 }
 
+/// Given power-of-two `alignment`, returns the smallest value above `x` aligned
+/// to `alignment`
 const fn align_u64_up(x: u64, alignment: usize) -> u64 {
     align_u64_down(x + (alignment - 1) as u64, alignment)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn align_raw() {
+        assert_eq!(align_u64_down(0, 2), 0);
+        assert_eq!(align_u64_down(1, 2), 0);
+        assert_eq!(align_u64_down(2, 2), 2);
+
+        assert_eq!(align_u64_up(0, 2), 0);
+        assert_eq!(align_u64_up(1, 2), 2);
+        assert_eq!(align_u64_up(2, 2), 2);
+
+        assert_eq!(align_u64_down(255, 1024), 0);
+        assert_eq!(align_u64_up(255, 1024), 1024);
+    }
+
+    #[test]
+    fn align_address() {
+        assert_eq!(Address::from_raw(0).align_down(1024), Address::from_raw(0));
+        assert_eq!(Address::from_raw(0).align_up(1024), Address::from_raw(0));
+
+        assert_eq!(
+            Address::from_raw(1024).align_down(1024),
+            Address::from_raw(1024)
+        );
+        assert_eq!(
+            Address::from_raw(1024).align_up(1024),
+            Address::from_raw(1024)
+        );
+
+        assert_eq!(Address::from_raw(1).align_down(1024), Address::from_raw(0));
+        assert_eq!(Address::from_raw(1).align_up(1024), Address::from_raw(1024));
+
+        assert_eq!(
+            Address::from_raw(1023).align_down(1024),
+            Address::from_raw(0)
+        );
+        assert_eq!(
+            Address::from_raw(1023).align_up(1024),
+            Address::from_raw(1024)
+        );
+    }
+
+    #[test]
+    fn shrink_extent() {
+        let extent = Extent::new(Address::from_raw(1), Length::from_raw(8191))
+            .shrink_to_alignment(4096)
+            .unwrap();
+        assert_eq!(
+            extent,
+            Extent::new(Address::from_raw(4096), Length::from_raw(4096))
+        );
+
+        let extent = Extent::new(Address::from_raw(0), Length::from_raw(4097))
+            .shrink_to_alignment(4096)
+            .unwrap();
+        assert_eq!(
+            extent,
+            Extent::new(Address::from_raw(0), Length::from_raw(4096))
+        );
+
+        let extent = Extent::new(Address::from_raw(4095), Length::from_raw(4097))
+            .shrink_to_alignment(4096)
+            .unwrap();
+        assert_eq!(
+            extent,
+            Extent::new(Address::from_raw(4096), Length::from_raw(4096))
+        );
+    }
+
+    #[test]
+    fn shrink_extent_already_aligned() {
+        // An already-aligned extent should not be shrunk.
+        let extent = Extent::new(Address::from_raw(0), Length::from_raw(4096));
+        assert_eq!(extent, extent.shrink_to_alignment(4096).unwrap());
+
+        let extent = Extent::new(Address::from_raw(4096), Length::from_raw(8192));
+        assert_eq!(extent, extent.shrink_to_alignment(4096).unwrap());
+    }
+
+    #[test]
+    fn shrink_extent_empty() {
+        // If there's no aligned sub-extent, it must return None.
+        let extent =
+            Extent::new(Address::from_raw(1), Length::from_raw(4096)).shrink_to_alignment(4096);
+        assert_eq!(extent, None);
+
+        let extent =
+            Extent::new(Address::from_raw(0), Length::from_raw(4095)).shrink_to_alignment(4096);
+        assert_eq!(extent, None);
+
+        let extent =
+            Extent::new(Address::from_raw(1), Length::from_raw(8190)).shrink_to_alignment(4096);
+        assert_eq!(extent, None);
+    }
 }

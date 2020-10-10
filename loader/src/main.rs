@@ -59,7 +59,35 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     writeln!(&mut writer, "").unwrap();
 
+    // Get the regions of memory we want to preserve before allocating and
+    // loading the kernel.
+    let loader_extent = get_loader_extent();
+    let kernel_extent = physmem::Extent {
+        address: physmem::Address::from_raw(kernel_data.as_ptr() as u64),
+        length: physmem::Length::from_raw(kernel_data.len() as u64),
+    };
+
     writeln!(&mut writer, "Loader extent: {:?}", get_loader_extent()).unwrap();
+
+    // Reserve the loader's current memory, the kernel image's memory, and the
+    // 1st MiB.
+    let mut reserved_extents = [
+        physmem::Extent::from_raw(0, 1024 * 1024),
+        loader_extent,
+        kernel_extent,
+    ];
+    reserved_extents.sort_unstable_by_key(|e| e.address());
+
+    let mut allocator =
+        physmem::BumpAllocator::new(4096, &memory_map, reserved_extents.iter().copied());
+
+    // This is where we'll copy the kernel sections.
+    let kernel_target = physmem::Extent {
+        address: allocator.allocate(kernel_extent.length()),
+        length: kernel_extent.length(),
+    };
+
+    writeln!(&mut writer, "Kernel load target: {:?}", kernel_target).unwrap();
 
     loop {}
 }

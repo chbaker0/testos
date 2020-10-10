@@ -297,12 +297,27 @@ impl BumpAllocator {
                 continue;
             }
 
-            // We now know `hole` starts in or before `ext`. Get both sides of
-            // the difference of `hole` from `ext`.
+            // We now know `hole` intersects `ext`: it is not completely before
+            // `ext`, nor completely after `ext`. Get both sides of the
+            // difference of `hole` from `ext`.
             let maybe_left = ext.left_difference(&hole);
             let maybe_right = ext.right_difference(&hole);
 
-            if let Some(left) = maybe_left {}
+            // There are no holes left that may intersect `left`, so go ahead
+            // and insert it.
+            if let Some(left) = maybe_left {
+                free.push(left);
+            }
+
+            if let Some(right) = maybe_right {
+                // There may be another hole that will intersect `right`. Put it
+                // back for next iteration. We can throw away `hole` though.
+                map_iter.put_back(right);
+            } else {
+                // `hole` may extend beyond `ext`. Put it back for next
+                // iteration.
+                reserved_iter.put_back(hole);
+            }
         }
 
         // `reserved_iter` is done. Copy the remaining entries directly to `free`.

@@ -92,6 +92,12 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     writeln!(&mut writer, "Kernel load target: {:?}", kernel_target).unwrap();
 
+    unsafe {
+        load_kernel_segments(&kernel_elf, kernel_target);
+    }
+
+    writeln!(&mut writer, "Kernel image segments loaded").unwrap();
+
     loop {}
 }
 
@@ -133,6 +139,45 @@ fn clear_screen() {
     }
 }
 
+unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: physmem::Extent) {
+    use core::ptr::slice_from_raw_parts_mut;
+    use core::ptr::write_bytes;
+
+    use program::SegmentData;
+    use program::Type;
+
+    // For simplicity, zero out all memory at `target`. Then we don't have to
+    // zero out memory per-segment.
+    write_bytes(
+        phys_addr_as_ptr(target.address()),
+        0,
+        target.length().as_raw() as usize,
+    );
+
+    let mut cur_dest_addr = target.address();
+
+    for pg_header in kernel_image.program_iter() {
+        let segment_data = match pg_header.get_type().unwrap() {
+            Type::Null => continue,
+            Type::Load => pg_header.get_data(kernel_image).unwrap(),
+            unsupported => panic!("unsupported section {:?}", unsupported),
+        };
+
+        let segment_slice = match segment_data {
+            SegmentData::Undefined(slice) => slice,
+            _ => panic!("unsupported segment data"),
+        };
+
+        let load_slice =
+            slice_from_raw_parts_mut(cur_dest_addr.as_raw() as *mut u8, segment_slice.len());
+        (*load_slice).copy_from_slice(segment_slice);
+
+        cur_dest_addr = cur_dest_addr
+            .offset_by(&physmem::Length::from_raw(segment_slice.len() as u64))
+            .align_up(PAGE_SIZE);
+    }
+}
+
 fn get_kernel_load_size(kernel_image: &ElfFile) -> physmem::Length {
     use program::Type;
 
@@ -159,6 +204,10 @@ fn get_loader_extent() -> physmem::Extent {
         unsafe { physmem::Address::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
     physmem::Extent::new(begin_address, begin_address.distance_to(&end_address))
+}
+
+unsafe fn phys_addr_as_ptr(address: physmem::Address) -> *mut u8 {
+    address.as_raw() as *mut u8
 }
 
 // DO NOT ACCESS THESE

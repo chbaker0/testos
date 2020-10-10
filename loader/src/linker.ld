@@ -4,6 +4,8 @@ SECTIONS
 {
     . = 1M;
 
+    _loader_start = .;
+
     .text : ALIGN(4K)
     {
         KEEP(*(.multiboot))
@@ -26,4 +28,6 @@ SECTIONS
         *(.bss .bss.*)
         *(.boot_stack)
     }
+
+    _loader_end = .;
 }

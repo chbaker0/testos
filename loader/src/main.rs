@@ -57,6 +57,10 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         .unwrap();
     }
 
+    writeln!(&mut writer, "").unwrap();
+
+    writeln!(&mut writer, "Loader extent: {:?}", get_loader_extent()).unwrap();
+
     loop {}
 }
 
@@ -96,6 +100,22 @@ fn clear_screen() {
             *VMEM.offset(2 * i) = ' ' as u8;
         }
     }
+}
+
+fn get_loader_extent() -> physmem::Extent {
+    let begin_address =
+        unsafe { physmem::Address::from_raw((&_loader_start as *const core::ffi::c_void) as u64) };
+
+    let end_address =
+        unsafe { physmem::Address::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
+
+    physmem::Extent::new(begin_address, begin_address.distance_to(&end_address))
+}
+
+// DO NOT ACCESS THESE
+extern "C" {
+    static _loader_start: core::ffi::c_void;
+    static _loader_end: core::ffi::c_void;
 }
 
 #[panic_handler]

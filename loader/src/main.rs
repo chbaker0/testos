@@ -81,8 +81,11 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     ];
     reserved_extents.sort_unstable_by_key(|e| e.address());
 
-    let mut allocator =
-        memory::BumpAllocator::new(PAGE_SIZE, &memory_map, reserved_extents.iter().copied());
+    let mut allocator = memory::BumpAllocator::from_memory_map(
+        PAGE_SIZE,
+        &memory_map,
+        reserved_extents.iter().copied(),
+    );
 
     // This is where we'll copy the kernel sections.
     let kernel_target = memory::PhysExtent {

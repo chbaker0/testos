@@ -14,6 +14,11 @@ version = "0.5.1"
 default-features = false
 features = ["array-sizes-33-128"]
 
+[dependencies.x86_64]
+version = "0.12.2"
+default-features = false
+features = ["nightly"]
+
 #[dependencies.goblin]
 #version = "0.2.3"
 #default-features = false

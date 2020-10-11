@@ -120,6 +120,13 @@ impl<Type: AddressType> Extent<Type> {
         Self::new(Address::<Type>::from_raw(address), Length::from_raw(length))
     }
 
+    pub fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {
+        Self {
+            address: begin,
+            length: begin.distance_to(end),
+        }
+    }
+
     pub fn address(self) -> Address<Type> {
         self.address
     }
@@ -221,6 +228,20 @@ impl<Type: AddressType> Extent<Type> {
                 address: start_address,
                 length: start_address.distance_to(end_address),
             })
+        }
+    }
+
+    /// Returns the smallest extent that contains `self` whose start and end
+    /// addresses are aligned to `alignment`. `alignment` must be a power of
+    /// two. There is always a valid result.
+    pub fn expand_to_alignment(&self, alignment: u64) -> Self {
+        let start_address = self.address.align_down(alignment);
+        let end_address = self.end_address().align_up(alignment);
+
+        // TODO: handle if `end_address` extends beyond u64::MAX
+        Self {
+            address: start_address,
+            length: start_address.distance_to(end_address),
         }
     }
 }

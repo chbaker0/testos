@@ -6,6 +6,8 @@ mod multiboot;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use static_assertions::const_assert_eq;
+use x86_64::structures::paging;
 use xmas_elf::program;
 use xmas_elf::ElfFile;
 
@@ -101,6 +103,32 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     writeln!(&mut writer, "Kernel image segments loaded").unwrap();
 
+    let total_memory_extent = memory::PhysExtent::from_range_exclusive(
+        memory::PhysAddress::from_raw(0),
+        memory_map.entries().last().unwrap().extent.end_address(),
+    );
+
+    // Get the number of frames we need to create the page tables. Add 1 for the
+    // top level PML4 table.
+    let page_table_frames =
+        estimate_frames_to_map(kernel_target) + estimate_frames_to_map(total_memory_extent) + 1;
+
+    writeln!(
+        &mut writer,
+        "Frames required for page tables: {}",
+        page_table_frames
+    );
+
+    // This is where we'll put the tables.
+    let page_table_extent = memory::PhysExtent::new(
+        allocator.allocate_pages(page_table_frames),
+        memory::Length::from_raw(page_table_frames * PAGE_SIZE),
+    );
+
+    let mut page_table = paging::PageTable::new();
+
+    map_linear(&mut page_table, &memory_map);
+
     loop {}
 }
 
@@ -160,6 +188,8 @@ unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExten
     let mut cur_dest_addr = target.address();
 
     for pg_header in kernel_image.program_iter() {
+        assert!(cur_dest_addr < target.end_address());
+
         let segment_data = match pg_header.get_type().unwrap() {
             Type::Null => continue,
             Type::Load => pg_header.get_data(kernel_image).unwrap(),
@@ -171,6 +201,10 @@ unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExten
             _ => panic!("unsupported segment data"),
         };
 
+        assert!(
+            cur_dest_addr.offset_by(memory::Length::from_raw(segment_slice.len() as u64))
+                <= target.end_address()
+        );
         let load_slice =
             slice_from_raw_parts_mut(cur_dest_addr.as_raw() as *mut u8, segment_slice.len());
         (*load_slice).copy_from_slice(segment_slice);
@@ -199,6 +233,37 @@ fn get_kernel_load_size(kernel_image: &ElfFile) -> memory::Length {
     length
 }
 
+/// Given a region of memory, estimates the number of frames required to map it
+/// linearly in a page table. Doesn't account for the L4 table.
+///
+/// Returns an upper bound. It may require fewer frames.
+fn estimate_frames_to_map(extent: memory::PhysExtent) -> u64 {
+    let extent = extent.expand_to_alignment(PAGE_SIZE);
+
+    // First, compute the number of level-1 entries required. This is simply the
+    // length divided by the frame size. The length is already aligned.
+    let l1_entries = extent.length().as_raw() / PAGE_SIZE;
+
+    // Each entry is 8 bytes.
+    let l1_size = l1_entries * 8;
+
+    // Depending on the virtual address it's mapped to, the first and last
+    // tables may be partially filled. All the rest will be completely filled.
+    // If all are completely filled, we need `l1_size / PAGE_SIZE` frames. Add 2
+    // to this to account for the first and last frames.
+    let l1_frames = l1_size / PAGE_SIZE + 2;
+
+    // We can apply the same logic to each level up.
+
+    let l2_size = l1_frames * 8;
+    let l2_frames = l2_size / PAGE_SIZE + 2;
+
+    let l3_size = l2_frames * 8;
+    let l3_frames = l3_size / PAGE_SIZE + 2;
+
+    return l1_frames + l2_frames + l3_frames;
+}
+
 fn get_loader_extent() -> memory::PhysExtent {
     let begin_address = unsafe {
         memory::PhysAddress::from_raw((&_loader_start as *const core::ffi::c_void) as u64)
@@ -208,6 +273,33 @@ fn get_loader_extent() -> memory::PhysExtent {
         unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
     memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
+}
+
+/// Map all physical memory to the bottom of the higher half
+///
+/// The 48-bit virtual address space is split into two halves of size 2^47. One
+/// extends up from 0x0000_0000_0000_0000, and one extends down from
+/// 0xFFFF_FFFF_FFFF_FFFF.
+///
+/// The top half starts at 0xFFFF_FFFF_FFFF_FFFF - (2^47-1), or
+/// 0xFFFF_8000_0000_0000. We map all physical memory starting here.
+unsafe fn map_physical_memory(
+    allocator: &mut memory::BumpAllocator,
+    mem_map: &memory::Map,
+) -> (paging::PageTable, memory::PhysExtent) {
+    use x86_64::addr::VirtAddr;
+
+    const HIGHER_HALF_START: u64 = 0u64.overflowing_sub(1 << 47).0;
+    const_assert_eq!(HIGHER_HALF_START, 0xFFFF_8000_0000_0000);
+
+    let table = paging::PageTable::new();
+
+    let mut flags = paging::PageTableFlags::empty();
+    flags.insert(paging::PageTableFlags::PRESENT);
+    flags.insert(paging::PageTableFlags::WRITABLE);
+    flags.insert(paging::PageTableFlags::GLOBAL);
+
+    panic!();
 }
 
 unsafe fn phys_addr_as_ptr(address: memory::PhysAddress) -> *mut u8 {

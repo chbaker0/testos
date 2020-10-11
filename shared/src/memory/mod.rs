@@ -1,4 +1,4 @@
-mod base;
+pub mod addr;
 
 use core::iter::IntoIterator;
 
@@ -6,7 +6,7 @@ use arrayvec::ArrayVec;
 use itertools::put_back;
 use itertools::structs::PutBack;
 
-pub use base::*;
+pub use addr::*;
 
 /// A map of the machine's physical memory.
 pub struct Map {
@@ -25,7 +25,7 @@ impl Map {
         &self.entries
     }
 
-    pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = Extent> + 'a {
+    pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + 'a {
         self.entries
             .iter()
             .filter(move |e| e.mem_type == mem_type)
@@ -35,7 +35,7 @@ impl Map {
 
 #[derive(Clone, Copy, Debug)]
 pub struct MapEntry {
-    pub extent: Extent,
+    pub extent: PhysExtent,
     pub mem_type: MemoryType,
 }
 
@@ -57,12 +57,39 @@ pub enum MemoryType {
 /// Does not support freeing.
 pub struct BumpAllocator {
     // This is in reverse order.
-    free: ArrayVec<[Extent; 128]>,
+    free: ArrayVec<[PhysExtent; 128]>,
     // This is the base 2 log of the page size.
     page_size_log2: usize,
 }
 
 impl BumpAllocator {
+    /// Allocates from the listed Extents.
+    ///
+    /// `blocks` must be sorted. Addresses do not need to be aligned. However,
+    /// all returned allocations will be aligned to `page_size`, which must be a
+    /// power of two.
+    pub fn new<T: IntoIterator<Item = PhysExtent>>(blocks: T, page_size: u64) -> BumpAllocator {
+        // Make sure `page_size` is a power of two.
+        assert_eq!(page_size.count_ones(), 1);
+
+        // The base 2 log of a power of 2 is simply the number of trailing
+        // zeros.
+        let page_size_log2 = page_size.trailing_zeros() as usize;
+
+        let mut free: ArrayVec<[PhysExtent; 128]> = blocks
+            .into_iter()
+            .flat_map(|e| e.shrink_to_alignment(page_size))
+            .collect();
+
+        assert!(is_sorted_and_nonoverlapping(free.iter().copied()));
+        free = free.iter().rev().copied().collect();
+
+        BumpAllocator {
+            free,
+            page_size_log2,
+        }
+    }
+
     /// Allocates from the available memory in `map` after removing specified
     /// regions in `holes`. Allocations are multiples of `page_size`, which must
     /// be a power of two.
@@ -71,43 +98,27 @@ impl BumpAllocator {
     ///
     /// Addresses in `map` and `holes` do not need to be aligned. However, all
     /// returned allocations will be aligned to `page_size`.
-    pub fn new<T: IntoIterator<Item = Extent>>(
+    pub fn from_memory_map<T: IntoIterator<Item = PhysExtent>>(
         page_size: u64,
         map: &Map,
         holes: T,
     ) -> BumpAllocator {
-        // Make sure `page_size` is a power of two.
-        assert_eq!(page_size.count_ones(), 1);
-
-        // The base 2 log of a power of 2 is simply the number of trailing
-        // zeros.
-        let page_size_log2 = page_size.trailing_zeros() as usize;
-
         let map_iter = map.iter_type(MemoryType::Available);
-
-        let mut free: ArrayVec<[Extent; 128]> = reserve(map_iter, holes)
-            .flat_map(|e| e.shrink_to_alignment(page_size))
-            .collect();
-        free = free.iter().rev().copied().collect();
-
-        BumpAllocator {
-            free: free,
-            page_size_log2: page_size_log2,
-        }
+        Self::new(remove_reserved(map_iter, holes), page_size)
     }
 
-    pub fn allocate_pages(&mut self, pages: u64) -> Address {
+    pub fn allocate_pages(&mut self, pages: u64) -> PhysAddress {
         // Check that pages * (2^page_size_log2) <= u64::MAX without overflow.
         assert!(pages as u64 <= (u64::MAX >> self.page_size_log2));
         self.allocate_impl(Length::from_raw(pages << self.page_size_log2))
     }
 
-    pub fn allocate(&mut self, length: Length) -> Address {
+    pub fn allocate(&mut self, length: Length) -> PhysAddress {
         self.allocate_impl(length.align_up(1 << self.page_size_log2))
     }
 
     // `alloc_length` must be aligned to the page size.
-    fn allocate_impl(&mut self, alloc_length: Length) -> Address {
+    fn allocate_impl(&mut self, alloc_length: Length) -> PhysAddress {
         assert!(alloc_length.as_raw().trailing_zeros() >= self.page_size_log2 as u32);
 
         // The last element of `self.free` contains the first available block.
@@ -129,8 +140,8 @@ impl BumpAllocator {
         let alloc_address = block.address();
 
         let maybe_remainder = Extent::new_checked(
-            block.address().offset_by(&alloc_length),
-            block.length().subtract(&alloc_length),
+            block.address().offset_by(alloc_length),
+            block.length().subtract(alloc_length),
         );
 
         if let Some(remainder) = maybe_remainder {
@@ -141,17 +152,17 @@ impl BumpAllocator {
     }
 }
 
-/// Removes specified regions from a list of blocks of memory.
+/// Removes specified regions from a list of memory blocks.
 ///
 /// Given `blocks`, a list of available memory, removes the regions specified in
 /// `holes` and returns the remaining free memory. This may involve splitting
 /// extents in `blocks`. The resulting list may be larger than `blocks`.
 ///
 /// Both lists must be sorted by start address and non-overlapping.
-fn reserve<T: IntoIterator<Item = Extent>, U: IntoIterator<Item = Extent>>(
+pub fn remove_reserved<T: IntoIterator<Item = PhysExtent>, U: IntoIterator<Item = PhysExtent>>(
     blocks: T,
     holes: U,
-) -> impl Iterator<Item = Extent> {
+) -> impl Iterator<Item = PhysExtent> {
     ReserveIter {
         blocks: put_back(blocks),
         holes: put_back(holes),
@@ -166,12 +177,12 @@ struct ReserveIter<I1: Iterator, I2: Iterator> {
 
 impl<I1, I2> Iterator for ReserveIter<I1, I2>
 where
-    I1: Iterator<Item = Extent>,
-    I2: Iterator<Item = Extent>,
+    I1: Iterator<Item = PhysExtent>,
+    I2: Iterator<Item = PhysExtent>,
 {
-    type Item = Option<Extent>;
+    type Item = Option<PhysExtent>;
 
-    fn next(&mut self) -> Option<Option<Extent>> {
+    fn next(&mut self) -> Option<Option<PhysExtent>> {
         let block = self.blocks.next()?;
 
         // Remove holes completely before `ext`; they can be ignored.
@@ -200,9 +211,9 @@ where
         // We now know `hole` intersects `ext`: it is not completely before
         // `ext`, nor completely after `ext`. Get both sides of the
         // difference of `hole` from `ext`.
-        assert!(block.has_overlap(&hole));
-        let maybe_left = block.left_difference(&hole);
-        let maybe_right = block.right_difference(&hole);
+        assert!(block.has_overlap(hole));
+        let maybe_left = block.left_difference(hole);
+        let maybe_right = block.right_difference(hole);
 
         if let Some(right) = maybe_right {
             // There may be another hole that will intersect `right`. Put it
@@ -220,13 +231,39 @@ where
     }
 }
 
+pub fn is_sorted_and_nonoverlapping<
+    AddrType: AddressType,
+    T: IntoIterator<Item = Extent<AddrType>>,
+>(
+    blocks: T,
+) -> bool {
+    let mut iter = blocks.into_iter().peekable();
+
+    while let Some(cur) = iter.next() {
+        let next = match iter.peek().copied() {
+            Some(next) => next,
+            None => return true,
+        };
+
+        if cur.address() >= next.address() {
+            return false;
+        }
+
+        if cur.has_overlap(next) {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn reserve_no_holes() {
-        let result: Vec<_> = reserve(
+    fn remove_reserved_no_holes() {
+        let result: Vec<_> = remove_reserved(
             [Extent::from_raw(1, 4), Extent::from_raw(10, 4)]
                 .iter()
                 .copied(),
@@ -235,13 +272,13 @@ mod tests {
         .collect();
         assert_eq!(result, [Extent::from_raw(1, 4), Extent::from_raw(10, 4)]);
 
-        let result: Vec<_> = reserve([].iter().copied(), [].iter().copied()).collect();
+        let result: Vec<_> = remove_reserved([].iter().copied(), [].iter().copied()).collect();
         assert_eq!(result, []);
     }
 
     #[test]
-    fn reserve_no_blocks() {
-        let result: Vec<_> = reserve(
+    fn remove_reserved_no_blocks() {
+        let result: Vec<_> = remove_reserved(
             [].iter().copied(),
             [Extent::from_raw(5, 5), Extent::from_raw(15, 5)]
                 .iter()
@@ -252,8 +289,8 @@ mod tests {
     }
 
     #[test]
-    fn reserve_big() {
-        let result: Vec<_> = reserve(
+    fn remove_reserved_big() {
+        let result: Vec<_> = remove_reserved(
             [
                 Extent::from_raw(0, 5),
                 Extent::from_raw(7, 2),
@@ -289,8 +326,8 @@ mod tests {
     }
 
     #[test]
-    fn reserve_multiple_holes_in_one_block() {
-        let result: Vec<_> = reserve(
+    fn remove_reserved_multiple_holes_in_one_block() {
+        let result: Vec<_> = remove_reserved(
             [Extent::from_raw(10, 20)].iter().copied(),
             [
                 Extent::from_raw(8, 4),
@@ -314,8 +351,8 @@ mod tests {
     }
 
     #[test]
-    fn reserve_multiple_blocks_in_one_hole() {
-        let result: Vec<_> = reserve(
+    fn remove_reserved_multiple_blocks_in_one_hole() {
+        let result: Vec<_> = remove_reserved(
             [
                 Extent::from_raw(4, 2),
                 Extent::from_raw(10, 5),
@@ -346,19 +383,19 @@ mod tests {
 
         let holes = [Extent::from_raw(4095, 4098)];
 
-        let mut allocator = BumpAllocator::new(page_size, &map, holes.iter().copied());
+        let mut allocator = BumpAllocator::from_memory_map(page_size, &map, holes.iter().copied());
 
         assert_eq!(
             allocator.allocate_pages(2),
-            Address::from_raw(page_size * 3)
+            PhysAddress::from_raw(page_size * 3)
         );
         assert_eq!(
             allocator.allocate(Length::from_raw(20)),
-            Address::from_raw(page_size * 5)
+            PhysAddress::from_raw(page_size * 5)
         );
         assert_eq!(
             allocator.allocate_pages(1),
-            Address::from_raw(page_size * 6)
+            PhysAddress::from_raw(page_size * 6)
         );
     }
 }

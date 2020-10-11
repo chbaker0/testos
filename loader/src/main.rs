@@ -9,7 +9,7 @@ use core::panic::PanicInfo;
 use xmas_elf::program;
 use xmas_elf::ElfFile;
 
-use shared::physmem;
+use shared::memory;
 
 const PAGE_SIZE: u64 = 4096;
 
@@ -65,9 +65,9 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Get the regions of memory we want to preserve before allocating and
     // loading the kernel.
     let loader_extent = get_loader_extent();
-    let kernel_extent = physmem::Extent {
-        address: physmem::Address::from_raw(kernel_image.as_ptr() as u64),
-        length: physmem::Length::from_raw(kernel_image.len() as u64),
+    let kernel_extent = memory::PhysExtent {
+        address: memory::PhysAddress::from_raw(kernel_image.as_ptr() as u64),
+        length: memory::Length::from_raw(kernel_image.len() as u64),
     };
 
     writeln!(&mut writer, "Loader extent: {:?}", get_loader_extent()).unwrap();
@@ -75,17 +75,20 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Reserve the loader's current memory, the kernel image's memory, and the
     // 1st MiB.
     let mut reserved_extents = [
-        physmem::Extent::from_raw(0, 1024 * 1024),
+        memory::PhysExtent::from_raw(0, 1024 * 1024),
         loader_extent,
         kernel_extent,
     ];
     reserved_extents.sort_unstable_by_key(|e| e.address());
 
-    let mut allocator =
-        physmem::BumpAllocator::new(PAGE_SIZE, &memory_map, reserved_extents.iter().copied());
+    let mut allocator = memory::BumpAllocator::from_memory_map(
+        PAGE_SIZE,
+        &memory_map,
+        reserved_extents.iter().copied(),
+    );
 
     // This is where we'll copy the kernel sections.
-    let kernel_target = physmem::Extent {
+    let kernel_target = memory::PhysExtent {
         address: allocator.allocate(kernel_extent.length()),
         length: get_kernel_load_size(&kernel_elf),
     };
@@ -139,7 +142,7 @@ fn clear_screen() {
     }
 }
 
-unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: physmem::Extent) {
+unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExtent) {
     use core::ptr::slice_from_raw_parts_mut;
     use core::ptr::write_bytes;
 
@@ -173,15 +176,15 @@ unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: physmem::Extent) 
         (*load_slice).copy_from_slice(segment_slice);
 
         cur_dest_addr = cur_dest_addr
-            .offset_by(&physmem::Length::from_raw(segment_slice.len() as u64))
+            .offset_by(memory::Length::from_raw(segment_slice.len() as u64))
             .align_up(PAGE_SIZE);
     }
 }
 
-fn get_kernel_load_size(kernel_image: &ElfFile) -> physmem::Length {
+fn get_kernel_load_size(kernel_image: &ElfFile) -> memory::Length {
     use program::Type;
 
-    let mut length = physmem::Length::from_raw(0);
+    let mut length = memory::Length::from_raw(0);
 
     for pg_header in kernel_image.program_iter() {
         let segment_size = match pg_header.get_type().unwrap() {
@@ -190,23 +193,24 @@ fn get_kernel_load_size(kernel_image: &ElfFile) -> physmem::Length {
             unsupported => panic!("unsupported section {:?}", unsupported),
         };
 
-        length = length.add(&physmem::Length::from_raw(segment_size).align_up(PAGE_SIZE));
+        length = length.add(memory::Length::from_raw(segment_size).align_up(PAGE_SIZE));
     }
 
     length
 }
 
-fn get_loader_extent() -> physmem::Extent {
-    let begin_address =
-        unsafe { physmem::Address::from_raw((&_loader_start as *const core::ffi::c_void) as u64) };
+fn get_loader_extent() -> memory::PhysExtent {
+    let begin_address = unsafe {
+        memory::PhysAddress::from_raw((&_loader_start as *const core::ffi::c_void) as u64)
+    };
 
     let end_address =
-        unsafe { physmem::Address::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
+        unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
-    physmem::Extent::new(begin_address, begin_address.distance_to(&end_address))
+    memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
 }
 
-unsafe fn phys_addr_as_ptr(address: physmem::Address) -> *mut u8 {
+unsafe fn phys_addr_as_ptr(address: memory::PhysAddress) -> *mut u8 {
     address.as_raw() as *mut u8
 }
 

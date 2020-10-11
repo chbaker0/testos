@@ -117,7 +117,7 @@ impl Extent {
     ///
     ///
     /// ```
-    /// use shared::physmem::*;
+    /// use shared::memory::addr::*;
     /// assert_eq!(Extent::from_raw(0, 4).last_address(), Address::from_raw(3));
     /// ```
     pub fn last_address(self) -> Address {

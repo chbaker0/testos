@@ -2,7 +2,7 @@ use core::iter::Iterator;
 
 use static_assertions::assert_eq_size;
 
-use crate::physmem;
+use shared::memory;
 
 // Multiboot information provided by bootloader
 #[repr(C, packed)]
@@ -29,14 +29,14 @@ assert_eq_size!(BootInfo, [u8; 72]);
 pub const BOOT_FLAGS_MODS_BIT: usize = 3;
 pub const BOOT_FLAGS_MMAP_BIT: usize = 6;
 
-pub unsafe fn parse_memory_map(boot_info: &BootInfo) -> physmem::Map {
+pub unsafe fn parse_memory_map(boot_info: &BootInfo) -> memory::Map {
     assert!(get_bit(boot_info.flags, BOOT_FLAGS_MMAP_BIT));
     let iter = RawMemMapIter {
         next_entry: boot_info.mmap_addr as *const MemMapEntryRaw,
         length_remaining: boot_info.mmap_length as usize,
     };
 
-    physmem::Map::from_entries(iter.map(parse_memory_entry))
+    memory::Map::from_entries(iter.map(parse_memory_entry))
 }
 
 pub unsafe fn get_first_module(boot_info: &BootInfo) -> &'static [u8] {
@@ -47,18 +47,18 @@ pub unsafe fn get_first_module(boot_info: &BootInfo) -> &'static [u8] {
     core::slice::from_raw_parts(entry.start as *const u8, (entry.end - entry.start) as usize)
 }
 
-fn parse_memory_entry(raw: MemMapEntryRaw) -> physmem::MapEntry {
-    physmem::MapEntry {
-        extent: physmem::Extent::new(
-            physmem::Address::from_raw(raw.base_addr),
-            physmem::Length::from_raw(raw.mem_length),
+fn parse_memory_entry(raw: MemMapEntryRaw) -> memory::MapEntry {
+    memory::MapEntry {
+        extent: memory::Extent::new(
+            memory::Address::from_raw(raw.base_addr),
+            memory::Length::from_raw(raw.mem_length),
         ),
         mem_type: parse_memory_type(raw.mem_type),
     }
 }
 
-fn parse_memory_type(raw: u32) -> physmem::MemoryType {
-    use physmem::MemoryType;
+fn parse_memory_type(raw: u32) -> memory::MemoryType {
+    use memory::MemoryType;
 
     match raw {
         1 => MemoryType::Available,

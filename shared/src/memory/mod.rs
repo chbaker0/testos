@@ -1,4 +1,4 @@
-mod base;
+pub mod addr;
 
 use core::iter::IntoIterator;
 
@@ -6,7 +6,7 @@ use arrayvec::ArrayVec;
 use itertools::put_back;
 use itertools::structs::PutBack;
 
-pub use base::*;
+pub use addr::*;
 
 /// A map of the machine's physical memory.
 pub struct Map {

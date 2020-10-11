@@ -173,7 +173,7 @@ unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: physmem::Extent) 
         (*load_slice).copy_from_slice(segment_slice);
 
         cur_dest_addr = cur_dest_addr
-            .offset_by(&physmem::Length::from_raw(segment_slice.len() as u64))
+            .offset_by(physmem::Length::from_raw(segment_slice.len() as u64))
             .align_up(PAGE_SIZE);
     }
 }
@@ -190,7 +190,7 @@ fn get_kernel_load_size(kernel_image: &ElfFile) -> physmem::Length {
             unsupported => panic!("unsupported section {:?}", unsupported),
         };
 
-        length = length.add(&physmem::Length::from_raw(segment_size).align_up(PAGE_SIZE));
+        length = length.add(physmem::Length::from_raw(segment_size).align_up(PAGE_SIZE));
     }
 
     length
@@ -203,7 +203,7 @@ fn get_loader_extent() -> physmem::Extent {
     let end_address =
         unsafe { physmem::Address::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
-    physmem::Extent::new(begin_address, begin_address.distance_to(&end_address))
+    physmem::Extent::new(begin_address, begin_address.distance_to(end_address))
 }
 
 unsafe fn phys_addr_as_ptr(address: physmem::Address) -> *mut u8 {

@@ -129,8 +129,8 @@ impl BumpAllocator {
         let alloc_address = block.address();
 
         let maybe_remainder = Extent::new_checked(
-            block.address().offset_by(&alloc_length),
-            block.length().subtract(&alloc_length),
+            block.address().offset_by(alloc_length),
+            block.length().subtract(alloc_length),
         );
 
         if let Some(remainder) = maybe_remainder {
@@ -200,9 +200,9 @@ where
         // We now know `hole` intersects `ext`: it is not completely before
         // `ext`, nor completely after `ext`. Get both sides of the
         // difference of `hole` from `ext`.
-        assert!(block.has_overlap(&hole));
-        let maybe_left = block.left_difference(&hole);
-        let maybe_right = block.right_difference(&hole);
+        assert!(block.has_overlap(hole));
+        let maybe_left = block.left_difference(hole);
+        let maybe_right = block.right_difference(hole);
 
         if let Some(right) = maybe_right {
             // There may be another hole that will intersect `right`. Put it

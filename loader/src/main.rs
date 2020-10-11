@@ -65,8 +65,8 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Get the regions of memory we want to preserve before allocating and
     // loading the kernel.
     let loader_extent = get_loader_extent();
-    let kernel_extent = memory::Extent {
-        address: memory::Address::from_raw(kernel_image.as_ptr() as u64),
+    let kernel_extent = memory::PhysExtent {
+        address: memory::PhysAddress::from_raw(kernel_image.as_ptr() as u64),
         length: memory::Length::from_raw(kernel_image.len() as u64),
     };
 
@@ -75,7 +75,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Reserve the loader's current memory, the kernel image's memory, and the
     // 1st MiB.
     let mut reserved_extents = [
-        memory::Extent::from_raw(0, 1024 * 1024),
+        memory::PhysExtent::from_raw(0, 1024 * 1024),
         loader_extent,
         kernel_extent,
     ];
@@ -85,7 +85,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         memory::BumpAllocator::new(PAGE_SIZE, &memory_map, reserved_extents.iter().copied());
 
     // This is where we'll copy the kernel sections.
-    let kernel_target = memory::Extent {
+    let kernel_target = memory::PhysExtent {
         address: allocator.allocate(kernel_extent.length()),
         length: get_kernel_load_size(&kernel_elf),
     };
@@ -139,7 +139,7 @@ fn clear_screen() {
     }
 }
 
-unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::Extent) {
+unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExtent) {
     use core::ptr::slice_from_raw_parts_mut;
     use core::ptr::write_bytes;
 
@@ -196,17 +196,18 @@ fn get_kernel_load_size(kernel_image: &ElfFile) -> memory::Length {
     length
 }
 
-fn get_loader_extent() -> memory::Extent {
-    let begin_address =
-        unsafe { memory::Address::from_raw((&_loader_start as *const core::ffi::c_void) as u64) };
+fn get_loader_extent() -> memory::PhysExtent {
+    let begin_address = unsafe {
+        memory::PhysAddress::from_raw((&_loader_start as *const core::ffi::c_void) as u64)
+    };
 
     let end_address =
-        unsafe { memory::Address::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
+        unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
-    memory::Extent::new(begin_address, begin_address.distance_to(end_address))
+    memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
 }
 
-unsafe fn phys_addr_as_ptr(address: memory::Address) -> *mut u8 {
+unsafe fn phys_addr_as_ptr(address: memory::PhysAddress) -> *mut u8 {
     address.as_raw() as *mut u8
 }
 

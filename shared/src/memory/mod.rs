@@ -25,7 +25,7 @@ impl Map {
         &self.entries
     }
 
-    pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = Extent> + 'a {
+    pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + 'a {
         self.entries
             .iter()
             .filter(move |e| e.mem_type == mem_type)
@@ -35,7 +35,7 @@ impl Map {
 
 #[derive(Clone, Copy, Debug)]
 pub struct MapEntry {
-    pub extent: Extent,
+    pub extent: PhysExtent,
     pub mem_type: MemoryType,
 }
 
@@ -57,7 +57,7 @@ pub enum MemoryType {
 /// Does not support freeing.
 pub struct BumpAllocator {
     // This is in reverse order.
-    free: ArrayVec<[Extent; 128]>,
+    free: ArrayVec<[PhysExtent; 128]>,
     // This is the base 2 log of the page size.
     page_size_log2: usize,
 }
@@ -71,7 +71,7 @@ impl BumpAllocator {
     ///
     /// Addresses in `map` and `holes` do not need to be aligned. However, all
     /// returned allocations will be aligned to `page_size`.
-    pub fn new<T: IntoIterator<Item = Extent>>(
+    pub fn new<T: IntoIterator<Item = PhysExtent>>(
         page_size: u64,
         map: &Map,
         holes: T,
@@ -85,7 +85,7 @@ impl BumpAllocator {
 
         let map_iter = map.iter_type(MemoryType::Available);
 
-        let mut free: ArrayVec<[Extent; 128]> = reserve(map_iter, holes)
+        let mut free: ArrayVec<[PhysExtent; 128]> = reserve(map_iter, holes)
             .flat_map(|e| e.shrink_to_alignment(page_size))
             .collect();
         free = free.iter().rev().copied().collect();
@@ -96,18 +96,18 @@ impl BumpAllocator {
         }
     }
 
-    pub fn allocate_pages(&mut self, pages: u64) -> Address {
+    pub fn allocate_pages(&mut self, pages: u64) -> PhysAddress {
         // Check that pages * (2^page_size_log2) <= u64::MAX without overflow.
         assert!(pages as u64 <= (u64::MAX >> self.page_size_log2));
         self.allocate_impl(Length::from_raw(pages << self.page_size_log2))
     }
 
-    pub fn allocate(&mut self, length: Length) -> Address {
+    pub fn allocate(&mut self, length: Length) -> PhysAddress {
         self.allocate_impl(length.align_up(1 << self.page_size_log2))
     }
 
     // `alloc_length` must be aligned to the page size.
-    fn allocate_impl(&mut self, alloc_length: Length) -> Address {
+    fn allocate_impl(&mut self, alloc_length: Length) -> PhysAddress {
         assert!(alloc_length.as_raw().trailing_zeros() >= self.page_size_log2 as u32);
 
         // The last element of `self.free` contains the first available block.
@@ -148,10 +148,10 @@ impl BumpAllocator {
 /// extents in `blocks`. The resulting list may be larger than `blocks`.
 ///
 /// Both lists must be sorted by start address and non-overlapping.
-fn reserve<T: IntoIterator<Item = Extent>, U: IntoIterator<Item = Extent>>(
+fn reserve<T: IntoIterator<Item = PhysExtent>, U: IntoIterator<Item = PhysExtent>>(
     blocks: T,
     holes: U,
-) -> impl Iterator<Item = Extent> {
+) -> impl Iterator<Item = PhysExtent> {
     ReserveIter {
         blocks: put_back(blocks),
         holes: put_back(holes),
@@ -166,12 +166,12 @@ struct ReserveIter<I1: Iterator, I2: Iterator> {
 
 impl<I1, I2> Iterator for ReserveIter<I1, I2>
 where
-    I1: Iterator<Item = Extent>,
-    I2: Iterator<Item = Extent>,
+    I1: Iterator<Item = PhysExtent>,
+    I2: Iterator<Item = PhysExtent>,
 {
-    type Item = Option<Extent>;
+    type Item = Option<PhysExtent>;
 
-    fn next(&mut self) -> Option<Option<Extent>> {
+    fn next(&mut self) -> Option<Option<PhysExtent>> {
         let block = self.blocks.next()?;
 
         // Remove holes completely before `ext`; they can be ignored.
@@ -350,15 +350,15 @@ mod tests {
 
         assert_eq!(
             allocator.allocate_pages(2),
-            Address::from_raw(page_size * 3)
+            PhysAddress::from_raw(page_size * 3)
         );
         assert_eq!(
             allocator.allocate(Length::from_raw(20)),
-            Address::from_raw(page_size * 5)
+            PhysAddress::from_raw(page_size * 5)
         );
         assert_eq!(
             allocator.allocate_pages(1),
-            Address::from_raw(page_size * 6)
+            PhysAddress::from_raw(page_size * 6)
         );
     }
 }

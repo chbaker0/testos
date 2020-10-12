@@ -97,12 +97,6 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     writeln!(&mut writer, "Kernel load target: {:?}", kernel_target).unwrap();
 
-    unsafe {
-        load_kernel_segments(&kernel_elf, kernel_target);
-    }
-
-    writeln!(&mut writer, "Kernel image segments loaded").unwrap();
-
     let total_memory_extent = memory::PhysExtent::from_range_exclusive(
         memory::PhysAddress::from_raw(0),
         memory_map.entries().last().unwrap().extent.end_address(),
@@ -130,6 +124,15 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         memory::BumpAllocator::new([page_table_extent].iter().copied(), PAGE_SIZE);
 
     let mut page_table = paging::PageTable::new();
+
+    unsafe {
+        load_and_map_kernel_segments(
+            &mut page_table,
+            &mut page_table_allocator,
+            &kernel_elf,
+            kernel_target,
+        );
+    }
 
     unsafe {
         map_physical_memory(&mut page_table, &mut page_table_allocator, &memory_map);
@@ -176,7 +179,12 @@ fn clear_screen() {
     }
 }
 
-unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExtent) {
+unsafe fn load_and_map_kernel_segments(
+    page_table: &mut paging::PageTable,
+    allocator: &mut memory::BumpAllocator,
+    kernel_image: &ElfFile,
+    target: memory::PhysExtent,
+) {
     use core::ptr::slice_from_raw_parts_mut;
     use core::ptr::write_bytes;
 
@@ -215,9 +223,18 @@ unsafe fn load_kernel_segments(kernel_image: &ElfFile, target: memory::PhysExten
             slice_from_raw_parts_mut(cur_dest_addr.as_raw() as *mut u8, segment_slice.len());
         (*load_slice).copy_from_slice(segment_slice);
 
-        cur_dest_addr = cur_dest_addr
-            .offset_by(memory::Length::from_raw(segment_slice.len() as u64))
-            .align_up(PAGE_SIZE);
+        let segment_length =
+            memory::Length::from_raw(pg_header.mem_size() as u64).align_up(PAGE_SIZE);
+        let segment_extent = memory::PhysExtent::new(cur_dest_addr, segment_length);
+
+        map_linear(
+            page_table,
+            allocator,
+            segment_extent,
+            memory::VirtAddress::from_raw(pg_header.virtual_addr()),
+        );
+
+        cur_dest_addr = cur_dest_addr.offset_by(segment_length);
     }
 }
 

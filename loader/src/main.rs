@@ -117,7 +117,8 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         &mut writer,
         "Frames required for page tables: {}",
         page_table_frames
-    );
+    )
+    .unwrap();
 
     // This is where we'll put the tables.
     let page_table_extent = memory::PhysExtent::new(
@@ -125,9 +126,14 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         memory::Length::from_raw(page_table_frames * PAGE_SIZE),
     );
 
+    let mut page_table_allocator =
+        memory::BumpAllocator::new([page_table_extent].iter().copied(), PAGE_SIZE);
+
     let mut page_table = paging::PageTable::new();
 
-    map_linear(&mut page_table, &memory_map);
+    unsafe {
+        map_physical_memory(&mut page_table, &mut page_table_allocator, &memory_map);
+    }
 
     loop {}
 }
@@ -284,22 +290,104 @@ fn get_loader_extent() -> memory::PhysExtent {
 /// The top half starts at 0xFFFF_FFFF_FFFF_FFFF - (2^47-1), or
 /// 0xFFFF_8000_0000_0000. We map all physical memory starting here.
 unsafe fn map_physical_memory(
+    page_table: &mut paging::PageTable,
     allocator: &mut memory::BumpAllocator,
     mem_map: &memory::Map,
-) -> (paging::PageTable, memory::PhysExtent) {
-    use x86_64::addr::VirtAddr;
-
+) {
     const HIGHER_HALF_START: u64 = 0u64.overflowing_sub(1 << 47).0;
     const_assert_eq!(HIGHER_HALF_START, 0xFFFF_8000_0000_0000);
 
-    let table = paging::PageTable::new();
+    let addr_zero = memory::PhysAddress::from_raw(0);
+    let length = mem_map
+        .entries()
+        .last()
+        .unwrap()
+        .extent
+        .end_address()
+        .distance_from(addr_zero);
+    let all_memory_extent = memory::PhysExtent::new(addr_zero, length);
 
-    let mut flags = paging::PageTableFlags::empty();
-    flags.insert(paging::PageTableFlags::PRESENT);
-    flags.insert(paging::PageTableFlags::WRITABLE);
-    flags.insert(paging::PageTableFlags::GLOBAL);
+    map_linear(
+        page_table,
+        allocator,
+        all_memory_extent,
+        memory::VirtAddress::from_raw(HIGHER_HALF_START),
+    );
+}
 
-    panic!();
+unsafe fn map_linear(
+    page_table: &mut paging::PageTable,
+    bump_allocator: &mut memory::BumpAllocator,
+    extent: memory::PhysExtent,
+    offset: memory::VirtAddress,
+) {
+    use x86_64::addr::{PhysAddr, VirtAddr};
+    use x86_64::structures::paging::Mapper;
+
+    let phys_to_virt =
+        |frame: paging::PhysFrame| frame.start_address().as_u64() as *mut paging::PageTable;
+
+    let mut frame_allocator = FrameAllocatorAdapter { bump_allocator };
+    let mut mapper = paging::MappedPageTable::new(page_table, phys_to_virt);
+
+    assert!(extent.is_aligned_to(PAGE_SIZE));
+    assert!(offset.is_aligned_to(PAGE_SIZE));
+
+    let mut page_flags = paging::PageTableFlags::empty();
+    page_flags.insert(paging::PageTableFlags::PRESENT);
+    page_flags.insert(paging::PageTableFlags::WRITABLE);
+    page_flags.insert(paging::PageTableFlags::GLOBAL);
+
+    let num_pages = extent.length().as_raw() / PAGE_SIZE;
+    for cur_page in 0..num_pages {
+        let cur_distance = memory::Length::from_raw(cur_page * PAGE_SIZE);
+        let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
+            VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
+        )
+        .unwrap();
+        let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
+            extent.address().offset_by(cur_distance).as_raw(),
+        ))
+        .unwrap();
+
+        mapper
+            .map_to_with_table_flags(
+                target_page,
+                frame,
+                page_flags,
+                page_flags,
+                &mut frame_allocator,
+            )
+            .unwrap()
+            .ignore();
+    }
+
+    for cur_page in 0..num_pages {
+        let cur_distance = memory::Length::from_raw(cur_page * PAGE_SIZE);
+        let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
+            VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
+        )
+        .unwrap();
+        let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
+            extent.address().offset_by(cur_distance).as_raw(),
+        ))
+        .unwrap();
+
+        assert_eq!(mapper.translate_page(target_page).unwrap(), frame);
+    }
+}
+
+struct FrameAllocatorAdapter<'a> {
+    bump_allocator: &'a mut memory::BumpAllocator,
+}
+
+unsafe impl<'a> paging::FrameAllocator<paging::Size4KiB> for FrameAllocatorAdapter<'a> {
+    fn allocate_frame(&mut self) -> Option<paging::PhysFrame<paging::Size4KiB>> {
+        use x86_64::addr::PhysAddr;
+
+        let start_address = self.bump_allocator.allocate_pages(1);
+        Some(paging::PhysFrame::from_start_address(PhysAddr::new(start_address.as_raw())).unwrap())
+    }
 }
 
 unsafe fn phys_addr_as_ptr(address: memory::PhysAddress) -> *mut u8 {

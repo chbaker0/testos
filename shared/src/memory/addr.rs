@@ -44,6 +44,10 @@ impl<Type: AddressType> Address<Type> {
         Self::from_raw(self.as_raw() + length.as_raw())
     }
 
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self == self.align_down(alignment)
+    }
+
     /// Returns the first address below `self` that is aligned to `alignment`,
     /// which must be a power of two.
     pub fn align_down(self, alignment: u64) -> Self {
@@ -76,6 +80,10 @@ impl Length {
     pub fn subtract(self, rhs: Length) -> Length {
         assert!(self.as_raw() >= rhs.as_raw());
         Length::from_raw(self.as_raw() - rhs.as_raw())
+    }
+
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self == self.align_down(alignment)
     }
 
     /// Returns the first length lesser than `self` that is aligned to `alignment`,
@@ -213,6 +221,10 @@ impl<Type: AddressType> Extent<Type> {
             address: diff_address,
             length: diff_length,
         })
+    }
+
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self.address.is_aligned_to(alignment) && self.length.is_aligned_to(alignment)
     }
 
     /// Returns the largest extent completely contained in `self` whose start

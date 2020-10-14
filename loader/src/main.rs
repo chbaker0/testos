@@ -17,6 +17,10 @@ const PAGE_SIZE: u64 = 4096;
 
 const VMEM: *mut u8 = 0xb8000 as *mut u8;
 
+extern "C" {
+    fn kernel_handoff(page_table_addr: u64, kernel_entry_addr: u64) -> !;
+}
+
 #[no_mangle]
 pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Assume `boot_info` is a valid pointer and that we won't overwrite it.
@@ -52,18 +56,6 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     let kernel_elf = ElfFile::new(kernel_image).unwrap();
 
-    write!(&mut writer, "Kernel sections:").unwrap();
-    for section in kernel_elf.section_iter() {
-        write!(
-            &mut writer,
-            " {}",
-            section.get_name(&kernel_elf).unwrap_or("<null>")
-        )
-        .unwrap();
-    }
-
-    writeln!(&mut writer, "").unwrap();
-
     // Get the regions of memory we want to preserve before allocating and
     // loading the kernel.
     let loader_extent = get_loader_extent();
@@ -72,7 +64,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         length: memory::Length::from_raw(kernel_image.len() as u64),
     };
 
-    writeln!(&mut writer, "Loader extent: {:?}", get_loader_extent()).unwrap();
+    writeln!(&mut writer, "Loader extent: {:?}", loader_extent).unwrap();
 
     // Reserve the loader's current memory, the kernel image's memory, and the
     // 1st MiB.
@@ -102,10 +94,18 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         memory_map.entries().last().unwrap().extent.end_address(),
     );
 
+    // We'll identity map the first 64 MiB as a kludge.
+    let first_memory = memory::PhysExtent::new(
+        memory::PhysAddress::zero(),
+        memory::Length::from_raw(1024 * 1024 * 64),
+    );
+
     // Get the number of frames we need to create the page tables. Add 1 for the
     // top level PML4 table.
-    let page_table_frames =
-        estimate_frames_to_map(kernel_target) + estimate_frames_to_map(total_memory_extent) + 1;
+    let page_table_frames = estimate_frames_to_map(kernel_target)
+        + estimate_frames_to_map(total_memory_extent)
+        + estimate_frames_to_map(first_memory)
+        + 1;
 
     writeln!(
         &mut writer,
@@ -120,25 +120,61 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         memory::Length::from_raw(page_table_frames * PAGE_SIZE),
     );
 
+    writeln!(&mut writer, "Page table area: {:?}", page_table_extent).unwrap();
+
     let mut page_table_allocator =
         memory::BumpAllocator::new([page_table_extent].iter().copied(), PAGE_SIZE);
 
-    let mut page_table = paging::PageTable::new();
+    // Grab first frame and use it for the top-level table.
+    let page_table_addr = page_table_allocator.allocate_pages(1);
+    let page_table: &mut paging::PageTable = unsafe {
+        let page_table_ptr = page_table_addr.as_raw() as *mut paging::PageTable;
+        core::mem::forget(core::mem::replace(
+            &mut *page_table_ptr,
+            paging::PageTable::new(),
+        ));
+        &mut *page_table_ptr
+    };
 
+    // First, load the kernel to `kernel_target` and map it to its desired
+    // linear address.
     unsafe {
         load_and_map_kernel_segments(
-            &mut page_table,
+            page_table,
             &mut page_table_allocator,
             &kernel_elf,
             kernel_target,
         );
     }
 
+    // Next, map all physical memory to the beginning of the higher half.
     unsafe {
-        map_physical_memory(&mut page_table, &mut page_table_allocator, &memory_map);
+        map_physical_memory(page_table, &mut page_table_allocator, &memory_map);
     }
 
-    loop {}
+    // Kludge: identity map the first 64 MiB of memory so our handoff code can
+    // run. It would be better to identity map just the loader.
+    unsafe {
+        map_linear(
+            page_table,
+            &mut page_table_allocator,
+            first_memory,
+            memory::VirtAddress::zero(),
+        );
+    }
+
+    let kernel_entry_addr = match kernel_elf.header.pt2 {
+        xmas_elf::header::HeaderPt2::Header64(header) => header.entry_point,
+        _ => panic!("wrong header type"),
+    };
+
+    // Hello, 64 bit mode
+    unsafe {
+        kernel_handoff(
+            page_table as *mut paging::PageTable as u64,
+            kernel_entry_addr,
+        )
+    }
 }
 
 // Writes a string directly to the framebuffer, up to the max 80*25 = 2000
@@ -287,17 +323,6 @@ fn estimate_frames_to_map(extent: memory::PhysExtent) -> u64 {
     return l1_frames + l2_frames + l3_frames;
 }
 
-fn get_loader_extent() -> memory::PhysExtent {
-    let begin_address = unsafe {
-        memory::PhysAddress::from_raw((&_loader_start as *const core::ffi::c_void) as u64)
-    };
-
-    let end_address =
-        unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
-
-    memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
-}
-
 /// Map all physical memory to the bottom of the higher half
 ///
 /// The 48-bit virtual address space is split into two halves of size 2^47. One
@@ -409,6 +434,17 @@ unsafe impl<'a> paging::FrameAllocator<paging::Size4KiB> for FrameAllocatorAdapt
 
 unsafe fn phys_addr_as_ptr(address: memory::PhysAddress) -> *mut u8 {
     address.as_raw() as *mut u8
+}
+
+fn get_loader_extent() -> memory::PhysExtent {
+    let begin_address = unsafe {
+        memory::PhysAddress::from_raw((&_loader_start as *const core::ffi::c_void) as u64)
+    };
+
+    let end_address =
+        unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
+
+    memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
 }
 
 // DO NOT ACCESS THESE

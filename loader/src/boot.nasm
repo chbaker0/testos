@@ -21,13 +21,9 @@ SECTION .multiboot
 	dd 60
 	dd 0
 
-SECTION .boot_stack nobits
-stack_bottom: resb 4096 * 32
-stack_top:
-
 SECTION .bss
-multiboot_info:
-    resb 128
+stack_bottom: resb 4096 * 128
+stack_top:
 
 SECTION .text
 
@@ -70,6 +66,12 @@ global _start
 _start:
     mov byte [0xb8000], 'Z'
 
+    ; Set up stack
+    mov esp, stack_top
+    push dword 0
+    push dword 0
+    mov ebp, esp
+
     ; Pass multiboot info structure
     push ebx
     call loader_main
@@ -82,11 +84,13 @@ _start:
 
 global kernel_handoff
 kernel_handoff:
+    ; Args: page_table_addr, kernel_entry_addr
+
     push ebp
     mov ebp, esp
 
     ; Set page table address.
-    mov eax, [ebp + 12]
+    mov eax, [ebp + 8]
     mov eax, [eax]
     mov cr3, eax
 
@@ -116,12 +120,9 @@ kernel_handoff:
 
 [bits 64]
 long_mode:
-    xchg bx, bx
-    mov edi, [ebp + 8]
-    mov edi, [edi]
-    mov esi, [ebp + 20]
-    mov eax, [ebp + 16]
-    mov rax, [eax]
+
+    ; Get the entry point address and jump to it.
+    mov eax, [ebp + 12]
     jmp rax
 
     .hang:

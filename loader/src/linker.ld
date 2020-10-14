@@ -26,7 +26,6 @@ SECTIONS
     {
         *(COMMON)
         *(.bss .bss.*)
-        *(.boot_stack)
     }
 
     _loader_end = .;

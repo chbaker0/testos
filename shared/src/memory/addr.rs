@@ -25,6 +25,10 @@ impl<Type: AddressType> Address<Type> {
         Self(val, PhantomData)
     }
 
+    pub fn zero() -> Self {
+        Self::from_raw(0)
+    }
+
     pub fn as_raw(self) -> u64 {
         self.0
     }

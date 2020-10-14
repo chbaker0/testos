@@ -1,0 +1,2 @@
+ata0-master: type=cdrom, path=out/kernel.iso, status=inserted
+boot: cdrom

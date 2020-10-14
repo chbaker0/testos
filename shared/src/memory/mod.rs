@@ -107,6 +107,10 @@ impl BumpAllocator {
         Self::new(remove_reserved(map_iter, holes), page_size)
     }
 
+    pub fn page_size(&self) -> u64 {
+        1 << self.page_size_log2
+    }
+
     pub fn allocate_pages(&mut self, pages: u64) -> PhysAddress {
         // Check that pages * (2^page_size_log2) <= u64::MAX without overflow.
         assert!(pages as u64 <= (u64::MAX >> self.page_size_log2));

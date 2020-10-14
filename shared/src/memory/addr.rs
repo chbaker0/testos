@@ -25,6 +25,10 @@ impl<Type: AddressType> Address<Type> {
         Self(val, PhantomData)
     }
 
+    pub fn zero() -> Self {
+        Self::from_raw(0)
+    }
+
     pub fn as_raw(self) -> u64 {
         self.0
     }
@@ -42,6 +46,10 @@ impl<Type: AddressType> Address<Type> {
     pub fn offset_by(self, length: Length) -> Self {
         assert!(length.as_raw() <= u64::MAX - self.as_raw());
         Self::from_raw(self.as_raw() + length.as_raw())
+    }
+
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self == self.align_down(alignment)
     }
 
     /// Returns the first address below `self` that is aligned to `alignment`,
@@ -76,6 +84,10 @@ impl Length {
     pub fn subtract(self, rhs: Length) -> Length {
         assert!(self.as_raw() >= rhs.as_raw());
         Length::from_raw(self.as_raw() - rhs.as_raw())
+    }
+
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self == self.align_down(alignment)
     }
 
     /// Returns the first length lesser than `self` that is aligned to `alignment`,
@@ -118,6 +130,13 @@ impl<Type: AddressType> Extent<Type> {
 
     pub fn from_raw(address: u64, length: u64) -> Self {
         Self::new(Address::<Type>::from_raw(address), Length::from_raw(length))
+    }
+
+    pub fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {
+        Self {
+            address: begin,
+            length: begin.distance_to(end),
+        }
     }
 
     pub fn address(self) -> Address<Type> {
@@ -208,6 +227,10 @@ impl<Type: AddressType> Extent<Type> {
         })
     }
 
+    pub fn is_aligned_to(self, alignment: u64) -> bool {
+        self.address.is_aligned_to(alignment) && self.length.is_aligned_to(alignment)
+    }
+
     /// Returns the largest extent completely contained in `self` whose start
     /// and end addresses are aligned to `alignment`. `alignment` must be a
     /// power of two.
@@ -221,6 +244,20 @@ impl<Type: AddressType> Extent<Type> {
                 address: start_address,
                 length: start_address.distance_to(end_address),
             })
+        }
+    }
+
+    /// Returns the smallest extent that contains `self` whose start and end
+    /// addresses are aligned to `alignment`. `alignment` must be a power of
+    /// two. There is always a valid result.
+    pub fn expand_to_alignment(&self, alignment: u64) -> Self {
+        let start_address = self.address.align_down(alignment);
+        let end_address = self.end_address().align_up(alignment);
+
+        // TODO: handle if `end_address` extends beyond u64::MAX
+        Self {
+            address: start_address,
+            length: start_address.distance_to(end_address),
         }
     }
 }

@@ -91,7 +91,6 @@ kernel_handoff:
 
     ; Set page table address.
     mov eax, [ebp + 8]
-    mov eax, [eax]
     mov cr3, eax
 
     ; Enable PAE
@@ -122,7 +121,7 @@ kernel_handoff:
 long_mode:
 
     ; Get the entry point address and jump to it.
-    mov eax, [ebp + 12]
+    mov rax, [ebp + 16]
     jmp rax
 
     .hang:

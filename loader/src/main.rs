@@ -6,7 +6,6 @@ mod multiboot;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
-use static_assertions::const_assert_eq;
 use x86_64::structures::paging;
 use xmas_elf::program;
 use xmas_elf::ElfFile;
@@ -136,6 +135,12 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         &mut *page_table_ptr
     };
 
+    assert_eq!(page_table_addr, page_table_extent.address());
+    assert_eq!(
+        page_table as *mut paging::PageTable as u64,
+        page_table_addr.as_raw()
+    );
+
     // First, load the kernel to `kernel_target` and map it to its desired
     // linear address.
     unsafe {
@@ -147,20 +152,9 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         );
     }
 
-    // Next, map all physical memory to the beginning of the higher half.
+    // Next, identity map all physical memory.
     unsafe {
         map_physical_memory(page_table, &mut page_table_allocator, &memory_map);
-    }
-
-    // Kludge: identity map the first 64 MiB of memory so our handoff code can
-    // run. It would be better to identity map just the loader.
-    unsafe {
-        map_linear(
-            page_table,
-            &mut page_table_allocator,
-            first_memory,
-            memory::VirtAddress::zero(),
-        );
     }
 
     let kernel_entry_addr = match kernel_elf.header.pt2 {
@@ -323,22 +317,12 @@ fn estimate_frames_to_map(extent: memory::PhysExtent) -> u64 {
     return l1_frames + l2_frames + l3_frames;
 }
 
-/// Map all physical memory to the bottom of the higher half
-///
-/// The 48-bit virtual address space is split into two halves of size 2^47. One
-/// extends up from 0x0000_0000_0000_0000, and one extends down from
-/// 0xFFFF_FFFF_FFFF_FFFF.
-///
-/// The top half starts at 0xFFFF_FFFF_FFFF_FFFF - (2^47-1), or
-/// 0xFFFF_8000_0000_0000. We map all physical memory starting here.
+/// Identity maps all physical memory
 unsafe fn map_physical_memory(
     page_table: &mut paging::PageTable,
     allocator: &mut memory::BumpAllocator,
     mem_map: &memory::Map,
 ) {
-    const HIGHER_HALF_START: u64 = 0u64.overflowing_sub(1 << 47).0;
-    const_assert_eq!(HIGHER_HALF_START, 0xFFFF_8000_0000_0000);
-
     let addr_zero = memory::PhysAddress::from_raw(0);
     let length = mem_map
         .entries()
@@ -353,7 +337,7 @@ unsafe fn map_physical_memory(
         page_table,
         allocator,
         all_memory_extent,
-        memory::VirtAddress::from_raw(HIGHER_HALF_START),
+        memory::VirtAddress::zero(),
     );
 }
 

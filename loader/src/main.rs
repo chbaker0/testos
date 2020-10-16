@@ -262,6 +262,7 @@ unsafe fn load_and_map_kernel_segments(
             allocator,
             segment_extent,
             memory::VirtAddress::from_raw(pg_header.virtual_addr()),
+            false,
         );
 
         cur_dest_addr = cur_dest_addr.offset_by(segment_length);
@@ -330,7 +331,8 @@ unsafe fn map_physical_memory(
         .unwrap()
         .extent
         .end_address()
-        .distance_from(addr_zero);
+        .distance_from(addr_zero)
+        .align_up(1024 * 1024 * 2);
     let all_memory_extent = memory::PhysExtent::new(addr_zero, length);
 
     map_linear(
@@ -338,6 +340,7 @@ unsafe fn map_physical_memory(
         allocator,
         all_memory_extent,
         memory::VirtAddress::zero(),
+        true,
     );
 }
 
@@ -346,6 +349,7 @@ unsafe fn map_linear(
     bump_allocator: &mut memory::BumpAllocator,
     extent: memory::PhysExtent,
     offset: memory::VirtAddress,
+    large_page: bool,
 ) {
     use x86_64::addr::{PhysAddr, VirtAddr};
     use x86_64::structures::paging::Mapper;
@@ -356,50 +360,67 @@ unsafe fn map_linear(
     let mut frame_allocator = FrameAllocatorAdapter { bump_allocator };
     let mut mapper = paging::MappedPageTable::new(page_table, phys_to_virt);
 
-    assert!(extent.is_aligned_to(PAGE_SIZE));
-    assert!(offset.is_aligned_to(PAGE_SIZE));
+    let page_size = if large_page {
+        1024 * 1024 * 2
+    } else {
+        1024 * 4
+    };
+
+    assert!(extent.is_aligned_to(page_size));
+    assert!(offset.is_aligned_to(page_size));
 
     let mut page_flags = paging::PageTableFlags::empty();
     page_flags.insert(paging::PageTableFlags::PRESENT);
     page_flags.insert(paging::PageTableFlags::WRITABLE);
     page_flags.insert(paging::PageTableFlags::GLOBAL);
 
-    let num_pages = extent.length().as_raw() / PAGE_SIZE;
+    let num_pages = extent.length().as_raw() / page_size;
     for cur_page in 0..num_pages {
-        let cur_distance = memory::Length::from_raw(cur_page * PAGE_SIZE);
-        let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
-            VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
-        )
-        .unwrap();
-        let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
-            extent.address().offset_by(cur_distance).as_raw(),
-        ))
-        .unwrap();
+        let cur_distance = memory::Length::from_raw(cur_page * page_size);
 
-        mapper
-            .map_to_with_table_flags(
-                target_page,
-                frame,
-                page_flags,
-                page_flags,
-                &mut frame_allocator,
+        if large_page {
+            let target_page: paging::Page<paging::Size2MiB> = paging::Page::from_start_address(
+                VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
             )
-            .unwrap()
-            .ignore();
-    }
+            .unwrap();
 
-    for cur_page in 0..num_pages {
-        let cur_distance = memory::Length::from_raw(cur_page * PAGE_SIZE);
-        let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
-            VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
-        )
-        .unwrap();
-        let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
-            extent.address().offset_by(cur_distance).as_raw(),
-        ))
-        .unwrap();
+            let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
+                extent.address().offset_by(cur_distance).as_raw(),
+            ))
+            .unwrap();
 
-        assert_eq!(mapper.translate_page(target_page).unwrap(), frame);
+            mapper
+                .map_to_with_table_flags(
+                    target_page,
+                    frame,
+                    page_flags,
+                    page_flags,
+                    &mut frame_allocator,
+                )
+                .unwrap()
+                .ignore();
+        } else {
+            let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
+                VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
+            )
+            .unwrap();
+
+            let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
+                extent.address().offset_by(cur_distance).as_raw(),
+            ))
+            .unwrap();
+
+            mapper
+                .map_to_with_table_flags(
+                    target_page,
+                    frame,
+                    page_flags,
+                    page_flags,
+                    &mut frame_allocator,
+                )
+                .unwrap()
+                .ignore();
+        }
     }
 }
 

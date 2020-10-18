@@ -111,14 +111,22 @@ impl BumpAllocator {
         1 << self.page_size_log2
     }
 
-    pub fn allocate_pages(&mut self, pages: u64) -> PhysAddress {
+    pub fn allocate_pages(&mut self, pages: u64) -> PhysExtent {
         // Check that pages * (2^page_size_log2) <= u64::MAX without overflow.
         assert!(pages as u64 <= (u64::MAX >> self.page_size_log2));
-        self.allocate_impl(Length::from_raw(pages << self.page_size_log2))
+        let length = Length::from_raw(pages << self.page_size_log2);
+
+        PhysExtent::new(
+            self.allocate_impl(Length::from_raw(pages << self.page_size_log2)),
+            length,
+        )
     }
 
-    pub fn allocate(&mut self, length: Length) -> PhysAddress {
-        self.allocate_impl(length.align_up(1 << self.page_size_log2))
+    pub fn allocate(&mut self, length: Length) -> PhysExtent {
+        PhysExtent::new(
+            self.allocate_impl(length.align_up(1 << self.page_size_log2)),
+            length,
+        )
     }
 
     // `alloc_length` must be aligned to the page size.
@@ -391,15 +399,15 @@ mod tests {
 
         assert_eq!(
             allocator.allocate_pages(2),
-            PhysAddress::from_raw(page_size * 3)
+            PhysExtent::from_raw(page_size * 3, page_size * 2)
         );
         assert_eq!(
             allocator.allocate(Length::from_raw(20)),
-            PhysAddress::from_raw(page_size * 5)
+            PhysExtent::from_raw(page_size * 5, 20)
         );
         assert_eq!(
             allocator.allocate_pages(1),
-            PhysAddress::from_raw(page_size * 6)
+            PhysExtent::from_raw(page_size * 6, page_size * 1)
         );
     }
 }

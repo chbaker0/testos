@@ -64,6 +64,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     };
 
     writeln!(&mut writer, "Loader extent: {:?}", loader_extent).unwrap();
+    writeln!(&mut writer, "Kernel extent: {:?}", kernel_extent).unwrap();
 
     // Reserve the loader's current memory, the kernel image's memory, and the
     // 1st MiB.
@@ -80,13 +81,16 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         reserved_extents.iter().copied(),
     );
 
+    let kernel_target_size = get_kernel_load_size(&kernel_elf);
+
     // This is where we'll copy the kernel sections.
     let kernel_target = memory::PhysExtent {
-        address: allocator.allocate(kernel_extent.length()),
-        length: get_kernel_load_size(&kernel_elf),
+        address: allocator.allocate(kernel_target_size),
+        length: kernel_target_size,
     };
 
     writeln!(&mut writer, "Kernel load target: {:?}", kernel_target).unwrap();
+    assert!(!kernel_target.has_overlap(kernel_extent));
 
     let total_memory_extent = memory::PhysExtent::from_range_exclusive(
         memory::PhysAddress::from_raw(0),
@@ -157,10 +161,10 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
         map_physical_memory(page_table, &mut page_table_allocator, &memory_map);
     }
 
-    let kernel_entry_addr = match kernel_elf.header.pt2 {
-        xmas_elf::header::HeaderPt2::Header64(header) => header.entry_point,
-        _ => panic!("wrong header type"),
-    };
+    let kernel_entry_addr = kernel_elf.header.pt2.entry_point();
+
+    // Sanity check
+    assert_ne!(kernel_entry_addr, 0);
 
     // Hello, 64 bit mode
     unsafe {

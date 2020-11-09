@@ -84,7 +84,7 @@ _start:
 
 global kernel_handoff
 kernel_handoff:
-    ; Args: page_table_addr, kernel_entry_addr
+    ; Args: page_table_addr, kernel_entry_addr, boot_info_addr
 
     push ebp
     mov ebp, esp
@@ -120,8 +120,10 @@ kernel_handoff:
 [bits 64]
 long_mode:
 
-    ; Get the entry point address and jump to it.
+    ; Get the entry point address and jump to it, passing boot_info_addr as
+    ; argument.
     mov rax, [ebp + 16]
+    mov rdi, [ebp + 24]
     jmp rax
 
     .hang:

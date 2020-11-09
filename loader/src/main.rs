@@ -10,6 +10,7 @@ use x86_64::structures::paging;
 use xmas_elf::program;
 use xmas_elf::ElfFile;
 
+use shared::handoff::BootInfo;
 use shared::memory;
 use shared::vga::VgaWriter;
 
@@ -18,7 +19,7 @@ const PAGE_SIZE: u64 = 4096;
 const VMEM: *mut u8 = 0xb8000 as *mut u8;
 
 extern "C" {
-    fn kernel_handoff(page_table_addr: u64, kernel_entry_addr: u64) -> !;
+    fn kernel_handoff(page_table_addr: u64, kernel_entry_addr: u64, boot_info_addr: u64) -> !;
 }
 
 #[no_mangle]
@@ -147,8 +148,40 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Sanity check
     assert_ne!(kernel_entry_addr, 0);
 
+    // Set up location for boot info.
+    let boot_info_extent = allocator.allocate(memory::Length::from_raw(
+        core::mem::size_of::<BootInfo>() as u64,
+    ));
+
+    // Fill out boot info then move it into `boot_info_extent`. This is
+    // self-referential since `boot_info` contains its own physical memory
+    // address.
+    let boot_info = BootInfo {
+        memory_map,
+        kernel_extent: kernel_target,
+        boot_info_extent,
+        page_table_extent,
+    };
+
+    assert_eq!(
+        boot_info_extent.address().as_raw() % (core::mem::align_of_val(&boot_info) as u64),
+        0
+    );
+    unsafe {
+        core::ptr::write(
+            boot_info_extent.address().as_raw() as *mut BootInfo,
+            boot_info,
+        );
+    }
+
     // Hello, 64 bit mode
-    unsafe { kernel_handoff(root_page_table_ptr as u64, kernel_entry_addr) }
+    unsafe {
+        kernel_handoff(
+            root_page_table_ptr as u64,
+            kernel_entry_addr,
+            boot_info_extent.address().as_raw(),
+        )
+    }
 }
 
 unsafe fn load_and_map_kernel_segments(

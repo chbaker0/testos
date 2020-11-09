@@ -11,13 +11,15 @@ extern kernel_entry
 
 global _start
 _start:
-  mov byte [0xb8000], 'Z'
+    ; Args: boot_info_addr [rdi]
 
-  mov rsp, init_stack_top
-  call kernel_entry
+    mov byte [0xb8000], 'Z'
 
-  mov byte [0xb8000], '?'
+    mov rsp, init_stack_top
+    call kernel_entry
 
-  .hang:
-  hlt
-  jmp .hang
+    mov byte [0xb8000], '?'
+
+.hang:
+    hlt
+    jmp .hang

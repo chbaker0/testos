@@ -9,20 +9,39 @@ use itertools::structs::PutBack;
 pub use addr::*;
 
 /// A map of the machine's physical memory.
+#[derive(Clone)]
+#[repr(C)]
 pub struct Map {
-    entries: ArrayVec<[MapEntry; 128]>,
+    entries: [MapEntry; 128],
+    num_entries: u64,
 }
 
 impl Map {
     /// `src` must be sorted by start address, and the extents must not overlap.
     pub fn from_entries<T: IntoIterator<Item = MapEntry>>(src: T) -> Map {
+        // Create an array filled with meaningless dummy entries. We will
+        // overwrite them with values from `src`.
+        let mut entries = [MapEntry {
+            extent: PhysExtent::from_raw(0, 1),
+            mem_type: MemoryType::Reserved,
+        }; 128];
+        let mut num_entries: u64 = 0;
+
+        let mut iter = src.into_iter();
+        while let Some(entry) = iter.next() {
+            assert!((num_entries as usize) < entries.len());
+            entries[num_entries as usize] = entry;
+            num_entries += 1;
+        }
+
         Map {
-            entries: src.into_iter().collect(),
+            entries,
+            num_entries,
         }
     }
 
     pub fn entries(&self) -> &[MapEntry] {
-        &self.entries
+        &self.entries[0..self.num_entries as usize]
     }
 
     pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + 'a {
@@ -33,13 +52,24 @@ impl Map {
     }
 }
 
+impl core::fmt::Debug for Map {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Map")
+            .field("entries", &self.entries())
+            .field("num_entries", &self.num_entries)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct MapEntry {
     pub extent: PhysExtent,
     pub mem_type: MemoryType,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u64)]
 pub enum MemoryType {
     /// Available for use
     Available,

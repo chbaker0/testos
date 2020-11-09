@@ -11,6 +11,7 @@ use xmas_elf::program;
 use xmas_elf::ElfFile;
 
 use shared::memory;
+use shared::vga::VgaWriter;
 
 const PAGE_SIZE: u64 = 4096;
 
@@ -25,9 +26,7 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Assume `boot_info` is a valid pointer and that we won't overwrite it.
     let boot_info = unsafe { &*boot_info_ptr };
 
-    clear_screen();
-
-    let mut writer = ScreenWriter { offset: 0 };
+    let mut writer = unsafe { VgaWriter::new(VMEM) };
 
     // Copy the memory map from multiboot structures to our own memory.
 
@@ -150,44 +149,6 @@ pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
 
     // Hello, 64 bit mode
     unsafe { kernel_handoff(root_page_table_ptr as u64, kernel_entry_addr) }
-}
-
-// Writes a string directly to the framebuffer, up to the max 80*25 = 2000
-// characters. Very unsafe.
-struct ScreenWriter {
-    offset: isize,
-}
-
-impl Write for ScreenWriter {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for c in s.chars() {
-            if self.offset >= 80 * 25 {
-                return Err(core::fmt::Error);
-            }
-
-            if c == '\n' {
-                self.offset = ((self.offset + 79) / 80) * 80;
-                return Ok(());
-            }
-
-            let b = if c.is_ascii() { c as u8 } else { '?' as u8 };
-
-            unsafe {
-                *VMEM.offset(2 * self.offset) = b;
-            }
-            self.offset += 1;
-        }
-
-        Ok(())
-    }
-}
-
-fn clear_screen() {
-    for i in 0..(80 * 25) {
-        unsafe {
-            *VMEM.offset(2 * i) = ' ' as u8;
-        }
-    }
 }
 
 unsafe fn load_and_map_kernel_segments(
@@ -441,10 +402,10 @@ extern "C" {
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    clear_screen();
+    // Create a new VGA writer for the panic to avoid synchronization issues.
+    let mut vga_writer = unsafe { VgaWriter::new(VMEM) };
 
-    let mut writer = ScreenWriter { offset: 0 };
-    let _ = write!(&mut writer, "{}", info);
+    let _ = write!(&mut vga_writer, "{}", info);
 
     loop {}
 }

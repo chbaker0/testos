@@ -10,3 +10,4 @@
 extern crate std;
 
 pub mod memory;
+pub mod vga;

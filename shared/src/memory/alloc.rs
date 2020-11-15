@@ -461,4 +461,19 @@ mod tests {
         fill_bitmap_from_map(&mut bitmap, memory_map);
         return bitmap;
     }
+
+    #[test]
+    fn bitmap_allocator_uses_all_available_memory() {
+        let mut bitmap = [0b11111111, 0b11111111, 0b11111111];
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+
+        let mut allocated_frames = std::collections::BTreeSet::new();
+
+        for _i in 0..24 {
+            let frame = allocator.allocate().unwrap();
+            assert!(allocated_frames.insert(frame));
+        }
+
+        assert_eq!(allocator.allocate(), None);
+    }
 }

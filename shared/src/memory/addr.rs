@@ -44,15 +44,22 @@ impl<Type: AddressType> Address<Type> {
     }
 
     pub fn offset_by(self, length: Length) -> Self {
-        assert!(length.as_raw() <= u64::MAX - self.as_raw());
-        Self::from_raw(self.as_raw() + length.as_raw())
+        self.offset_by_checked(length).unwrap()
+    }
+
+    pub fn offset_by_checked(self, length: Length) -> Option<Self> {
+        if length.as_raw() > u64::MAX - self.as_raw() {
+            return None;
+        }
+
+        Some(Self::from_raw(self.as_raw() + length.as_raw()))
     }
 
     pub fn is_aligned_to(self, alignment: u64) -> bool {
         self == self.align_down(alignment)
     }
 
-    /// Returns the first address below `self` that is aligned to `alignment`,
+    /// Returns the last address below `self` that is aligned to `alignment`,
     /// which must be a power of two.
     pub fn align_down(self, alignment: u64) -> Self {
         Self::from_raw(align_u64_down(self.as_raw(), alignment))
@@ -69,11 +76,11 @@ impl<Type: AddressType> Address<Type> {
 pub struct Length(u64);
 
 impl Length {
-    pub fn from_raw(val: u64) -> Length {
+    pub const fn from_raw(val: u64) -> Length {
         Length(val)
     }
 
-    pub fn as_raw(self) -> u64 {
+    pub const fn as_raw(self) -> u64 {
         self.0
     }
 
@@ -90,7 +97,7 @@ impl Length {
         self == self.align_down(alignment)
     }
 
-    /// Returns the first length lesser than `self` that is aligned to `alignment`,
+    /// Returns the last length lesser than `self` that is aligned to `alignment`,
     /// which must be a power of two.
     pub fn align_down(self, alignment: u64) -> Length {
         Length::from_raw(align_u64_down(self.as_raw(), alignment))
@@ -130,6 +137,13 @@ impl<Type: AddressType> Extent<Type> {
 
     pub fn from_raw(address: u64, length: u64) -> Self {
         Self::new(Address::<Type>::from_raw(address), Length::from_raw(length))
+    }
+
+    pub fn from_raw_range_exclusive(begin_address: u64, end_address: u64) -> Self {
+        Self::from_range_exclusive(
+            Address::<Type>::from_raw(begin_address),
+            Address::<Type>::from_raw(end_address),
+        )
     }
 
     pub fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {

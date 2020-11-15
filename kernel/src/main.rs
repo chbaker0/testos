@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+mod mm;
+
 use core::fmt::Write;
 use core::panic::PanicInfo;
 

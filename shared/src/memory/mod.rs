@@ -1,4 +1,6 @@
 pub mod addr;
+pub mod alloc;
+pub mod page;
 
 use core::iter::IntoIterator;
 

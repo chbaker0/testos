@@ -3,6 +3,7 @@ use super::page::*;
 
 /// `FrameAllocator` clients may attempt to reserve a specific frame of memory.
 /// This can fail for one of the reasons listed below.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FrameReserveError {
     /// The requested frame was either returned by an `allocate` call or
     /// previously reserved
@@ -270,6 +271,7 @@ mod tests {
 
     use crate::memory;
 
+    use quickcheck_macros::quickcheck;
     use std::vec::Vec;
 
     #[test]
@@ -463,17 +465,91 @@ mod tests {
     }
 
     #[test]
-    fn bitmap_allocator_uses_all_available_memory() {
-        let mut bitmap = [0b11111111, 0b11111111, 0b11111111];
+    fn bitmap_allocator_returns_correct_available_frames() {
+        // In each byte, the LSB represents the first frame in the range of 8
+        // frames, and the MSB represents the last.
+        let mut bitmap = [0b00100000, 0b00010000, 0b00000010];
         let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
-
         let mut allocated_frames = std::collections::BTreeSet::new();
 
-        for _i in 0..24 {
+        assert!(allocated_frames.insert(allocator.allocate().unwrap()));
+        assert!(allocated_frames.insert(allocator.allocate().unwrap()));
+        assert!(allocated_frames.insert(allocator.allocate().unwrap()));
+
+        assert_eq!(
+            allocated_frames,
+            vec![
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(5))),
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(12))),
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(17)))
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
+
+    #[test]
+    fn bitmap_allocator_does_not_return_reserved_frame() {
+        let mut bitmap = [0b01000010];
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+
+        allocator
+            .reserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))))
+            .unwrap();
+        assert_eq!(
+            allocator.allocate().unwrap(),
+            Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(6)))
+        );
+        assert_eq!(allocator.allocate(), None);
+
+        unsafe {
+            allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))));
+        }
+        assert_eq!(
+            allocator.allocate().unwrap(),
+            Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1)))
+        );
+        assert_eq!(allocator.allocate(), None);
+    }
+
+    #[test]
+    fn bitmap_allocator_returns_freed_frame() {
+        let mut bitmap = [0b01000010];
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+
+        let frame1 = allocator.allocate().unwrap();
+        let frame2 = allocator.allocate().unwrap();
+        assert_eq!(allocator.allocate(), None);
+
+        unsafe {
+            allocator.deallocate(frame2);
+        }
+        assert_eq!(allocator.allocate().unwrap(), frame2);
+
+        unsafe {
+            allocator.deallocate(frame1);
+        }
+        assert_eq!(allocator.allocate().unwrap(), frame1);
+    }
+
+    #[quickcheck]
+    fn bitmap_allocator_uses_all_available_memory(mut bitmap: Vec<u8>) {
+        let free_frame_count = bitmap
+            .iter()
+            .copied()
+            .map(u8::count_ones)
+            .fold(0, |acc, x| acc + x as u64);
+
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+        let mut allocated_frames = std::collections::BTreeSet::new();
+
+        // Check that all available frames could be allocated and are unique.
+        for _i in 0..free_frame_count {
             let frame = allocator.allocate().unwrap();
             assert!(allocated_frames.insert(frame));
         }
 
+        // Check that the allocator fails when all memory is used.
         assert_eq!(allocator.allocate(), None);
     }
 }

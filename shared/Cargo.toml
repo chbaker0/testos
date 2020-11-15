@@ -12,3 +12,7 @@ static_assertions = "1.1.0"
 version = "0.5.2"
 default-features = false
 features = ["array-sizes-33-128"]
+
+[dev-dependencies]
+quickcheck = "~0.9"
+quickcheck_macros = "~0.9"

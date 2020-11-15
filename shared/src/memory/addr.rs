@@ -33,6 +33,10 @@ impl<Type: AddressType> Address<Type> {
         self.0
     }
 
+    pub fn from_zero(offset: Length) -> Self {
+        Self::offset_by(Self::zero(), offset)
+    }
+
     pub fn distance_from(self, left: Self) -> Length {
         assert!(self >= left);
         Length::from_raw(self.as_raw() - left.as_raw())
@@ -91,6 +95,10 @@ impl Length {
     pub fn subtract(self, rhs: Length) -> Length {
         assert!(self.as_raw() >= rhs.as_raw());
         Length::from_raw(self.as_raw() - rhs.as_raw())
+    }
+
+    pub fn times(self, x: u64) -> Length {
+        Self::from_raw(self.as_raw().checked_mul(x).unwrap())
     }
 
     pub fn is_aligned_to(self, alignment: u64) -> bool {

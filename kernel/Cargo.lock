@@ -25,8 +25,16 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "once_cell",
  "shared",
+ "spin",
 ]
+
+[[package]]
+name = "once_cell"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 
 [[package]]
 name = "shared"
@@ -36,6 +44,12 @@ dependencies = [
  "itertools",
  "static_assertions",
 ]
+
+[[package]]
+name = "spin"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "652ac3743312871a5fb703f0337e68ffa3cdc28c863efad0b8dc858fa10c991b"
 
 [[package]]
 name = "static_assertions"

@@ -46,6 +46,7 @@ pub unsafe trait FrameAllocator {
 
 /// A very rudimentary allocator. Simply stores 1 bit per frame representing
 /// whether it's available. Allocations search this bitmap for a free frame.
+#[derive(Debug)]
 pub struct BitmapFrameAllocator<'a> {
     bitmap: &'a mut [u8],
     start_offset: usize,

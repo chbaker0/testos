@@ -87,6 +87,7 @@ impl Page {
 }
 
 /// A contiguous range of physical memory frames. Always non-empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrameRange {
     first: Frame,
     count: u64,
@@ -111,15 +112,21 @@ impl FrameRange {
     // All frames between and including `first` to `last`
     pub fn between_inclusive(first: Frame, last: Frame) -> FrameRange {
         let len = last.start().distance_from(first.start());
-        let count = len.as_raw() / PAGE_SIZE.as_raw();
-        FrameRange { first, count }
+        let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
+        Self::new(first, count).unwrap()
     }
 
     // All frames between `first` to `last`, including `first` but not `last`
     pub fn between_exclusive(first: Frame, last: Frame) -> FrameRange {
         let len = last.start().distance_from(first.start());
-        let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
-        FrameRange { first, count }
+        let count = len.as_raw() / PAGE_SIZE.as_raw();
+        Self::new(first, count).unwrap()
+    }
+
+    pub fn containing_extent(extent: PhysExtent) -> FrameRange {
+        let first = Frame::containing(extent.address());
+        let last = Frame::containing(extent.last_address());
+        Self::between_inclusive(first, last)
     }
 
     pub fn first(&self) -> Frame {
@@ -139,9 +146,21 @@ impl FrameRange {
     pub fn end(&self) -> Option<Frame> {
         self.first.next(self.count)
     }
+
+    pub fn iter(&self) -> impl core::iter::Iterator<Item = Frame> {
+        let last = self.last();
+        core::iter::successors(Some(self.first), move |frame| {
+            if frame < &last {
+                frame.next(1)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 /// A contiguous range of virtual memory pages. Always non-empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PageRange {
     first: Page,
     count: u64,
@@ -177,6 +196,12 @@ impl PageRange {
         PageRange { first, count }
     }
 
+    pub fn containing_extent(extent: VirtExtent) -> PageRange {
+        let first = Page::containing(extent.address());
+        let last = Page::containing(extent.last_address());
+        Self::between_inclusive(first, last)
+    }
+
     pub fn first(&self) -> Page {
         self.first
     }
@@ -193,5 +218,16 @@ impl PageRange {
     // The first `Page` after the range, or `None` if it ends at the last frame.
     pub fn end(&self) -> Option<Page> {
         self.first.next(self.count)
+    }
+
+    pub fn iter(&self) -> impl core::iter::Iterator<Item = Page> {
+        let last = self.last();
+        core::iter::successors(Some(self.first), move |page| {
+            if page < &last {
+                page.next(1)
+            } else {
+                None
+            }
+        })
     }
 }

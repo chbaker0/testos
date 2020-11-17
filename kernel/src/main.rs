@@ -21,6 +21,9 @@ pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
     let boot_info = unsafe { (*(boot_info_addr as *const BootInfo)).clone() };
     writeln!(&mut writer, "{:?}", boot_info).unwrap();
 
+    mm::init(&boot_info);
+    writeln!(&mut writer, "Initialized frame allocator").unwrap();
+
     loop {}
 }
 

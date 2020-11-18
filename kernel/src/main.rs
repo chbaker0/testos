@@ -1,6 +1,9 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
+mod gdt;
+mod idt;
 mod mm;
 
 use core::fmt::Write;
@@ -20,6 +23,12 @@ pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
 
     let boot_info = unsafe { (*(boot_info_addr as *const BootInfo)).clone() };
     writeln!(&mut writer, "{:?}", boot_info).unwrap();
+
+    gdt::init();
+    writeln!(&mut writer, "Set up GDT").unwrap();
+
+    idt::init();
+    writeln!(&mut writer, "Set up IDT").unwrap();
 
     mm::init(&boot_info);
     writeln!(&mut writer, "Initialized frame allocator").unwrap();

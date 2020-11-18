@@ -10,3 +10,4 @@ edition = "2018"
 once_cell = { version = "1.5.2", default-features = false }
 shared = { path = "../shared" }
 spin = "0.7.0"
+x86_64 = "0.12.3"

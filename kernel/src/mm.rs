@@ -1,7 +1,9 @@
 //! Kernel memory management
 
+pub use shared::memory::addr::*;
+pub use shared::memory::page::*;
+
 use shared::memory::alloc::*;
-use shared::memory::page::*;
 use shared::memory::*;
 
 // The maximum amount of memory the physical memory allocator supports. Exactly
@@ -22,10 +24,10 @@ pub fn init(boot_info: &shared::handoff::BootInfo) {
         core::sync::atomic::AtomicBool::new(false);
     assert!(!IS_INITIALIZED.swap(true, core::sync::atomic::Ordering::SeqCst));
 
-    // Only one reference to this should every exist. It is static to be allocated
-    // on kernel load, but hypothetically it doesn't need to be; for example, if
-    // there were a simpler bootstrap allocator that didn't need a bitmap, the
-    // bitmap's memory could be allocated there.
+    // Only one reference to this should ever exist. It is static to be
+    // allocated on kernel load, but hypothetically it doesn't need to be; for
+    // example, if there were a simpler bootstrap allocator that didn't need a
+    // bitmap, the bitmap's memory could be allocated there.
     //
     // In fact, that is probably the better solution since that avoids memory
     // limits. However, this suffices for now. TODO: dynamically allocate the
@@ -55,4 +57,13 @@ pub fn init(boot_info: &shared::handoff::BootInfo) {
     }
 
     FRAME_ALLOCATOR.lock().set(frame_allocator).unwrap();
+}
+
+pub fn allocate_frame() -> Frame {
+    FRAME_ALLOCATOR
+        .lock()
+        .get_mut()
+        .unwrap()
+        .allocate()
+        .unwrap()
 }

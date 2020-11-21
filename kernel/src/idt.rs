@@ -1,17 +1,25 @@
-/// IDT management
-///
-/// The interrupt descriptor table maps CPU interrupts to handlers.
+//! IDT management
+//!
+//! The interrupt descriptor table maps CPU interrupts to handlers.
+
+use spin::Mutex;
+use x86_64::instructions::interrupts::without_interrupts;
 use x86_64::structures::idt::*;
 
-static mut IDT_RAW: InterruptDescriptorTable = InterruptDescriptorTable::new();
+// The wrapped InterruptDescriptorTable must never be dropped or moved.
+static IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
 
 pub fn init() {
+    without_interrupts(init_impl);
+}
+
+fn init_impl() {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
     assert!(!IS_INITIALIZED.swap(true, core::sync::atomic::Ordering::SeqCst));
 
-    let idt = unsafe { &mut IDT_RAW };
+    let mut idt = IDT.lock();
 
     // Only one GDT code selector is used in the kernel. These by default use
     // the current selector.
@@ -49,10 +57,24 @@ pub fn init() {
     // Entry 31 is reserved
 
     for i in 32..256 {
-        idt[i].set_handler_fn(unrecognized_interrupt_handler);
+        idt[i] = Entry::missing();
     }
 
-    idt.load();
+    unsafe {
+        // This is OK since IDT_RAW never moves and is never destroyed.
+        idt.load_unsafe();
+    }
+}
+
+pub unsafe fn install_interrupt_handler(num: u8, maybe_handler: Option<HandlerFunc>) {
+    without_interrupts(|| {
+        let mut idt = IDT.lock();
+        if let Some(handler) = maybe_handler {
+            idt[num as usize].set_handler_fn(handler);
+        } else {
+            idt[num as usize] = Entry::missing();
+        }
+    });
 }
 
 // Default exception handlers
@@ -165,8 +187,4 @@ extern "x86-interrupt" fn security_exception_handler(
 
 extern "x86-interrupt" fn unrecognized_exception_handler(stack_frame: &mut InterruptStackFrame) {
     panic!("unrecognized exception {:?}", stack_frame);
-}
-
-extern "x86-interrupt" fn unrecognized_interrupt_handler(stack_frame: &mut InterruptStackFrame) {
-    panic!("unrecognized interrupt {:?}", stack_frame);
 }

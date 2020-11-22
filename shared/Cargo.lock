@@ -196,10 +196,18 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "itertools",
+ "log",
  "quickcheck",
  "quickcheck_macros",
+ "spin",
  "static_assertions",
 ]
+
+[[package]]
+name = "spin"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "652ac3743312871a5fb703f0337e68ffa3cdc28c863efad0b8dc858fa10c991b"
 
 [[package]]
 name = "static_assertions"

@@ -1,6 +1,8 @@
 use super::addr::*;
 use super::page::*;
 
+use core::convert::TryInto;
+
 /// `FrameAllocator` clients may attempt to reserve a specific frame of memory.
 /// This can fail for one of the reasons listed below.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -23,14 +25,29 @@ pub enum FrameReserveError {
 ///   - `reserve` will not succeed on an allocated or reserved frame
 pub unsafe trait FrameAllocator {
     /// Allocate one frame of physical address space, if available.
-    fn allocate(&mut self) -> Option<Frame>;
+    fn allocate(&mut self) -> Option<Frame> {
+        self.allocate_range(0).map(|r| r.first())
+    }
+
+    /// Allocate 2^order frames aligned to 2^order, if available.
+    fn allocate_range(&mut self, order: usize) -> Option<FrameRange>;
 
     /// Return one allocated frame of physical address space.
     ///
     /// # Safety
     ///
-    /// The frame must have been allocated and not deallocated since.
-    unsafe fn deallocate(&mut self, frame: Frame);
+    /// `frame` must have been returned by allocate and not deallocated since.
+    unsafe fn deallocate(&mut self, frame: Frame) {
+        self.deallocate_range(FrameRange::one(frame))
+    }
+
+    /// Return several allocated frames of physical address space.
+    ///
+    /// # Safety
+    ///
+    /// `range` must have been returned by allocate_range and not deallocated
+    /// since.
+    unsafe fn deallocate_range(&mut self, range: FrameRange);
 
     /// Reserve a specific frame, if possible.
     fn reserve(&mut self, frame: Frame) -> Result<(), FrameReserveError>;
@@ -112,19 +129,74 @@ impl<'a> BitmapFrameAllocator<'a> {
 }
 
 unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
-    fn allocate(&mut self) -> Option<Frame> {
-        let byte_offset = self
-            .search_from_offset(self.start_offset)
-            .or_else(|| self.search_from_offset(0))?;
-        assert_ne!(self.bitmap[byte_offset], 0);
-        let bit_offset = self.bitmap[byte_offset].trailing_zeros();
-        self.bitmap[byte_offset] &= !(1 << bit_offset);
+    fn allocate_range(&mut self, order: usize) -> Option<FrameRange> {
+        // An order of 24 gives a size of 8 MiB. Let this be the max size.
+        assert!(order <= 24);
+        let size = 1 << order;
 
-        Some(Self::offsets_to_frame(byte_offset, bit_offset))
+        // Must find `size` contiguous free frames, aligned to `size`. For
+        // `size` = 1, this corresponds to finding any 1 bit in the bitmap. For
+        // `size` <= 8, a correctly aligned range will be contained within one
+        // bitmap byte. If `size` >= 8, a range will be several bytes of
+        // `u8::MAX`.
+        //
+        // Handle `size` < 8 first. We can handle `size` >= 8 on the byte level
+        // instead.
+
+        if size < 8 {
+            for i in 0..self.bitmap.len() {
+                let byte = &mut self.bitmap[i];
+                if *byte == 0 {
+                    continue;
+                }
+
+                if let Some(boff) = find_bit_group(*byte, size) {
+                    let mask: u8 = ((1 << size) - 1).try_into().unwrap();
+                    *byte = *byte & !(mask << boff);
+                    return FrameRange::new(Self::offsets_to_frame(i, boff.into()), size as u64);
+                }
+            }
+
+            return None;
+        }
+
+        assert!(size >= 8);
+        let byte_len = size / 8;
+
+        // For sizes >= 8, an allocation will correspond to a power-of-two
+        // length of bytes in the bitmap, aligned appropriately.
+
+        'outer: for i in (0..self.bitmap.len()).step_by(byte_len) {
+            if i + byte_len > self.bitmap.len() {
+                return None;
+            }
+
+            for j in i..i + byte_len {
+                if self.bitmap[j] != u8::MAX {
+                    // Not every frame is available in this range. Try the next
+                    // one.
+                    continue 'outer;
+                }
+            }
+
+            // Every frame in this range is available. Allocate it.
+            for j in i..i + byte_len {
+                self.bitmap[j] = 0;
+            }
+
+            return FrameRange::new(Self::offsets_to_frame(i, 0), size as u64);
+        }
+
+        unreachable!();
     }
 
     unsafe fn deallocate(&mut self, frame: Frame) {
         self.deallocate_impl(frame)
+    }
+
+    unsafe fn deallocate_range(&mut self, range: FrameRange) {
+        assert_eq!(range.count(), 1);
+        self.deallocate(range.first());
     }
 
     fn reserve(&mut self, frame: Frame) -> Result<(), FrameReserveError> {
@@ -242,6 +314,35 @@ pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) 
     }
 }
 
+/// Finds `len` set bits in `byte`, aligned to `len`. Returns the bit offset
+/// from the least significant bit.
+///
+/// Example: `len` is 2, will match the following bytes (where x any bit):
+/// - 0bxxxxxx11 -> Some(0)
+/// - 0bxxxx1100 -> Some(2)
+/// - 0bxx110000 -> Some(4)
+/// - 0b11000000 -> Some(6)
+///
+/// # Panics
+///
+/// Panics if `len` >= 8 or if `len` is not a power of two.
+fn find_bit_group(byte: u8, len: usize) -> Option<u8> {
+    assert!(len < 8);
+    assert!(len.is_power_of_two());
+
+    let mask = ((len << 1) - 1) as u8;
+    let mut shift = 0;
+
+    while shift < 8 {
+        if (byte & (mask << shift)) >> shift == mask {
+            return Some(shift);
+        }
+        shift += len as u8;
+    }
+
+    None
+}
+
 fn set_most_significant_bits(num_bits: u8) -> u8 {
     if num_bits == 0 {
         0
@@ -299,6 +400,27 @@ mod tests {
         assert_eq!(set_least_significant_bits(6), 0b00111111);
         assert_eq!(set_least_significant_bits(7), 0b01111111);
         assert_eq!(set_least_significant_bits(8), 0b11111111);
+    }
+
+    #[test]
+    fn find_bit_groups() {
+        assert_eq!(find_bit_group(0b00000001, 1), Some(0));
+        assert_eq!(find_bit_group(0b00000011, 2), Some(0));
+        assert_eq!(find_bit_group(0b00001111, 4), Some(0));
+
+        assert_eq!(find_bit_group(0b10000000, 1), Some(7));
+        assert_eq!(find_bit_group(0b11000000, 2), Some(6));
+        assert_eq!(find_bit_group(0b11110000, 4), Some(4));
+
+        assert_eq!(find_bit_group(0b00110000, 2), Some(4));
+        assert_eq!(find_bit_group(0b00001100, 2), Some(2));
+
+        assert_eq!(find_bit_group(0b11111111, 2), Some(0));
+        assert_eq!(find_bit_group(0b11111100, 2), Some(2));
+        assert_eq!(find_bit_group(0b11110000, 2), Some(4));
+
+        assert_eq!(find_bit_group(0b01010101, 2), None);
+        assert_eq!(find_bit_group(0b11101110, 4), None);
     }
 
     #[test]

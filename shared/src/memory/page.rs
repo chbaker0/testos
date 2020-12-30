@@ -109,6 +109,11 @@ impl FrameRange {
         Some(FrameRange { first, count })
     }
 
+    // A single frame
+    pub fn one(frame: Frame) -> FrameRange {
+        Self::new(frame, 1).unwrap()
+    }
+
     // All frames between and including `first` to `last`
     pub fn between_inclusive(first: Frame, last: Frame) -> FrameRange {
         let len = last.start().distance_from(first.start());
@@ -180,6 +185,11 @@ impl PageRange {
         }
 
         Some(PageRange { first, count })
+    }
+
+    // A single page
+    pub fn one(page: Page) -> PageRange {
+        Self::new(page, 1).unwrap()
     }
 
     // All frames between and including `first` to `last`

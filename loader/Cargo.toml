@@ -15,7 +15,7 @@ default-features = false
 features = ["array-sizes-33-128"]
 
 [dependencies.x86_64]
-version = "0.12.3"
+version = "0.14.6"
 default-features = false
 features = ["nightly"]
 

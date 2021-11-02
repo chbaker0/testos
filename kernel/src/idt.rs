@@ -78,68 +78,65 @@ pub unsafe fn install_interrupt_handler(num: u8, maybe_handler: Option<HandlerFu
 }
 
 // Default exception handlers
-extern "x86-interrupt" fn divide_error_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
     panic!("divide error 0 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn debug_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
     panic!("debug 1 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn nmi_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn nmi_handler(stack_frame: InterruptStackFrame) {
     panic!("NMI 2 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     panic!("breakpoint 3 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn overflow_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn overflow_handler(stack_frame: InterruptStackFrame) {
     panic!("overflow 4 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: InterruptStackFrame) {
     panic!("bound range exceeded 5 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
     panic!("invalid opcode 6 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn device_not_available_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
     panic!("device not available 7 {:?}", stack_frame);
 }
 
 extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
     panic!("double fault 8 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn invalid_tss_handler(
-    stack_frame: &mut InterruptStackFrame,
-    error_code: u64,
-) {
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     panic!("invalid TSS 10 {} {:?}", error_code, stack_frame);
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
     panic!("segment not present 11 {} {:?}", error_code, stack_frame);
 }
 
 extern "x86-interrupt" fn stack_segment_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
     panic!("stack segment fault 12 {} {:?}", error_code, stack_frame);
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
     panic!(
@@ -149,42 +146,42 @@ extern "x86-interrupt" fn general_protection_fault_handler(
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
     panic!("page fault 14 {:?} {:?}", error_code, stack_frame);
 }
 
-extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
     panic!("x87 floating point 16 {:?}", stack_frame);
 }
 
 extern "x86-interrupt" fn alignment_check_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
     panic!("alignment check 17 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn machine_check_handler(stack_frame: &mut InterruptStackFrame) -> ! {
+extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
     panic!("machine check 18 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: InterruptStackFrame) {
     panic!("SIMD floating point 19 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn virtualization_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
     panic!("virtualization 20 {:?}", stack_frame);
 }
 
 extern "x86-interrupt" fn security_exception_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
     panic!("security exception 30 {:?}", stack_frame);
 }
 
-extern "x86-interrupt" fn unrecognized_exception_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn unrecognized_exception_handler(stack_frame: InterruptStackFrame) {
     panic!("unrecognized exception {:?}", stack_frame);
 }

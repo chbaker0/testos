@@ -50,7 +50,7 @@ pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
     halt_loop();
 }
 
-fn keyboard_handler(_: &mut InterruptStackFrame) {
+fn keyboard_handler(_: InterruptStackFrame) {
     panic!("keyboard interrupt received");
 }
 

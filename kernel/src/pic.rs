@@ -7,7 +7,7 @@ use x86_64::structures::idt::InterruptStackFrame;
 
 use crate::idt::install_interrupt_handler;
 
-pub type IrqHandlerFunc = fn(stack: &mut InterruptStackFrame);
+pub type IrqHandlerFunc = fn(stack: InterruptStackFrame);
 
 struct PicRegs {
     cmd_1: PortWriteOnly<u8>,
@@ -162,7 +162,7 @@ fn acknowledge_irq(irq_num: u8) {
 static IRQ_HANDLERS: Mutex<[Option<IrqHandlerFunc>; 16]> = Mutex::new([None; 16]);
 
 // Internal IRQ handlers
-fn handle_irq(irq_num: u8, stack: &mut InterruptStackFrame) {
+fn handle_irq(irq_num: u8, stack: InterruptStackFrame) {
     without_interrupts(|| {
         if is_spurious(irq_num) {
             return;
@@ -184,67 +184,67 @@ fn handle_irq(irq_num: u8, stack: &mut InterruptStackFrame) {
 const PIC_COMMAND_READ_ISR: u8 = 0x0b;
 const PIC_COMMAND_ACKNOWLEDGE_IRQ: u8 = 0x20;
 
-extern "x86-interrupt" fn handle_irq0(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq0(stack: InterruptStackFrame) {
     handle_irq(0, stack);
 }
 
-extern "x86-interrupt" fn handle_irq1(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq1(stack: InterruptStackFrame) {
     handle_irq(1, stack);
 }
 
-extern "x86-interrupt" fn handle_irq2(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq2(stack: InterruptStackFrame) {
     handle_irq(2, stack);
 }
 
-extern "x86-interrupt" fn handle_irq3(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq3(stack: InterruptStackFrame) {
     handle_irq(3, stack);
 }
 
-extern "x86-interrupt" fn handle_irq4(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq4(stack: InterruptStackFrame) {
     handle_irq(4, stack);
 }
 
-extern "x86-interrupt" fn handle_irq5(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq5(stack: InterruptStackFrame) {
     handle_irq(5, stack);
 }
 
-extern "x86-interrupt" fn handle_irq6(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq6(stack: InterruptStackFrame) {
     handle_irq(6, stack);
 }
 
-extern "x86-interrupt" fn handle_irq7(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq7(stack: InterruptStackFrame) {
     handle_irq(7, stack);
 }
 
-extern "x86-interrupt" fn handle_irq8(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq8(stack: InterruptStackFrame) {
     handle_irq(8, stack);
 }
 
-extern "x86-interrupt" fn handle_irq9(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq9(stack: InterruptStackFrame) {
     handle_irq(9, stack);
 }
 
-extern "x86-interrupt" fn handle_irq10(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq10(stack: InterruptStackFrame) {
     handle_irq(10, stack);
 }
 
-extern "x86-interrupt" fn handle_irq11(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq11(stack: InterruptStackFrame) {
     handle_irq(11, stack);
 }
 
-extern "x86-interrupt" fn handle_irq12(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq12(stack: InterruptStackFrame) {
     handle_irq(12, stack);
 }
 
-extern "x86-interrupt" fn handle_irq13(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq13(stack: InterruptStackFrame) {
     handle_irq(13, stack);
 }
 
-extern "x86-interrupt" fn handle_irq14(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq14(stack: InterruptStackFrame) {
     handle_irq(14, stack);
 }
 
-extern "x86-interrupt" fn handle_irq15(stack: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn handle_irq15(stack: InterruptStackFrame) {
     handle_irq(15, stack);
 }
 

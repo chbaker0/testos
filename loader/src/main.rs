@@ -319,6 +319,14 @@ unsafe fn map_physical_memory(
     );
 }
 
+struct IdentityMapping {}
+
+unsafe impl paging::mapper::PageTableFrameMapping for IdentityMapping {
+    fn frame_to_pointer(&self, frame: paging::PhysFrame) -> *mut paging::PageTable {
+        frame.start_address().as_u64() as *mut paging::PageTable
+    }
+}
+
 unsafe fn map_linear(
     page_table: &mut paging::PageTable,
     bump_allocator: &mut memory::BumpAllocator,
@@ -329,8 +337,7 @@ unsafe fn map_linear(
     use x86_64::addr::{PhysAddr, VirtAddr};
     use x86_64::structures::paging::Mapper;
 
-    let phys_to_virt =
-        |frame: paging::PhysFrame| frame.start_address().as_u64() as *mut paging::PageTable;
+    let phys_to_virt = IdentityMapping {};
 
     let mut frame_allocator = FrameAllocatorAdapter { bump_allocator };
     let mut mapper = paging::MappedPageTable::new(page_table, phys_to_virt);

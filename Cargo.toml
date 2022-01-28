@@ -1,0 +1,11 @@
+[workspace]
+
+members = [
+    "kernel",
+    "loader",
+    "shared",
+]
+
+default-members = [
+    "kernel"
+]

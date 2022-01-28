@@ -7,4 +7,4 @@ target = "../targets/i686-unknown-none.json"
 
 [target.i686-unknown-none]
 runner = "qemu-system-i386 -kernel"
-rustflags = ["-C", "link-arg=-Tsrc/linker.ld"]
+rustflags = ["-C", "link-arg=-Tloader/src/linker.ld"]

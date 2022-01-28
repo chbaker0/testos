@@ -89,7 +89,7 @@ pub enum MemoryType {
 /// Does not support freeing.
 pub struct BumpAllocator {
     // This is in reverse order.
-    free: ArrayVec<[PhysExtent; 128]>,
+    free: ArrayVec<PhysExtent, 128>,
     // This is the base 2 log of the page size.
     page_size_log2: usize,
 }
@@ -108,7 +108,7 @@ impl BumpAllocator {
         // zeros.
         let page_size_log2 = page_size.trailing_zeros() as usize;
 
-        let mut free: ArrayVec<[PhysExtent; 128]> = blocks
+        let mut free: ArrayVec<PhysExtent, 128> = blocks
             .into_iter()
             .flat_map(|e| e.shrink_to_alignment(page_size))
             .collect();

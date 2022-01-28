@@ -7,15 +7,14 @@ edition = "2018"
 [dependencies]
 shared = { path = "../shared" }
 static_assertions = "1.1.0"
-xmas-elf = "0.7.0"
+xmas-elf = "0.8.0"
 
 [dependencies.arrayvec]
-version = "0.5.2"
+version = "0.7.2"
 default-features = false
-features = ["array-sizes-33-128"]
 
 [dependencies.x86_64]
-version = "0.14.6"
+version = "0.14.7"
 default-features = false
 features = ["nightly"]
 

@@ -1,0 +1,8 @@
+[package]
+name = "mkimage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cargo_metadata = "0.14.2"
+clap = { version = "3.1", features = ["derive"] }

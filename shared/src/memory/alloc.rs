@@ -66,7 +66,6 @@ pub unsafe trait FrameAllocator {
 #[derive(Debug)]
 pub struct BitmapFrameAllocator<'a> {
     bitmap: &'a mut [u8],
-    start_offset: usize,
 }
 
 impl<'a> BitmapFrameAllocator<'a> {
@@ -81,13 +80,11 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// be marked used. All frames marked free must be available for use and not used
     /// by other code.
     pub unsafe fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
-        BitmapFrameAllocator {
-            bitmap,
-            start_offset: 0,
-        }
+        BitmapFrameAllocator { bitmap }
     }
 
     // Finds the first byte of `bitmap` after `offset` with an available slot.
+    #[allow(dead_code)]
     fn search_from_offset(&self, offset: usize) -> Option<usize> {
         for i in offset..self.bitmap.len() {
             if self.bitmap[i] > 0 {

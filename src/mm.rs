@@ -59,6 +59,7 @@ pub fn init(boot_info: &shared::handoff::BootInfo) {
     FRAME_ALLOCATOR.lock().set(frame_allocator).unwrap();
 }
 
+#[allow(unused)]
 pub fn allocate_frame() -> Frame {
     FRAME_ALLOCATOR
         .lock()

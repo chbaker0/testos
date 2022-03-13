@@ -9,6 +9,7 @@ members = [
     ".",
     "loader",
     "mkimage",
+    "shared",
 ]
 default-members = ["."]
 resolver = "2"

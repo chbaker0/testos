@@ -2,12 +2,12 @@
 //!
 //! The interrupt descriptor table maps CPU interrupts to handlers.
 
-use spin::Mutex;
+use spin::mutex::SpinMutex;
 use x86_64::instructions::interrupts::without_interrupts;
 use x86_64::structures::idt::*;
 
 // The wrapped InterruptDescriptorTable must never be dropped or moved.
-static IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
+static IDT: SpinMutex<InterruptDescriptorTable> = SpinMutex::new(InterruptDescriptorTable::new());
 
 pub fn init() {
     without_interrupts(init_impl);

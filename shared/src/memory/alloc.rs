@@ -37,7 +37,7 @@ pub unsafe trait FrameAllocator {
     /// # Safety
     ///
     /// `frame` must have been returned by allocate and not deallocated since.
-    unsafe fn deallocate(&mut self, frame: Frame) {
+    fn deallocate(&mut self, frame: Frame) {
         self.deallocate_range(FrameRange::one(frame))
     }
 
@@ -47,7 +47,7 @@ pub unsafe trait FrameAllocator {
     ///
     /// `range` must have been returned by allocate_range and not deallocated
     /// since.
-    unsafe fn deallocate_range(&mut self, range: FrameRange);
+    fn deallocate_range(&mut self, range: FrameRange);
 
     /// Reserve a specific frame, if possible.
     fn reserve(&mut self, frame: Frame) -> Result<(), FrameReserveError>;
@@ -58,7 +58,7 @@ pub unsafe trait FrameAllocator {
     ///
     /// The frame must have been successfully reserved by `reserve` and not
     /// returned by `unreserve` since.
-    unsafe fn unreserve(&mut self, frame: Frame);
+    fn unreserve(&mut self, frame: Frame);
 }
 
 /// A very rudimentary allocator. Simply stores 1 bit per frame representing
@@ -79,7 +79,7 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// All frames that must be preserved or which refer to invalid memory must
     /// be marked used. All frames marked free must be available for use and not used
     /// by other code.
-    pub unsafe fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
+    pub fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
         BitmapFrameAllocator { bitmap }
     }
 
@@ -187,11 +187,11 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
         unreachable!();
     }
 
-    unsafe fn deallocate(&mut self, frame: Frame) {
+    fn deallocate(&mut self, frame: Frame) {
         self.deallocate_impl(frame)
     }
 
-    unsafe fn deallocate_range(&mut self, range: FrameRange) {
+    fn deallocate_range(&mut self, range: FrameRange) {
         assert_eq!(range.count(), 1);
         self.deallocate(range.first());
     }
@@ -209,7 +209,7 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
         Ok(())
     }
 
-    unsafe fn unreserve(&mut self, frame: Frame) {
+    fn unreserve(&mut self, frame: Frame) {
         self.unreserve_impl(frame)
     }
 }
@@ -589,7 +589,7 @@ mod tests {
         // In each byte, the LSB represents the first frame in the range of 8
         // frames, and the MSB represents the last.
         let mut bitmap = [0b00100000, 0b00010000, 0b00000010];
-        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
         let mut allocated_frames = std::collections::BTreeSet::new();
 
         assert!(allocated_frames.insert(allocator.allocate().unwrap()));
@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn bitmap_allocator_does_not_return_reserved_frame() {
         let mut bitmap = [0b01000010];
-        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
 
         allocator
             .reserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))))
@@ -622,9 +622,7 @@ mod tests {
         );
         assert_eq!(allocator.allocate(), None);
 
-        unsafe {
-            allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))));
-        }
+        allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))));
         assert_eq!(
             allocator.allocate().unwrap(),
             Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1)))
@@ -635,20 +633,16 @@ mod tests {
     #[test]
     fn bitmap_allocator_returns_freed_frame() {
         let mut bitmap = [0b01000010];
-        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
 
         let frame1 = allocator.allocate().unwrap();
         let frame2 = allocator.allocate().unwrap();
         assert_eq!(allocator.allocate(), None);
 
-        unsafe {
-            allocator.deallocate(frame2);
-        }
+        allocator.deallocate(frame2);
         assert_eq!(allocator.allocate().unwrap(), frame2);
 
-        unsafe {
-            allocator.deallocate(frame1);
-        }
+        allocator.deallocate(frame1);
         assert_eq!(allocator.allocate().unwrap(), frame1);
     }
 
@@ -660,7 +654,7 @@ mod tests {
             .map(u8::count_ones)
             .fold(0, |acc, x| acc + x as u64);
 
-        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
+        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
         let mut allocated_frames = std::collections::BTreeSet::new();
 
         // Check that all available frames could be allocated and are unique.

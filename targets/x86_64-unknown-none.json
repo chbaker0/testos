@@ -13,5 +13,5 @@
     "panic-strategy": "abort",
     "disable-redzone": true,
     "features": "-mmx,-sse,+soft-float",
-    "eliminate-frame-pointer": false
+    "frame-pointer": "always"
 }

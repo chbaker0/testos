@@ -29,11 +29,11 @@ pub fn init() {
         GDT.add_entry(Descriptor::kernel_data_segment());
         GDT.load();
 
-        set_cs(SegmentSelector::new(1, PrivilegeLevel::Ring0));
-        load_ds(SegmentSelector::new(2, PrivilegeLevel::Ring0));
-        load_es(SegmentSelector::new(2, PrivilegeLevel::Ring0));
-        load_fs(SegmentSelector::new(2, PrivilegeLevel::Ring0));
-        load_gs(SegmentSelector::new(2, PrivilegeLevel::Ring0));
-        load_ss(SegmentSelector::new(2, PrivilegeLevel::Ring0));
+        CS::set_reg(SegmentSelector::new(1, PrivilegeLevel::Ring0));
+        DS::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));
+        ES::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));
+        FS::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));
+        GS::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));
+        SS::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));
     }
 }

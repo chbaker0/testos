@@ -15,3 +15,6 @@ kclippy = "clippy --target targets/x86_64-unknown-none.json -Zbuild-std=core,com
 lclippy = "clippy --package loader --target targets/i686-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 sclippy = "clippy --package shared"
 stest = "test --package shared"
+kdoc = "doc --target targets/x86_64-unknown-none.json --document-private-items -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+ldoc = "doc --package loader --target targets/i686-unknown-none.json --document-private-items -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+sdoc = "doc --package shared --document-private-items"

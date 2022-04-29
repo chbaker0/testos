@@ -13,6 +13,11 @@ pub struct VgaWriter {
 }
 
 impl VgaWriter {
+    /// Create formatter writing to raw vga memory at `vmem`.
+    ///
+    /// # Safety
+    /// * `vmem` must point to valid VGA memory
+    /// * only one instance should exist
     pub unsafe fn new(vmem: *mut u8) -> VgaWriter {
         let mut vga_writer = VgaWriter { vmem, offset: 0 };
         vga_writer.clear();
@@ -49,7 +54,7 @@ impl VgaWriter {
 
         unsafe {
             core::ptr::copy(
-                self.vmem.offset((lines * COLS * 2) as isize),
+                self.vmem.add(lines * COLS * 2),
                 self.vmem,
                 (ROWS - lines) * COLS * 2,
             );
@@ -78,7 +83,7 @@ impl Write for VgaWriter {
                 continue;
             }
 
-            let b = if c.is_ascii() { c as u8 } else { '?' as u8 };
+            let b = if c.is_ascii() { c as u8 } else { b'?' };
 
             unsafe {
                 *self.vmem.offset(2 * self.offset as isize) = b;

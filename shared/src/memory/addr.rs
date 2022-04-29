@@ -1,7 +1,9 @@
 use core::cmp::{max, min};
+use core::convert::Into;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;
+use core::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 pub trait AddressType: Clone + Copy + Eq + Ord + PartialEq + PartialOrd + Debug + Hash {}
 
@@ -88,19 +90,6 @@ impl Length {
         self.0
     }
 
-    pub fn add(self, rhs: Length) -> Length {
-        Length::from_raw(self.as_raw() + rhs.as_raw())
-    }
-
-    pub fn subtract(self, rhs: Length) -> Length {
-        assert!(self.as_raw() >= rhs.as_raw());
-        Length::from_raw(self.as_raw() - rhs.as_raw())
-    }
-
-    pub fn times(self, x: u64) -> Length {
-        Self::from_raw(self.as_raw().checked_mul(x).unwrap())
-    }
-
     pub fn is_aligned_to(self, alignment: u64) -> bool {
         self == self.align_down(alignment)
     }
@@ -115,6 +104,51 @@ impl Length {
     /// which must be a power of two.
     pub fn align_up(self, alignment: u64) -> Length {
         Length::from_raw(align_u64_up(self.as_raw(), alignment))
+    }
+}
+
+impl Add for Length {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        Length(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign for Length {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl Sub for Length {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        Length(self.0 - rhs.0)
+    }
+}
+
+impl SubAssign for Length {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
+impl<Int> Mul<Int> for Length
+where
+    Int: Into<u64>,
+{
+    type Output = Self;
+    fn mul(self, rhs: Int) -> Self {
+        Length(self.0.checked_mul(rhs.into()).unwrap())
+    }
+}
+
+impl<Int> MulAssign<Int> for Length
+where
+    Int: Into<u64>,
+{
+    fn mul_assign(&mut self, rhs: Int) {
+        *self = *self * rhs;
     }
 }
 
@@ -136,10 +170,7 @@ impl<Type: AddressType> Extent<Type> {
         if length.as_raw() == 0 || length.as_raw() > u64::MAX - address.as_raw() {
             None
         } else {
-            Some(Self {
-                address: address,
-                length: length,
-            })
+            Some(Self { address, length })
         }
     }
 
@@ -182,8 +213,7 @@ impl<Type: AddressType> Extent<Type> {
     /// assert_eq!(PhysExtent::from_raw(0, 4).last_address(), PhysAddress::from_raw(3));
     /// ```
     pub fn last_address(self) -> Address<Type> {
-        self.address
-            .offset_by(self.length.subtract(Length::from_raw(1)))
+        self.address.offset_by(self.length - Length::from_raw(1))
     }
 
     pub fn overlap(self, other: Self) -> Option<Self> {
@@ -198,8 +228,7 @@ impl<Type: AddressType> Extent<Type> {
         }
 
         let overlap_length = min(
-            self.length
-                .subtract(self.address.distance_to(overlap_start)),
+            self.length - self.address.distance_to(overlap_start),
             other.length,
         );
 
@@ -239,9 +268,7 @@ impl<Type: AddressType> Extent<Type> {
         // u64::MAX`.
 
         let diff_address = max(self.address, other.end_address());
-        let diff_length = self
-            .length
-            .subtract(diff_address.distance_from(self.address));
+        let diff_length = self.length - diff_address.distance_from(self.address);
 
         Some(Self {
             address: diff_address,

@@ -32,42 +32,44 @@ static PIC_REGS: Mutex<PicRegs> = Mutex::new(PicRegs {
 // Interrupts should be disabled before this is called. It is safe to enable
 // interrupts after init().
 pub unsafe fn init() {
-    without_interrupts(|| init_impl());
+    without_interrupts(|| unsafe { init_impl() });
 }
 
 unsafe fn init_impl() {
     let mut pic_regs = PIC_REGS.lock();
 
-    // Do the magic
-    pic_regs.cmd_1.write(0x11);
-    pic_regs.cmd_2.write(0x11);
-    pic_regs.data_1.write(IRQ_INTERRUPT_OFFSET);
-    pic_regs.data_2.write(IRQ_INTERRUPT_OFFSET + IRQS_PER_PIC);
-    pic_regs.data_1.write(4);
-    pic_regs.data_2.write(2);
-    pic_regs.data_1.write(1);
-    pic_regs.data_2.write(1);
+    unsafe {
+        // Do the magic
+        pic_regs.cmd_1.write(0x11);
+        pic_regs.cmd_2.write(0x11);
+        pic_regs.data_1.write(IRQ_INTERRUPT_OFFSET);
+        pic_regs.data_2.write(IRQ_INTERRUPT_OFFSET + IRQS_PER_PIC);
+        pic_regs.data_1.write(4);
+        pic_regs.data_2.write(2);
+        pic_regs.data_1.write(1);
+        pic_regs.data_2.write(1);
 
-    // Mask all interrupts
-    pic_regs.data_1.write(0b11111111);
-    pic_regs.data_2.write(0b11111111);
+        // Mask all interrupts
+        pic_regs.data_1.write(0b11111111);
+        pic_regs.data_2.write(0b11111111);
 
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET, Some(handle_irq0));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 1, Some(handle_irq1));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 2, Some(handle_irq2));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 3, Some(handle_irq3));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 4, Some(handle_irq4));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 5, Some(handle_irq5));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 6, Some(handle_irq6));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 7, Some(handle_irq7));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 8, Some(handle_irq8));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 9, Some(handle_irq9));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 10, Some(handle_irq10));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 11, Some(handle_irq11));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 12, Some(handle_irq12));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 13, Some(handle_irq13));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 14, Some(handle_irq14));
-    install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 15, Some(handle_irq15));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET, Some(handle_irq0));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 1, Some(handle_irq1));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 2, Some(handle_irq2));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 3, Some(handle_irq3));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 4, Some(handle_irq4));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 5, Some(handle_irq5));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 6, Some(handle_irq6));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 7, Some(handle_irq7));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 8, Some(handle_irq8));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 9, Some(handle_irq9));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 10, Some(handle_irq10));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 11, Some(handle_irq11));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 12, Some(handle_irq12));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 13, Some(handle_irq13));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 14, Some(handle_irq14));
+        install_interrupt_handler(IRQ_INTERRUPT_OFFSET + 15, Some(handle_irq15));
+    }
 }
 
 pub fn install_irq_handler(irq_num: u8, maybe_handler: Option<IrqHandlerFunc>) {
@@ -102,14 +104,16 @@ pub fn install_irq_handler(irq_num: u8, maybe_handler: Option<IrqHandlerFunc>) {
 }
 
 unsafe fn set_mask(data_port: &mut Port<u8>, irq_line: u8, set: bool) {
-    let old_mask = data_port.read();
+    let old_mask = unsafe { data_port.read() };
     let new_mask = if set {
         old_mask | (1 << irq_line)
     } else {
         old_mask & !(1 << irq_line)
     };
 
-    data_port.write(new_mask);
+    unsafe {
+        data_port.write(new_mask);
+    }
 }
 
 // For various reasons, an IRQ might be invalid in which case we shouldn't

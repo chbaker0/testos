@@ -29,8 +29,7 @@ impl Map {
         }; 128];
         let mut num_entries: u64 = 0;
 
-        let mut iter = src.into_iter();
-        while let Some(entry) = iter.next() {
+        for entry in src.into_iter() {
             assert!((num_entries as usize) < entries.len());
             entries[num_entries as usize] = entry;
             num_entries += 1;
@@ -46,7 +45,7 @@ impl Map {
         &self.entries[0..self.num_entries as usize]
     }
 
-    pub fn iter_type<'a>(&'a self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + 'a {
+    pub fn iter_type(&self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + '_ {
         self.entries
             .iter()
             .filter(move |e| e.mem_type == mem_type)
@@ -185,7 +184,7 @@ impl BumpAllocator {
 
         let maybe_remainder = Extent::new_checked(
             block.address().offset_by(alloc_length),
-            block.length().subtract(alloc_length),
+            block.length() - alloc_length,
         );
 
         if let Some(remainder) = maybe_remainder {

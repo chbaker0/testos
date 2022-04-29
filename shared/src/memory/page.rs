@@ -102,9 +102,7 @@ impl FrameRange {
         // Check that `count` frames after and including `first` are
         // addressable. `first.next(count)` may not be addressable if the range
         // includes the last frame.
-        if first.next(count - 1).is_none() {
-            return None;
-        }
+        first.next(count - 1)?;
 
         Some(FrameRange { first, count })
     }
@@ -180,9 +178,7 @@ impl PageRange {
         // Check that `count` frames after and including `first` are
         // addressable. `first.next(count)` may not be addressable if the range
         // includes the last frame.
-        if first.next(count - 1).is_none() {
-            return None;
-        }
+        first.next(count - 1)?;
 
         Some(PageRange { first, count })
     }

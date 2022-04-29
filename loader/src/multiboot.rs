@@ -43,8 +43,10 @@ pub unsafe fn get_first_module(boot_info: &BootInfo) -> &'static [u8] {
     assert!(get_bit(boot_info.flags, BOOT_FLAGS_MODS_BIT));
     assert!(boot_info.mods_count > 0);
 
-    let entry = &*(boot_info.mods_addr as *const ModEntry);
-    core::slice::from_raw_parts(entry.start as *const u8, (entry.end - entry.start) as usize)
+    unsafe {
+        let entry = &*(boot_info.mods_addr as *const ModEntry);
+        core::slice::from_raw_parts(entry.start as *const u8, (entry.end - entry.start) as usize)
+    }
 }
 
 fn parse_memory_entry(raw: MemMapEntryRaw) -> memory::MapEntry {

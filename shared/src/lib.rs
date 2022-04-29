@@ -4,6 +4,7 @@
 //! loader, or is fairly self-contained. Unit testing is a big motivation for
 //! this crate.
 
+#![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(test)]

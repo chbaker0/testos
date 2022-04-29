@@ -1,3 +1,4 @@
+#![deny(unsafe_op_in_unsafe_fn)]
 #![no_std]
 #![no_main]
 
@@ -22,8 +23,13 @@ extern "C" {
     fn kernel_handoff(page_table_addr: u64, kernel_entry_addr: u64, boot_info_addr: u64) -> !;
 }
 
+/// Main entry point to the loader, called from our boot.nasm stub.
+///
+/// # Safety
+/// `boot_info_ptr` must point to a valid `BootInfo` structure as provided by
+/// GRUB.
 #[no_mangle]
-pub extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
+pub unsafe extern "C" fn loader_main(boot_info_ptr: *const multiboot::BootInfo) -> ! {
     // Assume `boot_info` is a valid pointer and that we won't overwrite it.
     let boot_info = unsafe { &*boot_info_ptr };
 
@@ -198,11 +204,13 @@ unsafe fn load_and_map_kernel_segments(
 
     // For simplicity, zero out all memory at `target`. Then we don't have to
     // zero out memory per-segment.
-    write_bytes(
-        phys_addr_as_ptr(target.address()),
-        0,
-        target.length().as_raw() as usize,
-    );
+    unsafe {
+        write_bytes(
+            phys_addr_as_ptr(target.address()),
+            0,
+            target.length().as_raw() as usize,
+        );
+    }
 
     let mut cur_dest_addr = target.address();
 
@@ -226,19 +234,23 @@ unsafe fn load_and_map_kernel_segments(
         );
         let load_slice =
             slice_from_raw_parts_mut(cur_dest_addr.as_raw() as *mut u8, segment_slice.len());
-        (*load_slice).copy_from_slice(segment_slice);
+        unsafe {
+            (*load_slice).copy_from_slice(segment_slice);
+        }
 
         let segment_length =
             memory::Length::from_raw(pg_header.mem_size() as u64).align_up(PAGE_SIZE);
         let segment_extent = memory::PhysExtent::new(cur_dest_addr, segment_length);
 
-        map_linear(
-            page_table,
-            allocator,
-            segment_extent,
-            memory::VirtAddress::from_raw(pg_header.virtual_addr()),
-            false,
-        );
+        unsafe {
+            map_linear(
+                page_table,
+                allocator,
+                segment_extent,
+                memory::VirtAddress::from_raw(pg_header.virtual_addr()),
+                false,
+            );
+        }
 
         cur_dest_addr = cur_dest_addr.offset_by(segment_length);
     }
@@ -256,7 +268,7 @@ fn get_kernel_load_size(kernel_image: &ElfFile) -> memory::Length {
             unsupported => panic!("unsupported section {:?}", unsupported),
         };
 
-        length = length.add(memory::Length::from_raw(segment_size).align_up(PAGE_SIZE));
+        length += memory::Length::from_raw(segment_size).align_up(PAGE_SIZE);
     }
 
     length
@@ -290,7 +302,7 @@ fn estimate_frames_to_map(extent: memory::PhysExtent) -> u64 {
     let l3_size = l2_frames * 8;
     let l3_frames = l3_size / PAGE_SIZE + 2;
 
-    return l1_frames + l2_frames + l3_frames;
+    l1_frames + l2_frames + l3_frames
 }
 
 /// Identity maps all physical memory
@@ -310,13 +322,15 @@ unsafe fn map_physical_memory(
         .align_up(1024 * 1024 * 2);
     let all_memory_extent = memory::PhysExtent::new(addr_zero, length);
 
-    map_linear(
-        page_table,
-        allocator,
-        all_memory_extent,
-        memory::VirtAddress::zero(),
-        true,
-    );
+    unsafe {
+        map_linear(
+            page_table,
+            allocator,
+            all_memory_extent,
+            memory::VirtAddress::zero(),
+            true,
+        );
+    }
 }
 
 struct IdentityMapping {}
@@ -340,7 +354,7 @@ unsafe fn map_linear(
     let phys_to_virt = IdentityMapping {};
 
     let mut frame_allocator = FrameAllocatorAdapter { bump_allocator };
-    let mut mapper = paging::MappedPageTable::new(page_table, phys_to_virt);
+    let mut mapper = unsafe { paging::MappedPageTable::new(page_table, phys_to_virt) };
 
     let page_size = if large_page {
         1024 * 1024 * 2
@@ -371,16 +385,18 @@ unsafe fn map_linear(
             ))
             .unwrap();
 
-            mapper
-                .map_to_with_table_flags(
-                    target_page,
-                    frame,
-                    page_flags,
-                    page_flags,
-                    &mut frame_allocator,
-                )
-                .unwrap()
-                .ignore();
+            unsafe {
+                mapper
+                    .map_to_with_table_flags(
+                        target_page,
+                        frame,
+                        page_flags,
+                        page_flags,
+                        &mut frame_allocator,
+                    )
+                    .unwrap()
+                    .ignore();
+            }
         } else {
             let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
                 VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
@@ -392,16 +408,18 @@ unsafe fn map_linear(
             ))
             .unwrap();
 
-            mapper
-                .map_to_with_table_flags(
-                    target_page,
-                    frame,
-                    page_flags,
-                    page_flags,
-                    &mut frame_allocator,
-                )
-                .unwrap()
-                .ignore();
+            unsafe {
+                mapper
+                    .map_to_with_table_flags(
+                        target_page,
+                        frame,
+                        page_flags,
+                        page_flags,
+                        &mut frame_allocator,
+                    )
+                    .unwrap()
+                    .ignore();
+            }
         }
     }
 }

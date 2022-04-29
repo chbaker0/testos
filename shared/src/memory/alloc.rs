@@ -149,7 +149,7 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
 
                 if let Some(boff) = find_bit_group(*byte, size) {
                     let mask: u8 = ((1 << size) - 1).try_into().unwrap();
-                    *byte = *byte & !(mask << boff);
+                    *byte &= !(mask << boff);
                     return FrameRange::new(Self::offsets_to_frame(i, boff.into()), size as u64);
                 }
             }
@@ -599,9 +599,9 @@ mod tests {
         assert_eq!(
             allocated_frames,
             vec![
-                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(5))),
-                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(12))),
-                Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(17)))
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE * 5u64)),
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE * 12u64)),
+                Frame::new(PhysAddress::from_zero(PAGE_SIZE * 17u64))
             ]
             .into_iter()
             .collect()
@@ -614,18 +614,18 @@ mod tests {
         let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
 
         allocator
-            .reserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))))
+            .reserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64)))
             .unwrap();
         assert_eq!(
             allocator.allocate().unwrap(),
-            Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(6)))
+            Frame::new(PhysAddress::from_zero(PAGE_SIZE * 6u64))
         );
         assert_eq!(allocator.allocate(), None);
 
-        allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1))));
+        allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64)));
         assert_eq!(
             allocator.allocate().unwrap(),
-            Frame::new(PhysAddress::from_zero(PAGE_SIZE.times(1)))
+            Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64))
         );
         assert_eq!(allocator.allocate(), None);
     }

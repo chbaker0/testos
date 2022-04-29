@@ -114,14 +114,14 @@ impl FrameRange {
 
     // All frames between and including `first` to `last`
     pub fn between_inclusive(first: Frame, last: Frame) -> FrameRange {
-        let len = last.start().distance_from(first.start());
+        let len = last.start() - first.start();
         let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
         Self::new(first, count).unwrap()
     }
 
     // All frames between `first` to `last`, including `first` but not `last`
     pub fn between_exclusive(first: Frame, last: Frame) -> FrameRange {
-        let len = last.start().distance_from(first.start());
+        let len = last.start() - first.start();
         let count = len.as_raw() / PAGE_SIZE.as_raw();
         Self::new(first, count).unwrap()
     }
@@ -190,14 +190,14 @@ impl PageRange {
 
     // All frames between and including `first` to `last`
     pub fn between_inclusive(first: Page, last: Page) -> PageRange {
-        let len = last.start().distance_from(first.start());
+        let len = last.start() - first.start();
         let count = len.as_raw() / PAGE_SIZE.as_raw();
         PageRange { first, count }
     }
 
     // All frames between `first` to `last`, including `first` but not `last`
     pub fn between_exclusive(first: Page, last: Page) -> PageRange {
-        let len = last.start().distance_from(first.start());
+        let len = last.start() - first.start();
         let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
         PageRange { first, count }
     }

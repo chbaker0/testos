@@ -229,7 +229,7 @@ unsafe fn load_and_map_kernel_segments(
         };
 
         assert!(
-            cur_dest_addr.offset_by(memory::Length::from_raw(segment_slice.len() as u64))
+            cur_dest_addr + memory::Length::from_raw(segment_slice.len() as u64)
                 <= target.end_address()
         );
         let load_slice =
@@ -252,7 +252,7 @@ unsafe fn load_and_map_kernel_segments(
             );
         }
 
-        cur_dest_addr = cur_dest_addr.offset_by(segment_length);
+        cur_dest_addr += segment_length;
     }
 }
 
@@ -312,14 +312,8 @@ unsafe fn map_physical_memory(
     mem_map: &memory::Map,
 ) {
     let addr_zero = memory::PhysAddress::from_raw(0);
-    let length = mem_map
-        .entries()
-        .last()
-        .unwrap()
-        .extent
-        .end_address()
-        .distance_from(addr_zero)
-        .align_up(1024 * 1024 * 2);
+    let length = mem_map.entries().last().unwrap().extent.end_address()
+        - addr_zero.align_up(1024 * 1024 * 2);
     let all_memory_extent = memory::PhysExtent::new(addr_zero, length);
 
     unsafe {
@@ -375,13 +369,12 @@ unsafe fn map_linear(
         let cur_distance = memory::Length::from_raw(cur_page * page_size);
 
         if large_page {
-            let target_page: paging::Page<paging::Size2MiB> = paging::Page::from_start_address(
-                VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
-            )
-            .unwrap();
+            let target_page: paging::Page<paging::Size2MiB> =
+                paging::Page::from_start_address(VirtAddr::new((offset + cur_distance).as_raw()))
+                    .unwrap();
 
             let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
-                extent.address().offset_by(cur_distance).as_raw(),
+                (extent.address() + cur_distance).as_raw(),
             ))
             .unwrap();
 
@@ -398,13 +391,12 @@ unsafe fn map_linear(
                     .ignore();
             }
         } else {
-            let target_page: paging::Page<paging::Size4KiB> = paging::Page::from_start_address(
-                VirtAddr::new(offset.offset_by(cur_distance).as_raw()),
-            )
-            .unwrap();
+            let target_page: paging::Page<paging::Size4KiB> =
+                paging::Page::from_start_address(VirtAddr::new((offset + cur_distance).as_raw()))
+                    .unwrap();
 
             let frame = paging::PhysFrame::from_start_address(PhysAddr::new(
-                extent.address().offset_by(cur_distance).as_raw(),
+                (extent.address() + cur_distance).as_raw(),
             ))
             .unwrap();
 
@@ -449,7 +441,7 @@ fn get_loader_extent() -> memory::PhysExtent {
     let end_address =
         unsafe { memory::PhysAddress::from_raw((&_loader_end as *const core::ffi::c_void) as u64) };
 
-    memory::PhysExtent::new(begin_address, begin_address.distance_to(end_address))
+    memory::PhysExtent::new(begin_address, end_address - begin_address)
 }
 
 // DO NOT ACCESS THESE

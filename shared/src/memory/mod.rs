@@ -183,7 +183,7 @@ impl BumpAllocator {
         let alloc_address = block.address();
 
         let maybe_remainder = Extent::new_checked(
-            block.address().offset_by(alloc_length),
+            block.address() + alloc_length,
             block.length() - alloc_length,
         );
 

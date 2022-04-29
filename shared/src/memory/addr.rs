@@ -36,29 +36,11 @@ impl<Type: AddressType> Address<Type> {
     }
 
     pub fn from_zero(offset: Length) -> Self {
-        Self::offset_by(Self::zero(), offset)
-    }
-
-    pub fn distance_from(self, left: Self) -> Length {
-        assert!(self >= left);
-        Length::from_raw(self.as_raw() - left.as_raw())
-    }
-
-    pub fn distance_to(self, right: Self) -> Length {
-        assert!(self <= right);
-        Length::from_raw(right.as_raw() - self.as_raw())
-    }
-
-    pub fn offset_by(self, length: Length) -> Self {
-        self.offset_by_checked(length).unwrap()
+        Self::zero() + offset
     }
 
     pub fn offset_by_checked(self, length: Length) -> Option<Self> {
-        if length.as_raw() > u64::MAX - self.as_raw() {
-            return None;
-        }
-
-        Some(Self::from_raw(self.as_raw() + length.as_raw()))
+        Some(Self(self.0.checked_add(length.0)?, PhantomData))
     }
 
     pub fn is_aligned_to(self, alignment: u64) -> bool {
@@ -75,6 +57,39 @@ impl<Type: AddressType> Address<Type> {
     /// which must be a power of two.
     pub fn align_up(self, alignment: u64) -> Self {
         Self::from_raw(align_u64_up(self.as_raw(), alignment))
+    }
+}
+
+impl<Type: AddressType> Add<Length> for Address<Type> {
+    type Output = Self;
+    fn add(self, rhs: Length) -> Self {
+        self.offset_by_checked(rhs).unwrap()
+    }
+}
+
+impl<Type: AddressType> AddAssign<Length> for Address<Type> {
+    fn add_assign(&mut self, rhs: Length) {
+        *self = *self + rhs;
+    }
+}
+
+impl<Type: AddressType> Sub<Length> for Address<Type> {
+    type Output = Self;
+    fn sub(self, rhs: Length) -> Self {
+        Self(self.0.checked_sub(rhs.0).unwrap(), PhantomData)
+    }
+}
+
+impl<Type: AddressType> SubAssign<Length> for Address<Type> {
+    fn sub_assign(&mut self, rhs: Length) {
+        *self = *self - rhs;
+    }
+}
+
+impl<Type: AddressType> Sub<Self> for Address<Type> {
+    type Output = Length;
+    fn sub(self, rhs: Self) -> Length {
+        Length(self.0.checked_sub(rhs.0).unwrap())
     }
 }
 
@@ -188,7 +203,7 @@ impl<Type: AddressType> Extent<Type> {
     pub fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {
         Self {
             address: begin,
-            length: begin.distance_to(end),
+            length: end - begin,
         }
     }
 
@@ -202,7 +217,7 @@ impl<Type: AddressType> Extent<Type> {
 
     /// The first address just outside us, to the right
     pub fn end_address(self) -> Address<Type> {
-        self.address.offset_by(self.length)
+        self.address + self.length
     }
 
     /// The last address in the extent. E.g.
@@ -213,7 +228,7 @@ impl<Type: AddressType> Extent<Type> {
     /// assert_eq!(PhysExtent::from_raw(0, 4).last_address(), PhysAddress::from_raw(3));
     /// ```
     pub fn last_address(self) -> Address<Type> {
-        self.address.offset_by(self.length - Length::from_raw(1))
+        self.address + self.length - Length::from_raw(1)
     }
 
     pub fn overlap(self, other: Self) -> Option<Self> {
@@ -223,14 +238,11 @@ impl<Type: AddressType> Extent<Type> {
 
         let overlap_start = other.address;
 
-        if self.address.distance_to(overlap_start) >= self.length {
+        if overlap_start - self.address >= self.length {
             return None;
         }
 
-        let overlap_length = min(
-            self.length - self.address.distance_to(overlap_start),
-            other.length,
-        );
+        let overlap_length = min(self.length - (overlap_start - self.address), other.length);
 
         Some(Self {
             address: overlap_start,
@@ -249,7 +261,7 @@ impl<Type: AddressType> Extent<Type> {
 
         // Since our address is strictly less than `other`'s, we can safely
         // assume the result is non-empty.
-        let diff_length = min(self.length, self.address.distance_to(other.address));
+        let diff_length = min(self.length, other.address - self.address);
 
         Some(Self {
             address: self.address,
@@ -268,7 +280,7 @@ impl<Type: AddressType> Extent<Type> {
         // u64::MAX`.
 
         let diff_address = max(self.address, other.end_address());
-        let diff_length = self.length - diff_address.distance_from(self.address);
+        let diff_length = self.length - (diff_address - self.address);
 
         Some(Self {
             address: diff_address,
@@ -291,7 +303,7 @@ impl<Type: AddressType> Extent<Type> {
         } else {
             Some(Self {
                 address: start_address,
-                length: start_address.distance_to(end_address),
+                length: end_address - start_address,
             })
         }
     }
@@ -306,7 +318,7 @@ impl<Type: AddressType> Extent<Type> {
         // TODO: handle if `end_address` extends beyond u64::MAX
         Self {
             address: start_address,
-            length: start_address.distance_to(end_address),
+            length: end_address - start_address,
         }
     }
 }

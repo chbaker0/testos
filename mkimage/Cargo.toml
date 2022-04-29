@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0"
+buildutil = { path = "../buildutil" }
 cargo_metadata = "0.14.2"
 clap = { version = "3.1", features = ["derive"] }

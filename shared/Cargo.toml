@@ -2,7 +2,7 @@
 name = "shared"
 version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 itertools = { version = "0.10.3", default-features = false }

@@ -2,7 +2,7 @@
 name = "loader"
 version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 shared = { path = "../shared" }
@@ -22,3 +22,7 @@ features = ["nightly"]
 #version = "0.2.3"
 #default-features = false
 #features = ["elf32", "elf64", "endian_fd"]
+
+[build-dependencies]
+anyhow = "1.0"
+buildutil = { path = "../buildutil" }

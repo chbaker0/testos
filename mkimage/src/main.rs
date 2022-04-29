@@ -1,3 +1,5 @@
+use buildutil::*;
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -11,12 +13,7 @@ struct Args {
     kernel_image: PathBuf,
 }
 
-fn run_and_check(cmd: &mut Command) {
-    let status = cmd.status().unwrap();
-    assert!(status.success());
-}
-
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let cargo = env::var("CARGO").unwrap();
 
@@ -75,5 +72,7 @@ fn main() {
             .arg("-d")
             .arg("/usr/lib/grub/i386-pc")
             .arg("out/iso"),
-    );
+    )?;
+
+    Ok(())
 }

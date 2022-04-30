@@ -7,10 +7,23 @@ use log::info;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
 
+#[cfg(not(feature = "rust-bootloader"))]
 use shared::handoff::BootInfo;
+
+#[cfg(feature = "rust-bootloader")]
+use bootloader::{entry_point, BootInfo};
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
+#[cfg(feature = "rust-bootloader")]
+entry_point!(kernel_entry);
+
+#[cfg(feature = "rust-bootloader")]
+fn kernel_entry(boot_info: &'static mut BootInfo) -> ! {
+    loop {}
+}
+
+#[cfg(not(feature = "rust-bootloader"))]
 #[no_mangle]
 pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
     interrupts::disable();
@@ -22,7 +35,11 @@ pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
 
     let boot_info = unsafe { (*(boot_info_addr as *const BootInfo)).clone() };
     info!("{:?}", boot_info);
+    kinit(&boot_info);
+}
 
+#[cfg(not(feature = "rust-bootloader"))]
+fn kinit(boot_info: &BootInfo) -> ! {
     gdt::init();
     info!("Set up GDT");
 

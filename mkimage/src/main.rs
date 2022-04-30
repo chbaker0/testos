@@ -5,6 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+#[cfg(feature = "rust-bootloader")]
+use bootloader_locator::locate_bootloader;
 use cargo_metadata::Message;
 use clap::Parser;
 
@@ -13,6 +15,39 @@ struct Args {
     kernel_image: PathBuf,
 }
 
+#[cfg(feature = "rust-bootloader")]
+fn main() -> anyhow::Result<()> {
+    let cwd = env::current_dir()?;
+    let args = Args::parse();
+    let cargo = env::var("CARGO").unwrap();
+
+    let kernel_manifest = cwd.join("Cargo.toml");
+    let kernel_image = cwd.join(args.kernel_image);
+    let target_dir = cwd.join("target");
+    let out_dir = cwd.join("out");
+
+    let bootloader_root = locate_bootloader("bootloader")
+        .map_err(|e| anyhow::Error::new(e))?
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("could not get parent of bootloader manifest"))?
+        .to_owned();
+    run_and_check(
+        Command::new(cargo)
+            .current_dir(bootloader_root)
+            .arg("builder")
+            .arg("--kernel-manifest")
+            .arg(kernel_manifest)
+            .arg("--kernel-binary")
+            .arg(kernel_image)
+            .arg("--target-dir")
+            .arg(target_dir)
+            .arg("--out-dir")
+            .arg(out_dir),
+    )?;
+    Ok(())
+}
+
+#[cfg(not(feature = "rust-bootloader"))]
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let cargo = env::var("CARGO").unwrap();

@@ -14,6 +14,11 @@ pub fn run_and_check(cmd: &mut Command) -> anyhow::Result<()> {
     let output = cmd
         .output()
         .map_err(|e| Error::new(e).context(format!("{:?}", cmd)))?;
-    anyhow::ensure!(output.status.success(), "{}", display_output(output));
+    anyhow::ensure!(
+        output.status.success(),
+        "Command failed: {:?}\n{}",
+        cmd,
+        display_output(output)
+    );
     Ok(())
 }

@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
 edition = "2021"
 
+[features]
+default = ["rust-bootloader"]
+rust-bootloader = ["dep:bootloader"]
+
 [workspace]
 members = [
     ".",
@@ -16,7 +20,8 @@ default-members = ["."]
 resolver = "2"
 
 [dependencies]
-lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
+bootloader = { version = "0.10.12", optional = true }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = "0.4.14"
 once_cell = { version = "1.9.0", default-features = false }
 shared = { path = "shared" }

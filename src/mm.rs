@@ -68,31 +68,3 @@ pub fn allocate_frame() -> Frame {
         .allocate()
         .unwrap()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn smoke_test() {
-        use shared::handoff::BootInfo;
-        use shared::memory::addr::*;
-        use shared::memory::{Map, MapEntry, MemoryType};
-        const MEMORY_SIZE: u64 = 4096 * 1024 * 1024;
-        let boot_info = BootInfo {
-            memory_map: Map::from_entries([MapEntry {
-                extent: PhysExtent::new(Address::from_raw(0), Length::from_raw(MEMORY_SIZE)),
-                mem_type: MemoryType::Available,
-            }]),
-            kernel_extent: PhysExtent::from_raw(0, 4096),
-            boot_info_extent: PhysExtent::from_raw(4096, 4096),
-            page_table_extent: PhysExtent::from_raw(8192, 4096),
-        };
-
-        init(&boot_info);
-
-        for _i in 0..1024 {
-            allocate_frame();
-        }
-    }
-}

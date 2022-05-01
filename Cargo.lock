@@ -216,6 +216,8 @@ dependencies = [
  "buildutil",
  "lazy_static",
  "log",
+ "multiboot2 0.13.1",
+ "multiboot2-header",
  "once_cell",
  "shared",
  "spin 0.9.3",
@@ -283,6 +285,33 @@ dependencies = [
  "buildutil",
  "cargo_metadata",
  "clap",
+]
+
+[[package]]
+name = "multiboot2"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "004ef1d859a3efbd94f332855b0c4e3fbd7d5eb4828c99198b58086208005865"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
+name = "multiboot2"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a79655fda455af6ffc4574aa54634c6cdf83a16aaf7bcdbdc9995e2252808171"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
+name = "multiboot2-header"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edaba3f9d256cf88a920f9644e9d972cf227a60611e500742ab1033206c09064"
+dependencies = [
+ "multiboot2 0.12.2",
 ]
 
 [[package]]

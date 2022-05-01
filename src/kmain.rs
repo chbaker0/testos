@@ -4,6 +4,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
 use log::info;
+use multiboot2 as mb2;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
 
@@ -11,17 +12,17 @@ use shared::handoff::BootInfo;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
-#[no_mangle]
-pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
+#[export_name = "_start"]
+pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
+    init_logger();
+
+    let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
+    info!("{:?}", boot_info);
+    halt_loop();
+
     interrupts::disable();
 
-    init_logger();
     info!("In kernel");
-
-    info!("{:x}", boot_info_addr);
-
-    let boot_info = unsafe { (*(boot_info_addr as *const BootInfo)).clone() };
-    info!("{:?}", boot_info);
 
     gdt::init();
     info!("Set up GDT");

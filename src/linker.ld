@@ -1,6 +1,7 @@
 PHDRS
 {
   text32 PT_LOAD FLAGS(5) /* r-x */;
+  data32 PT_LOAD FLAGS(6) /* rw- */;
   text PT_LOAD FLAGS(5) /* r-x */;
   data PT_LOAD FLAGS(6) /* rw- */;
 }
@@ -11,12 +12,22 @@ SECTIONS
 {
     . = 1M;
 
-    .bootstrap : ALIGN(4K)
+    .bootstrap.text : ALIGN(4K)
     {
         ENTRY(_start)
         KEEP(*(.text.mb2_header))
-        *(.bootstrap)
+        *(.bootstrap.text)
     } :text32
+
+    .bootstrap.data : ALIGN(4K)
+    {
+        *(.bootstrap.data)
+    } :data32
+
+    .bootstrap.bss : ALIGN(4K)
+    {
+        *(.bootstrap.bss)
+    } :data32
 
     . += KERNEL_BASE;
 

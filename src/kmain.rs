@@ -12,6 +12,7 @@ use shared::handoff::BootInfo;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
+#[no_mangle]
 pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     init_logger();
 

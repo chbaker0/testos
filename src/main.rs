@@ -6,6 +6,5 @@
 mod gdt;
 mod idt;
 mod kmain;
-mod mb2_header;
 mod mm;
 mod pic;

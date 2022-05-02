@@ -1,6 +1,10 @@
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
-use anyhow::{self, Error};
+use clap::Parser;
+use multiboot2_header::*;
+
+use anyhow::Error;
 
 fn display_output(output: process::Output) -> String {
     format!(

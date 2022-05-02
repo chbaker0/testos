@@ -12,36 +12,38 @@ use shared::handoff::BootInfo;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
-#[export_name = "_start"]
 pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     init_logger();
 
+    info!("{:X?}", *MB2_HEADER);
+
     let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
-    info!("{:?}", boot_info);
-    halt_loop();
-
-    interrupts::disable();
-
-    info!("In kernel");
-
-    gdt::init();
-    info!("Set up GDT");
-
-    idt::init();
-    info!("Set up IDT");
-
-    mm::init(&boot_info);
-    info!("Initialized frame allocator");
-
-    unsafe {
-        pic::init();
-        interrupts::enable();
-    }
-    info!("Set up PIC");
-
-    pic::install_irq_handler(1, Some(keyboard_handler));
+    info!("{:?}", mbinfo);
 
     halt_loop();
+
+    // interrupts::disable();
+
+    // info!("In kernel");
+
+    // gdt::init();
+    // info!("Set up GDT");
+
+    // idt::init();
+    // info!("Set up IDT");
+
+    // mm::init(&boot_info);
+    // info!("Initialized frame allocator");
+
+    // unsafe {
+    //     pic::init();
+    //     interrupts::enable();
+    // }
+    // info!("Set up PIC");
+
+    // pic::install_irq_handler(1, Some(keyboard_handler));
+
+    // halt_loop();
 }
 
 fn keyboard_handler(_: InterruptStackFrame) {
@@ -54,7 +56,26 @@ fn halt_loop() -> ! {
     }
 }
 
+extern "C" {
+    pub static _binary_mb2_header_start: core::ffi::c_void;
+    pub static _binary_mb2_header_end: core::ffi::c_void;
+    pub static _binary_mb2_header_size: core::ffi::c_void;
+}
+
+#[used]
+static MB2_HEADER_START: &core::ffi::c_void = unsafe { &_binary_mb2_header_start };
+#[used]
+static MB2_HEADER_END: &core::ffi::c_void = unsafe { &_binary_mb2_header_end };
+#[used]
+static MB2_HEADER_SIZE: &core::ffi::c_void = unsafe { &_binary_mb2_header_size };
+
 lazy_static! {
+    static ref MB2_HEADER: &'static [u8] = unsafe {
+        core::slice::from_raw_parts(
+            MB2_HEADER_START as *const _ as *const u8,
+            MB2_HEADER_SIZE as *const _ as usize,
+        )
+    };
     static ref LOGGER: shared::vga::VgaLog =
         shared::vga::VgaLog::new(unsafe { shared::vga::VgaWriter::new(VMEM) });
 }

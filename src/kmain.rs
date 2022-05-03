@@ -21,30 +21,53 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
     info!("{:?}", mbinfo);
 
+    let boot_info = translate_boot_info(&mbinfo);
+
+    interrupts::disable();
+
+    info!("In kernel");
+
+    gdt::init();
+    info!("Set up GDT");
+
+    idt::init();
+    info!("Set up IDT");
+
+    mm::init(&boot_info);
+    info!("Initialized frame allocator");
+
+    unsafe {
+        pic::init();
+        interrupts::enable();
+    }
+    info!("Set up PIC");
+
+    pic::install_irq_handler(1, Some(keyboard_handler));
+
     halt_loop();
+}
 
-    // interrupts::disable();
+fn translate_boot_info(mb2_info: &mb2::BootInformation) -> BootInfo {
+    use shared::memory::*;
+    let mem_map_tag = mb2_info.memory_map_tag().unwrap();
+    let new_map = Map::from_entries(mem_map_tag.all_memory_areas().map(|area| MapEntry {
+        extent: PhysExtent::from_raw(area.start_address(), area.size()),
+        mem_type: match area.typ() {
+            mb2::MemoryAreaType::Available => MemoryType::Available,
+            mb2::MemoryAreaType::Reserved => MemoryType::Reserved,
+            mb2::MemoryAreaType::AcpiAvailable => MemoryType::Acpi,
+            mb2::MemoryAreaType::ReservedHibernate => MemoryType::ReservedPreserveOnHibernation,
+            mb2::MemoryAreaType::Defective => MemoryType::Defective,
+        },
+    }));
 
-    // info!("In kernel");
-
-    // gdt::init();
-    // info!("Set up GDT");
-
-    // idt::init();
-    // info!("Set up IDT");
-
-    // mm::init(&boot_info);
-    // info!("Initialized frame allocator");
-
-    // unsafe {
-    //     pic::init();
-    //     interrupts::enable();
-    // }
-    // info!("Set up PIC");
-
-    // pic::install_irq_handler(1, Some(keyboard_handler));
-
-    // halt_loop();
+    BootInfo {
+        memory_map: new_map,
+        // Fill these in with dummy values for now...
+        kernel_extent: PhysExtent::from_raw(1024 * 1024, 1024 * 1024 * 6),
+        boot_info_extent: PhysExtent::from_raw(0, 1),
+        page_table_extent: PhysExtent::from_raw(0, 1),
+    }
 }
 
 fn keyboard_handler(_: InterruptStackFrame) {

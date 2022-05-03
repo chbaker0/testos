@@ -48,8 +48,8 @@ pub fn init(boot_info: &shared::handoff::BootInfo) {
     // kernel code or data structures.
     for reserved_extent in [
         boot_info.kernel_extent,
-        boot_info.boot_info_extent,
-        boot_info.page_table_extent,
+        // boot_info.boot_info_extent,
+        // boot_info.page_table_extent,
     ] {
         for frame in FrameRange::containing_extent(reserved_extent).iter() {
             frame_allocator.reserve(frame).unwrap();

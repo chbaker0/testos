@@ -12,43 +12,47 @@ SECTIONS
 {
     . = 1M;
 
-    .bootstrap.text : ALIGN(4K)
+    .bootstrap.text ALIGN(4K) : AT(.) ALIGN(4K)
     {
         ENTRY(_start)
         KEEP(*(.text.mb2_header))
         *(.bootstrap.text)
     } :text32
 
-    .bootstrap.data : ALIGN(4K)
+    .bootstrap.data ALIGN(4K) : AT(.) ALIGN(4K)
     {
-        *(.bootstrap.data.page_tables)
         *(.bootstrap.data)
     } :data32
 
-    .bootstrap.bss : ALIGN(4K)
+    .bootstrap.bss ALIGN(4K) : AT(.) ALIGN(4K)
+    {
+        *(.bootstrap.bss)
+    } :data32
+
+    .bootstrap.bss ALIGN(4K) : AT(.) ALIGN(4K)
     {
         *(.bootstrap.bss)
     } :data32
 
     . += KERNEL_BASE;
 
-    .text : AT(. - KERNEL_BASE) ALIGN(4K)
+    .text ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
     {
         KEEP(*(.text.mb2_header))
         *(.text)
     } :text
 
-    .rodata : AT(. - KERNEL_BASE) ALIGN(4K)
+    .rodata ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
     {
         *(.rodata)
     } :data
 
-    .data : AT(. - KERNEL_BASE) ALIGN(4K)
+    .data ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
     {
         *(.data)
     } :data
 
-    .bss : AT(. - KERNEL_BASE) ALIGN(4K)
+    .bss ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
     {
         *(COMMON)
         *(.bss)

@@ -41,7 +41,8 @@ _start:
     ; in to the entry.
     mov eax, ecx
     shl eax, 21
-    or [PDT + 8*ecx], eax
+    or eax, LARGE_PAGE_BITS
+    mov [PDT + 8*ecx], eax
 
     ; On to the next one
     inc ecx
@@ -89,6 +90,7 @@ _start:
 long_mode:
     ; Call main entry point with multiboot info pointer as argument.
     mov edi, [multiboot_ptr]
+    jmp .hang
     jmp kernel_entry
 
     .hang:
@@ -161,8 +163,10 @@ multiboot_ptr: dq 0
 ; (1) corresponds to PML4T[0], (2) to PML4T[510]
 
 PAGE_BITS equ 0000_0011b        ; Normal caching, supervisor only, writable, present.
-LARGE_PAGE_BITS equ 0100_0011    ; Same as above, but page size bit is on
+LARGE_PAGE_BITS equ 0100_0011b    ; Same as above, but page size bit is on
 
+
+SECTION .bootstrap.data.page_tables
 align 4096
 PML4T:
     times 512 dq 0
@@ -173,7 +177,7 @@ PDPT:
 
 align 4096
 PDT:
-    times 512 dq LARGE_PAGE_BITS
+    times 512 dq 0
 
 SECTION .bootstrap.bss
 

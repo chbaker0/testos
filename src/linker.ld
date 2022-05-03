@@ -21,6 +21,7 @@ SECTIONS
 
     .bootstrap.data : ALIGN(4K)
     {
+        *(.bootstrap.data.page_tables)
         *(.bootstrap.data)
     } :data32
 

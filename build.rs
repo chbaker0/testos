@@ -49,10 +49,18 @@ fn main() -> anyhow::Result<()> {
     println!("cargo:rustc-link-search={}", out_dir.to_str().unwrap());
     println!("cargo:rustc-link-lib=mb2_header");
 
+    let debug_flags = if env::var("PROFILE")? == "debug" {
+        ["-F", "dwarf", "-g"].as_slice()
+    } else {
+        [].as_slice()
+    };
+
     run_and_check(
         Command::new("nasm")
-            .args(&["src/entry.nasm", "-f", "elf64", "-o"])
-            .arg(&format!("{}/entry.o", out_dir.to_str().unwrap())),
+            .args(debug_flags)
+            .args(&["-f", "elf64", "-o"])
+            .arg(&format!("{}/entry.o", out_dir.to_str().unwrap()))
+            .arg("src/entry.nasm"),
     )?;
 
     run_and_check(Command::new("ar").current_dir(&out_dir).args(&[

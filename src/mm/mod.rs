@@ -1,5 +1,7 @@
 //! Kernel memory management
 
+pub mod paging;
+
 pub use shared::memory::addr::*;
 pub use shared::memory::page::*;
 

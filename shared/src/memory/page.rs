@@ -84,6 +84,26 @@ impl Page {
             .offset_by_checked(Length::from_raw(PAGE_SIZE.as_raw().checked_mul(n)?))?;
         Some(Self::new(next_start))
     }
+
+    pub fn l4_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9 + 9 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l3_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l2_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l1_index(self) -> usize {
+        const FIRST_BIT: u32 = 12;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
 }
 
 /// A contiguous range of physical memory frames. Always non-empty.

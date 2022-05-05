@@ -215,6 +215,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitflags",
  "buildutil",
  "lazy_static",
  "log",
@@ -223,6 +224,7 @@ dependencies = [
  "once_cell",
  "shared",
  "spin 0.9.3",
+ "static_assertions",
  "x86_64",
 ]
 

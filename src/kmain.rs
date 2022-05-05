@@ -90,6 +90,7 @@ extern "C" {
     static _binary_mb2_header_size: core::ffi::c_void;
 
     // This points to nothing; it may only be used to construct a pointer.
+    #[allow(improper_ctypes)]
     static KERNEL_BASE: ();
 }
 

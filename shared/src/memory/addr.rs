@@ -23,7 +23,7 @@ pub type PhysAddress = Address<PhysAddressType>;
 pub type VirtAddress = Address<VirtAddressType>;
 
 impl<Type: AddressType> Address<Type> {
-    pub fn from_raw(val: u64) -> Self {
+    pub const fn from_raw(val: u64) -> Self {
         Self(val, PhantomData)
     }
 
@@ -45,6 +45,10 @@ impl<Type: AddressType> Address<Type> {
 
     pub fn is_aligned_to(self, alignment: u64) -> bool {
         self == self.align_down(alignment)
+    }
+
+    pub fn is_aligned_to_length(self, alignment: Length) -> bool {
+        self.is_aligned_to(alignment.0)
     }
 
     /// Returns the last address below `self` that is aligned to `alignment`,
@@ -90,6 +94,15 @@ impl<Type: AddressType> Sub<Self> for Address<Type> {
     type Output = Length;
     fn sub(self, rhs: Self) -> Length {
         Length(self.0.checked_sub(rhs.0).unwrap())
+    }
+}
+
+impl Address<VirtAddressType> {
+    pub fn as_ptr<T>(self) -> *const T {
+        self.0 as usize as *const _
+    }
+    pub fn as_mut_ptr<T>(self) -> *mut T {
+        self.0 as usize as *mut _
     }
 }
 

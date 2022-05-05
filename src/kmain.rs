@@ -16,6 +16,9 @@ const VMEM: *mut u8 = 0xB8000 as *mut u8;
 pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     init_logger();
 
+    info!("Kernel base: {:X}", unsafe { &KERNEL_BASE as *const () }
+        as usize);
+    info!("Multiboot info: {mbinfo_addr:X}");
     info!("{:X?}", *MB2_HEADER);
 
     let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
@@ -81,9 +84,13 @@ fn halt_loop() -> ! {
 }
 
 extern "C" {
-    pub static _binary_mb2_header_start: core::ffi::c_void;
-    pub static _binary_mb2_header_end: core::ffi::c_void;
-    pub static _binary_mb2_header_size: core::ffi::c_void;
+    // These point to valid memory, but they must not be dereferenced as is.
+    static _binary_mb2_header_start: core::ffi::c_void;
+    static _binary_mb2_header_end: core::ffi::c_void;
+    static _binary_mb2_header_size: core::ffi::c_void;
+
+    // This points to nothing; it may only be used to construct a pointer.
+    static KERNEL_BASE: ();
 }
 
 #[used]

@@ -224,6 +224,7 @@ PT:
 [BITS 64]
 SECTION .text
 
+extern KERNEL_BASE
 extern kernel_entry
 
 long_mode:
@@ -233,8 +234,10 @@ long_mode:
     mov byte [0xb8000], 'L'
 
     ; "Call" with multiboot info pointer as argument. kernel_entry does not
-    ; return.
+    ; return. Note that our multiboot_ptr is linked in the bottom half; we must
+    ; offset it with the kernel base address.
     mov edi, [multiboot_ptr]
+    add rdi, KERNEL_BASE
     jmp kernel_entry
 
     .hang:

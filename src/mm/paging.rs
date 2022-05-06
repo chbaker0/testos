@@ -1,4 +1,4 @@
-use shared::memory::{page::PAGE_SIZE, PhysAddress};
+use shared::memory::{addr::*, page::*};
 
 use static_assertions as sa;
 
@@ -9,6 +9,17 @@ pub const MAX_PHYS_ADDR: PhysAddress = PhysAddress::from_raw(2 << MAX_PHYS_ADDR_
 #[repr(C, align(4096))]
 pub struct PageTable {
     entries: [PageTableEntry; 512],
+}
+
+impl PageTable {
+    #[inline]
+    /// Create a table where all entries are zero.
+    pub fn zero() -> PageTable {
+        // SAFETY: `PageTableEntry` is repr(transparent) with u64, which is
+        // valid zeroed. `PageTable` is a repr(C) struct containing an array of
+        // `PageTableEntry`, so likewise it is valid zeroed.
+        unsafe { core::mem::zeroed() }
+    }
 }
 
 // Assert that `PageTable` is 4 KiB.
@@ -22,6 +33,7 @@ pub struct PageTableEntry {
 
 impl PageTableEntry {
     /// Create an entry with all bits set to zero.
+    #[inline]
     pub const fn zero() -> PageTableEntry {
         PageTableEntry { raw: 0 }
     }
@@ -37,6 +49,7 @@ impl PageTableEntry {
     ///
     /// Panics if `addr` exceeds 2^52, which is the upper bound on supported
     /// physical addresses. Does not check the CPU-specific maximum.
+    #[inline]
     pub fn set_addr(&mut self, addr: PhysAddress) {
         assert!(addr.is_aligned_to_length(PAGE_SIZE), "{addr:?}");
         assert!(addr < MAX_PHYS_ADDR);
@@ -47,13 +60,24 @@ impl PageTableEntry {
         self.raw |= addr.as_raw();
     }
 
+    #[inline]
     pub fn get_addr(&self) -> PhysAddress {
         PhysAddress::from_raw(self.raw & PAGE_TABLE_ENTRY_ADDR_BITS)
     }
 
     /// Set flags (as documented in `PageTableFlags`).
+    #[inline]
     pub fn set_flags(&mut self, flags: PageTableFlags) {
         self.raw |= flags.bits();
+    }
+
+    /// Get flags (as documented in `PageTableFlags`).
+    #[inline]
+    pub fn get_flags(&mut self) -> PageTableFlags {
+        // SAFETY: PageTableFlags::all().bits() only returns bits valid for
+        // PageTableFlags. Bitwise-and with any other value will yield only
+        // valid bits.
+        unsafe { PageTableFlags::from_bits_unchecked(self.raw & PageTableFlags::all().bits()) }
     }
 }
 
@@ -74,66 +98,170 @@ bitflags::bitflags! {
         const PAGE_SIZE = 1 << 7;
         const GLOBAL = 1 << 8;
         const EXECUTE_DISABLE = 1 << 63;
+
+        const DEFAULT_PARENT_TABLE_FLAGS = Self::PRESENT.bits | Self::WRITABLE.bits;
     }
 }
 
-pub struct Mapper<'a, Translator> {
-    level_4: &'a mut PageTable,
-    translator: Translator,
+pub enum MapError {
+    FrameAllocationFailed,
+    TranslationFailed,
 }
 
-impl<'a, Translator> !Send for Mapper<'a, Translator> {}
-impl<'a, Translator> !Sync for Mapper<'a, Translator> {}
+pub struct Mapper<'a, Translator, Allocator> {
+    level_4: &'a mut PageTable,
+    translator: Translator,
+    frame_allocator: Allocator,
+    _unsend: core::marker::PhantomData<*const ()>,
+}
 
-impl<'a, Translator: FnMut(PhysAddress) -> Option<VirtAddress>> Mapper<'a, Translator> {
+impl<'a, Translator, Allocator> Mapper<'a, Translator, Allocator>
+where
+    Translator: FnMut(PhysAddress) -> Option<VirtAddress>,
+    Allocator: FnMut() -> Option<Frame>,
+{
     /// Create a `Mapper` for the given `level_4` page table, using `translator`
-    /// to map physical to virtual addresses.
+    /// to map physical to virtual addresses. `frame_allocator` is used to get
+    /// frames to place new page tables in.
     ///
     /// # Safety
     /// * `level_4` must be a valid L4 page table, and all physical addresses
     ///   referenced from L2+ tables must refer to valid page tables.
     /// * `translator` must return valid accessible virtual addresss for the
     ///   current address space, or `None`.
-    pub unsafe fn new(level_4: &'a mut PageTable, translator: Translator) -> Self {
+    /// * `frame_allocator` must return valid physical memory frames not in use
+    ///   anywhere else, or `None`.
+    pub unsafe fn new(
+        level_4: &'a mut PageTable,
+        translator: Translator,
+        frame_allocator: Allocator,
+    ) -> Self {
         Mapper {
             level_4,
             translator,
+            frame_allocator,
+            _unsend: core::marker::PhantomData,
         }
     }
 
-    pub unsafe fn map<GetNewFrame: FnMut() -> Option<Frame>>(
+    #[must_use]
+    pub unsafe fn map(
         &mut self,
         page: Page,
         frame: Frame,
         flags: PageTableFlags,
-    ) {
+    ) -> Result<(), MapError> {
+        let l4e: &mut PageTableEntry = &mut self.level_4.entries[page.l4_index()];
+        // SAFETY: each traversal requires that the passed entry is a valid
+        // entry in a non-leaf table. We know this to be the case for each call.
+        let l3: &mut PageTable = unsafe {
+            Self::next_level_alloc(
+                l4e,
+                &mut self.translator,
+                &mut self.frame_allocator,
+                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+            )?
+        };
+        let l3e = &mut l3.entries[page.l3_index()];
+        let l2: &mut PageTable = unsafe {
+            Self::next_level_alloc(
+                l3e,
+                &mut self.translator,
+                &mut self.frame_allocator,
+                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+            )?
+        };
+        let l2e = &mut l2.entries[page.l2_index()];
+        let l1: &mut PageTable = unsafe {
+            Self::next_level_alloc(
+                l2e,
+                &mut self.translator,
+                &mut self.frame_allocator,
+                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+            )?
+        };
+        let l1e = &mut l1.entries[page.l1_index()];
+
+        // TODO: handle existing mapping.
+        l1e.set_addr(frame.start());
+        l1e.set_flags(flags);
+
+        Ok(())
     }
 
+    /// Traverse from `entry` in a parent table to the lower-level table it
+    /// points to. If it is not present, fetches a physical memory frame with
+    /// `frame_allocator`, places an empty table there, and points `entry` to it
+    /// with `new_flags`. Otherwise, does not modify `entry`.
+    ///
+    /// `translator` is used to map physical to virtual addresses to access the
+    /// next table. `translator` and `frame_allocator` must abide by the same
+    /// contract specified for `new()`. `entry` must be in a parent table, not a
+    /// leaf table.
+    ///
+    /// Returns a mutable reference to the next table or an error.
+    #[inline]
+    unsafe fn next_level_alloc<'b>(
+        entry: &'b mut PageTableEntry,
+        translator: &mut Translator,
+        frame_allocator: &mut Allocator,
+        new_flags: PageTableFlags,
+    ) -> Result<&'b mut PageTable, MapError> {
+        // NOTE: here we assume that if the PRESENT flag is not set, then this
+        // entry does not "own" a valid frame. If this were not the case we'd
+        // leak a frame. This is not unsafe, but it is a case to watch out for.
+        if !entry.get_flags().contains(PageTableFlags::PRESENT) {
+            // Allocate a new frame to hold the next level table.
+            let new_frame = frame_allocator().ok_or(MapError::FrameAllocationFailed)?;
+            entry.set_addr(new_frame.start());
+            entry.set_flags(new_flags.union(PageTableFlags::PRESENT));
+        }
+
+        let next_table_addr: VirtAddress =
+            translator(entry.get_addr()).ok_or(MapError::TranslationFailed)?;
+        assert!(!next_table_addr.is_zero());
+
+        // SAFETY: given the assumptions:
+        // 1. If applicable, `new_frame` above was a valid unused frame.
+        // 2. `entry.get_addr()` references a valid physical frame that is not
+        //    referenced by any other page tables.
+        // 3. `next_table_addr` is a valid mapping of the frame into the current
+        //    virtual address space.
+        //
+        // ... this is sound. (1) and (3) rely on the client upholding their
+        // contract. (2) relies on us upholding our invariants.
+        unsafe { Ok(&mut *next_table_addr.as_mut_ptr()) }
+    }
+
+    #[inline]
     pub fn get_l4_entry(&mut self, page: Page) -> &mut PageTableEntry {
         &mut self.level_4.entries[page.l4_index()]
     }
 
-    pub fn get_l3_entry(&mut self, page: Page) -> Option<&mut PageTableEntry> {
-        let l4 = self.get_l4_entry(page);
-        let l3: *mut PageTable = self.translator(l4.get_addr())?.as_mut_ptr();
+    #[inline]
+    pub fn get_l3_entry<'s>(&'s mut self, page: Page) -> Option<&'s mut PageTableEntry> {
+        let l4 = self.get_l4_entry(page).clone();
+        let l3: *mut PageTable = (self.translator)(l4.get_addr())?.as_mut_ptr();
         // SAFETY: assuming the invariants required by the other unsafe methods
         // are upheld, we can dereference.
         let l3: &mut PageTable = unsafe { &mut *l3 };
         Some(&mut l3.entries[page.l3_index()])
     }
 
+    #[inline]
     pub fn get_l2_entry(&mut self, page: Page) -> Option<&mut PageTableEntry> {
-        let l3 = self.get_l3_entry(page);
-        let l2: *mut PageTable = self.translator(l3.get_addr())?.as_mut_ptr();
+        let l3 = self.get_l3_entry(page)?.clone();
+        let l2: *mut PageTable = (self.translator)(l3.get_addr())?.as_mut_ptr();
         // SAFETY: assuming the invariants required by the other unsafe methods
         // are upheld, we can dereference.
-        let l2: &mut PageTable = unsafe { &mut *l3 };
+        let l2: &mut PageTable = unsafe { &mut *l2 };
         Some(&mut l2.entries[page.l2_index()])
     }
 
+    #[inline]
     pub fn get_l1_entry(&mut self, page: Page) -> Option<&mut PageTableEntry> {
-        let l2 = self.get_l2_entry(page);
-        let l1: *mut PageTable = self.translator(l2.get_addr())?.as_mut_ptr();
+        let l2 = self.get_l2_entry(page)?.clone();
+        let l1: *mut PageTable = (self.translator)(l2.get_addr())?.as_mut_ptr();
         // SAFETY: assuming the invariants required by the other unsafe methods
         // are upheld, we can dereference.
         let l1: &mut PageTable = unsafe { &mut *l1 };

@@ -31,6 +31,10 @@ impl<Type: AddressType> Address<Type> {
         Self::from_raw(0)
     }
 
+    pub fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
     pub fn as_raw(self) -> u64 {
         self.0
     }

@@ -224,6 +224,13 @@ impl<Type: AddressType> Extent<Type> {
         }
     }
 
+    pub fn from_range_inclusive(start: Address<Type>, last: Address<Type>) -> Self {
+        Self {
+            address: start,
+            length: (last - start) + Length::from_raw(1),
+        }
+    }
+
     pub fn address(self) -> Address<Type> {
         self.address
     }
@@ -265,6 +272,13 @@ impl<Type: AddressType> Extent<Type> {
             address: overlap_start,
             length: overlap_length,
         })
+    }
+
+    /// Calculate the smallest extent that contains `self` and `other`.
+    pub fn join(self, other: Self) -> Self {
+        let min_start = min(self.address(), other.address());
+        let max_last = max(self.last_address(), other.last_address());
+        Self::from_range_inclusive(min_start, max_last)
     }
 
     pub fn has_overlap(self, other: Self) -> bool {

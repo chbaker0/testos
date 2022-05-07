@@ -16,8 +16,6 @@ const VMEM: *mut u8 = 0xB8000 as *mut u8;
 pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     init_logger();
 
-    info!("Kernel base: {:X}", unsafe { &KERNEL_BASE as *const () }
-        as usize);
     info!("Multiboot info: {mbinfo_addr:X}");
     info!("{:X?}", *MB2_HEADER);
 
@@ -36,7 +34,7 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     idt::init();
     info!("Set up IDT");
 
-    mm::init(&boot_info);
+    mm::init(&mbinfo);
     info!("Initialized frame allocator");
 
     unsafe {
@@ -52,20 +50,8 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
 
 fn translate_boot_info(mb2_info: &mb2::BootInformation) -> BootInfo {
     use shared::memory::*;
-    let mem_map_tag = mb2_info.memory_map_tag().unwrap();
-    let new_map = Map::from_entries(mem_map_tag.all_memory_areas().map(|area| MapEntry {
-        extent: PhysExtent::from_raw(area.start_address(), area.size()),
-        mem_type: match area.typ() {
-            mb2::MemoryAreaType::Available => MemoryType::Available,
-            mb2::MemoryAreaType::Reserved => MemoryType::Reserved,
-            mb2::MemoryAreaType::AcpiAvailable => MemoryType::Acpi,
-            mb2::MemoryAreaType::ReservedHibernate => MemoryType::ReservedPreserveOnHibernation,
-            mb2::MemoryAreaType::Defective => MemoryType::Defective,
-        },
-    }));
-
     BootInfo {
-        memory_map: new_map,
+        memory_map: mm::translate_memory_map(mb2_info),
         // Fill these in with dummy values for now...
         kernel_extent: PhysExtent::from_raw(1024 * 1024, 1024 * 1024 * 6),
         boot_info_extent: PhysExtent::from_raw(0, 1),
@@ -88,10 +74,6 @@ extern "C" {
     static _binary_mb2_header_start: core::ffi::c_void;
     static _binary_mb2_header_end: core::ffi::c_void;
     static _binary_mb2_header_size: core::ffi::c_void;
-
-    // This points to nothing; it may only be used to construct a pointer.
-    #[allow(improper_ctypes)]
-    static KERNEL_BASE: ();
 }
 
 #[used]

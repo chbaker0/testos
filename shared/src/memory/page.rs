@@ -2,6 +2,8 @@
 
 use super::addr::{Length, PhysAddress, PhysExtent, VirtAddress, VirtExtent};
 
+use core::iter::{self, Iterator};
+
 pub const PAGE_SIZE: Length = Length::from_raw(4096);
 
 /// A 4 KiB physical memory frame
@@ -170,9 +172,9 @@ impl FrameRange {
         self.first.next(self.count)
     }
 
-    pub fn iter(&self) -> impl core::iter::Iterator<Item = Frame> {
+    pub fn iter(&self) -> impl Iterator<Item = Frame> {
         let last = self.last();
-        core::iter::successors(Some(self.first), move |frame| {
+        iter::successors(Some(self.first), move |frame| {
             if frame < &last {
                 frame.next(1)
             } else {
@@ -246,9 +248,9 @@ impl PageRange {
         self.first.next(self.count)
     }
 
-    pub fn iter(&self) -> impl core::iter::Iterator<Item = Page> {
+    pub fn iter(&self) -> impl Iterator<Item = Page> {
         let last = self.last();
-        core::iter::successors(Some(self.first), move |page| {
+        iter::successors(Some(self.first), move |page| {
             if page < &last {
                 page.next(1)
             } else {

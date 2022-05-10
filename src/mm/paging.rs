@@ -1,6 +1,9 @@
 use shared::memory::{addr::*, page::*};
 
+use core::ptr;
+
 use static_assertions as sa;
+use x86_64::registers::control::{Cr3, Cr3Flags};
 
 pub const MAX_PHYS_ADDR_BITS: u32 = 52;
 pub const MAX_PHYS_ADDR: PhysAddress = PhysAddress::from_raw(2 << MAX_PHYS_ADDR_BITS);
@@ -14,18 +17,17 @@ pub struct PageTable {
 impl PageTable {
     #[inline]
     /// Create a table where all entries are zero.
-    pub fn zero() -> PageTable {
-        // SAFETY: `PageTableEntry` is repr(transparent) with u64, which is
-        // valid zeroed. `PageTable` is a repr(C) struct containing an array of
-        // `PageTableEntry`, so likewise it is valid zeroed.
-        unsafe { core::mem::zeroed() }
+    pub const fn zero() -> PageTable {
+        PageTable {
+            entries: [PageTableEntry::zero(); 512],
+        }
     }
 }
 
 // Assert that `PageTable` is 4 KiB.
 sa::assert_eq_size!(PageTable, [u8; 4096]);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct PageTableEntry {
     raw: u64,
@@ -103,6 +105,7 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum MapError {
     FrameAllocationFailed,
     TranslationFailed,
@@ -131,6 +134,8 @@ where
     ///   current address space, or `None`.
     /// * `frame_allocator` must return valid physical memory frames not in use
     ///   anywhere else, or `None`.
+    /// * If `level_4` is the active page table, client must ensure translations
+    ///   actively in use are not broken.
     pub unsafe fn new(
         level_4: &'a mut PageTable,
         translator: Translator,
@@ -220,6 +225,13 @@ where
         let next_table_addr: VirtAddress =
             translator(entry.get_addr()).ok_or(MapError::TranslationFailed)?;
         assert!(!next_table_addr.is_zero());
+        assert!(next_table_addr.is_aligned_to(4096), "{next_table_addr:?}");
+
+        let next_table_ptr: *mut PageTable = next_table_addr.as_mut_ptr();
+        // IMPORTANT: initialize the new table.
+        unsafe {
+            ptr::write(next_table_ptr, PageTable::zero());
+        }
 
         // SAFETY: given the assumptions:
         // 1. If applicable, `new_frame` above was a valid unused frame.
@@ -230,7 +242,7 @@ where
         //
         // ... this is sound. (1) and (3) rely on the client upholding their
         // contract. (2) relies on us upholding our invariants.
-        unsafe { Ok(&mut *next_table_addr.as_mut_ptr()) }
+        unsafe { Ok(&mut *next_table_ptr) }
     }
 
     #[inline]

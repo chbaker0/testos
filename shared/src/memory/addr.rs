@@ -27,20 +27,20 @@ impl<Type: AddressType> Address<Type> {
         Self(val, PhantomData)
     }
 
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Self::from_raw(0)
     }
 
-    pub fn is_zero(self) -> bool {
+    pub const fn is_zero(self) -> bool {
         self.0 == 0
     }
 
-    pub fn as_raw(self) -> u64 {
+    pub const fn as_raw(self) -> u64 {
         self.0
     }
 
-    pub fn from_zero(offset: Length) -> Self {
-        Self::zero() + offset
+    pub const fn from_zero(offset: Length) -> Self {
+        Self::from_raw(offset.as_raw())
     }
 
     pub fn offset_by_checked(self, length: Length) -> Option<Self> {
@@ -102,9 +102,14 @@ impl<Type: AddressType> Sub<Self> for Address<Type> {
 }
 
 impl Address<VirtAddressType> {
+    pub fn from_ptr<T>(p: *const T) -> Self {
+        Self::from_raw(p as usize as u64)
+    }
+
     pub fn as_ptr<T>(self) -> *const T {
         self.0 as usize as *const _
     }
+
     pub fn as_mut_ptr<T>(self) -> *mut T {
         self.0 as usize as *mut _
     }
@@ -217,10 +222,10 @@ impl<Type: AddressType> Extent<Type> {
         )
     }
 
-    pub fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {
+    pub const fn from_range_exclusive(begin: Address<Type>, end: Address<Type>) -> Self {
         Self {
             address: begin,
-            length: end - begin,
+            length: Length::from_raw(end.as_raw() - begin.as_raw()),
         }
     }
 

@@ -6,11 +6,12 @@ PHDRS
   data PT_LOAD FLAGS(6) /* rw- */;
 }
 
-KERNEL_BASE = -2048M;
+KERNEL_VIRT_BASE = -2048M;
 
 SECTIONS
 {
     . = 1M;
+    KERNEL_PHYS_BEGIN_SYM = .;
 
     .bootstrap.text ALIGN(4K) : AT(.) ALIGN(4K)
     {
@@ -34,27 +35,29 @@ SECTIONS
         *(.bootstrap.bss)
     } :data32
 
-    . += KERNEL_BASE;
+    . += KERNEL_VIRT_BASE;
 
-    .text ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
+    .text ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
         KEEP(*(.text.mb2_header))
         *(.text)
     } :text
 
-    .rodata ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
+    .rodata ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
         *(.rodata)
     } :data
 
-    .data ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
+    .data ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
         *(.data)
     } :data
 
-    .bss ALIGN(4K) : AT(. - KERNEL_BASE) ALIGN(4K)
+    .bss ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
         *(COMMON)
         *(.bss)
     } :data
+
+    KERNEL_PHYS_END_SYM = . - KERNEL_VIRT_BASE;
 }

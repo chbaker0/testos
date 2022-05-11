@@ -89,11 +89,11 @@ pub fn init(boot_info: &mb2::BootInformation) {
 }
 
 #[allow(unused)]
-pub fn allocate_frame() -> Frame {
+#[inline(never)]
+pub fn allocate_frame() -> Option<Frame> {
     let mut guard = FRAME_ALLOCATOR.lock();
     let frame_allocator = guard.get_mut().unwrap();
-    let frame = frame_allocator.allocate().unwrap();
-    frame
+    frame_allocator.allocate()
 }
 
 pub fn translate_memory_map(mb2_info: &mb2::BootInformation) -> Map {
@@ -124,11 +124,8 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
     //   bootstrap page tables are in place.
     // * `allocate_frame` returns valid frames with our memory map in place.
     // * `root_table` is not yet the active page table.
-    let mut mapper = unsafe {
-        paging::Mapper::new(&mut root_table, first_gb_translator, || {
-            Some(allocate_frame())
-        })
-    };
+    let mut mapper =
+        unsafe { paging::Mapper::new(&mut root_table, first_gb_translator, allocate_frame) };
 
     let present_writable_nx =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
@@ -157,31 +154,36 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
 
     // Map kernel.
     for section in boot_info.elf_sections_tag().unwrap().sections() {
-        match section.section_type() {
+        let section_type = section.section_type();
+        let section_flags = section.flags();
+        let section_extent = VirtExtent::from_raw(section.start_address(), section.size());
+
+        // Ignore sections below our base address (e.g. bootstrap sections).
+        if section_extent.address() < get_kernel_virt_base() {
+            info!("Ignoring lower half section {}", section.name());
+            continue;
+        }
+
+        match section_type {
             mb2::ElfSectionType::ProgramSection | mb2::ElfSectionType::Uninitialized => {
-                info!("Mapping {section:?}");
+                info!("Mapping {} at {:X?}", section.name(), section_extent);
             }
             _ => continue,
         }
 
         let mut page_flags = PageTableFlags::empty();
-        if !section.flags().contains(mb2::ElfSectionFlags::ALLOCATED) {
+        if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
             info!("Not allocated...");
             continue;
         }
-        if section.flags().contains(mb2::ElfSectionFlags::WRITABLE) {
+        if section_flags.contains(mb2::ElfSectionFlags::WRITABLE) {
             page_flags |= PageTableFlags::WRITABLE;
         }
-        if !section.flags().contains(mb2::ElfSectionFlags::EXECUTABLE) {
+        if !section_flags.contains(mb2::ElfSectionFlags::EXECUTABLE) {
             page_flags |= PageTableFlags::EXECUTE_DISABLE;
         }
 
-        for page in PageRange::containing_extent(VirtExtent::from_raw(
-            section.start_address(),
-            section.size(),
-        ))
-        .iter()
-        {
+        for page in PageRange::containing_extent(section_extent).iter() {
             let frame = Frame::new(PhysAddress::from_zero(
                 page.start() - get_kernel_virt_base(),
             ));

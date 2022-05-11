@@ -212,26 +212,30 @@ where
         frame_allocator: &mut Allocator,
         new_flags: PageTableFlags,
     ) -> Result<&'b mut PageTable, MapError> {
+        let mut translate = |phys: PhysAddress| {
+            let virt = translator(phys).ok_or(MapError::TranslationFailed)?;
+            assert!(!virt.is_zero());
+            assert!(virt.is_aligned_to(4096), "{virt:?}");
+            Ok(virt.as_mut_ptr())
+        };
+
         // NOTE: here we assume that if the PRESENT flag is not set, then this
         // entry does not "own" a valid frame. If this were not the case we'd
         // leak a frame. This is not unsafe, but it is a case to watch out for.
-        if !entry.get_flags().contains(PageTableFlags::PRESENT) {
-            // Allocate a new frame to hold the next level table.
+        let next_table_ptr: *mut PageTable = if entry.get_flags().contains(PageTableFlags::PRESENT)
+        {
+            translate(entry.get_addr())?
+        } else {
+            // Allocate a new frame to hold the next level table and zero it.
             let new_frame = frame_allocator().ok_or(MapError::FrameAllocationFailed)?;
+            let ptr = translate(new_frame.start())?;
+            unsafe {
+                ptr::write(ptr, PageTable::zero());
+            }
             entry.set_addr(new_frame.start());
             entry.set_flags(new_flags.union(PageTableFlags::PRESENT));
-        }
-
-        let next_table_addr: VirtAddress =
-            translator(entry.get_addr()).ok_or(MapError::TranslationFailed)?;
-        assert!(!next_table_addr.is_zero());
-        assert!(next_table_addr.is_aligned_to(4096), "{next_table_addr:?}");
-
-        let next_table_ptr: *mut PageTable = next_table_addr.as_mut_ptr();
-        // IMPORTANT: initialize the new table.
-        unsafe {
-            ptr::write(next_table_ptr, PageTable::zero());
-        }
+            ptr
+        };
 
         // SAFETY: given the assumptions:
         // 1. If applicable, `new_frame` above was a valid unused frame.

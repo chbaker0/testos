@@ -11,7 +11,6 @@ KERNEL_VIRT_BASE = -2048M;
 SECTIONS
 {
     . = 1M;
-    KERNEL_PHYS_BEGIN_SYM = .;
 
     .bootstrap.text ALIGN(4K) : AT(.) ALIGN(4K)
     {
@@ -40,24 +39,24 @@ SECTIONS
     .text ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
         KEEP(*(.text.mb2_header))
-        *(.text)
+        *(.text .text.*)
     } :text
 
     .rodata ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
-        *(.rodata)
+        *(.rodata .rodata.*)
+        KERNEL_PHYS_BEGIN_SYM = LOADADDR(.bootstrap.text);
+        KERNEL_PHYS_END_SYM = LOADADDR(.bss) + SIZEOF(.bss);
     } :data
 
     .data ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
-        *(.data)
+        *(.data .data.*)
     } :data
 
     .bss ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
+        *(.bss .bss.*)
         *(COMMON)
-        *(.bss)
     } :data
-
-    KERNEL_PHYS_END_SYM = . - KERNEL_VIRT_BASE;
 }

@@ -17,9 +17,6 @@ _start:
 
     ; Save MB2 structure
     mov [multiboot_ptr], ebx
-    ; Use bootstrap stack
-    mov esp, init_stack_top
-    mov ebp, esp
 
     ; Set up top-level entries for identity and higher-half mapping
     mov eax, PDPT_LOWER
@@ -83,7 +80,8 @@ _start:
     ; Enable long mode
     mov ecx, 0xC0000080
     rdmsr
-    or eax, 1 << 8
+    ; Long mode enable (bit 8), no-execute enable (bit 11)
+    or eax, 1 << 8 | 1 << 11
     wrmsr
 
     ; Enable paging
@@ -186,9 +184,6 @@ multiboot_ptr: dq 0
 
 SECTION .bootstrap.bss
 
-init_stack_bottom: resb 4096*32
-init_stack_top:
-
 align 4096
 ; The lower entry corresponds to the lower 256 TB of memory, and the upper to
 ; the upper 256 TB.
@@ -232,6 +227,10 @@ long_mode:
 
     mov byte [0xb8000], 'L'
 
+    ; Set up initial stack in our higher half.
+    mov rsp, init_stack_top
+    mov rbp, rsp
+
     ; "Call" with multiboot info pointer as argument. kernel_entry does not
     ; return. Note that our multiboot_ptr is a physical address which is
     ; identity mapped
@@ -241,3 +240,8 @@ long_mode:
     .hang:
     hlt
     jmp .hang
+
+SECTION .bss
+
+init_stack_bottom: resb 4096*32
+init_stack_top:

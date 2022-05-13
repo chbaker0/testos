@@ -1,14 +1,14 @@
 {
     "configurations": [
-    {
-        "type": "gdb",
-        "request": "attach",
-        "name": "Attach to gdbserver",
-        "executable": "out/iso/boot/kernel",
-        "target": ":1234",
-        "remote": true,
-        "cwd": "${workspaceRoot}",
-        "valuesFormatting": "parseText"
-    }
+        {
+            "type": "gdb",
+            "request": "attach",
+            "name": "Attach to gdbserver",
+            "executable": "out/iso/boot/kernel",
+            "target": ":1234",
+            "remote": true,
+            "cwd": "${workspaceRoot}",
+            "valuesFormatting": "parseText",
+        }
     ]
 }

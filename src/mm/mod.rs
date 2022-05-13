@@ -171,7 +171,7 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
             _ => continue,
         }
 
-        let mut page_flags = PageTableFlags::empty();
+        let mut page_flags = PageTableFlags::PRESENT;
         if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
             info!("Not allocated...");
             continue;

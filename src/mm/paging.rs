@@ -185,11 +185,13 @@ where
                 PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
             )?
         };
-        let l1e = &mut l1.entries[page.l1_index()];
-
+        let mut l1e = PageTableEntry::zero();
         // TODO: handle existing mapping.
         l1e.set_addr(frame.start());
         l1e.set_flags(flags);
+        unsafe {
+            ptr::write_volatile(&mut l1.entries[page.l1_index()] as *mut _, l1e);
+        }
 
         Ok(())
     }

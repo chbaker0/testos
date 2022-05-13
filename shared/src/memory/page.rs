@@ -2,6 +2,8 @@
 
 use super::addr::{Length, PhysAddress, PhysExtent, VirtAddress, VirtExtent};
 
+use core::iter::{self, Iterator};
+
 pub const PAGE_SIZE: Length = Length::from_raw(4096);
 
 /// A 4 KiB physical memory frame
@@ -84,6 +86,26 @@ impl Page {
             .offset_by_checked(Length::from_raw(PAGE_SIZE.as_raw().checked_mul(n)?))?;
         Some(Self::new(next_start))
     }
+
+    pub fn l4_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9 + 9 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l3_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l2_index(self) -> usize {
+        const FIRST_BIT: u32 = 12 + 9;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
+
+    pub fn l1_index(self) -> usize {
+        const FIRST_BIT: u32 = 12;
+        ((self.start.as_raw() & (0b1_1111_1111 << FIRST_BIT)) >> FIRST_BIT) as usize
+    }
 }
 
 /// A contiguous range of physical memory frames. Always non-empty.
@@ -150,9 +172,9 @@ impl FrameRange {
         self.first.next(self.count)
     }
 
-    pub fn iter(&self) -> impl core::iter::Iterator<Item = Frame> {
+    pub fn iter(&self) -> impl Iterator<Item = Frame> {
         let last = self.last();
-        core::iter::successors(Some(self.first), move |frame| {
+        iter::successors(Some(self.first), move |frame| {
             if frame < &last {
                 frame.next(1)
             } else {
@@ -191,15 +213,15 @@ impl PageRange {
     // All frames between and including `first` to `last`
     pub fn between_inclusive(first: Page, last: Page) -> PageRange {
         let len = last.start() - first.start();
-        let count = len.as_raw() / PAGE_SIZE.as_raw();
-        PageRange { first, count }
+        let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
+        Self::new(first, count).unwrap()
     }
 
     // All frames between `first` to `last`, including `first` but not `last`
-    pub fn between_exclusive(first: Page, last: Page) -> PageRange {
+    pub fn between_exclusive(first: Page, last: Page) -> Option<PageRange> {
         let len = last.start() - first.start();
-        let count = len.as_raw() / PAGE_SIZE.as_raw() + 1;
-        PageRange { first, count }
+        let count = len.as_raw() / PAGE_SIZE.as_raw();
+        Self::new(first, count)
     }
 
     pub fn containing_extent(extent: VirtExtent) -> PageRange {
@@ -226,9 +248,9 @@ impl PageRange {
         self.first.next(self.count)
     }
 
-    pub fn iter(&self) -> impl core::iter::Iterator<Item = Page> {
+    pub fn iter(&self) -> impl Iterator<Item = Page> {
         let last = self.last();
-        core::iter::successors(Some(self.first), move |page| {
+        iter::successors(Some(self.first), move |page| {
             if page < &last {
                 page.next(1)
             } else {

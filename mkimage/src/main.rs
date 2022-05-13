@@ -1,11 +1,9 @@
 use buildutil::*;
 
-use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use cargo_metadata::Message;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -15,42 +13,6 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let cargo = env::var("CARGO").unwrap();
-
-    println!("Building bootloader...");
-    let mut build_invocation = Command::new(cargo)
-        .arg("build")
-        .arg("--package")
-        .arg("loader")
-        .arg("--target")
-        .arg("targets/i686-unknown-none.json")
-        .arg("-Zbuild-std=core,compiler_builtins")
-        .arg("-Zbuild-std-features=compiler-builtins-mem")
-        .arg("--message-format=json")
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut loader_binary = None;
-    for message in Message::parse_stream(std::io::BufReader::new(
-        build_invocation.stdout.as_mut().unwrap(),
-    )) {
-        match message.unwrap() {
-            Message::CompilerArtifact(artifact) => {
-                if artifact.executable == None {
-                    continue;
-                }
-                assert_eq!(loader_binary, None);
-                loader_binary = artifact.executable;
-            }
-            _ => (),
-        }
-    }
-
-    assert!(build_invocation.wait().unwrap().success());
-
-    let loader_binary = loader_binary.expect("loader not found!");
-    println!("Loader binary at {}", loader_binary);
 
     println!("Building image from {}...", args.kernel_image.display());
 
@@ -62,7 +24,6 @@ fn main() -> anyhow::Result<()> {
 
     fs::create_dir_all("out/iso/boot/grub").unwrap();
     fs::copy("grub.cfg", "out/iso/boot/grub/grub.cfg").unwrap();
-    fs::copy(loader_binary, "out/iso/boot/loader").unwrap();
     fs::copy(args.kernel_image, "out/iso/boot/kernel").unwrap();
 
     run_and_check(

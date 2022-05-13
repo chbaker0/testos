@@ -1,0 +1,68 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "cargo",
+            "command": "kimage",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "label": "Build bootable ISO"
+        },
+        {
+            "type": "cargo",
+            "command": "kimage",
+            "args": ["--release"],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "label": "Build bootable ISO (release)"
+        },
+        {
+            "type": "cargo",
+            "command": "kclippy",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "label": "Clippy (kernel)"
+        },
+        {
+            "type": "cargo",
+            "command": "kcheck",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "label": "Check (kernel)"
+        },
+        {
+            "label": "Debug in QEMU",
+            "type": "shell",
+            "command": "qemu-system-x86_64 out/kernel.iso -s -S",
+            "problemMatcher": [],
+            "dependsOn": ["Build bootable ISO"]
+        },
+        {
+            "label": "Run in QEMU",
+            "type": "shell",
+            "command": "qemu-system-x86_64 out/kernel.iso -s",
+            "problemMatcher": [],
+            "dependsOn": ["Build bootable ISO"]
+        },
+        {
+            "label": "Run in QEMU (release)",
+            "type": "shell",
+            "command": "qemu-system-x86_64 out/kernel.iso",
+            "problemMatcher": [],
+            "dependsOn": ["Build bootable ISO (release)"]
+        }
+    ]
+}

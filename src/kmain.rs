@@ -4,24 +4,25 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
 use log::info;
+use multiboot2 as mb2;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
-
-use shared::handoff::BootInfo;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
 #[no_mangle]
-pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
+pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
+    init_logger();
+
+    info!("Multiboot info: {mbinfo_addr:X}");
+    info!("{:X?}", *MB2_HEADER);
+
+    let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
+    info!("{:?}", mbinfo);
+
     interrupts::disable();
 
-    init_logger();
     info!("In kernel");
-
-    info!("{:x}", boot_info_addr);
-
-    let boot_info = unsafe { (*(boot_info_addr as *const BootInfo)).clone() };
-    info!("{:?}", boot_info);
 
     gdt::init();
     info!("Set up GDT");
@@ -29,7 +30,7 @@ pub extern "C" fn kernel_entry(boot_info_addr: u64) -> ! {
     idt::init();
     info!("Set up IDT");
 
-    mm::init(&boot_info);
+    mm::init(&mbinfo);
     info!("Initialized frame allocator");
 
     unsafe {
@@ -53,7 +54,27 @@ fn halt_loop() -> ! {
     }
 }
 
+extern "C" {
+    // These point to valid memory, but they must not be dereferenced as is.
+    static _binary_mb2_header_start: core::ffi::c_void;
+    static _binary_mb2_header_end: core::ffi::c_void;
+    static _binary_mb2_header_size: core::ffi::c_void;
+}
+
+#[used]
+static MB2_HEADER_START: &core::ffi::c_void = unsafe { &_binary_mb2_header_start };
+#[used]
+static MB2_HEADER_END: &core::ffi::c_void = unsafe { &_binary_mb2_header_end };
+#[used]
+static MB2_HEADER_SIZE: &core::ffi::c_void = unsafe { &_binary_mb2_header_size };
+
 lazy_static! {
+    static ref MB2_HEADER: &'static [u8] = unsafe {
+        core::slice::from_raw_parts(
+            MB2_HEADER_START as *const _ as *const u8,
+            MB2_HEADER_SIZE as *const _ as usize,
+        )
+    };
     static ref LOGGER: shared::vga::VgaLog =
         shared::vga::VgaLog::new(unsafe { shared::vga::VgaWriter::new(VMEM) });
 }

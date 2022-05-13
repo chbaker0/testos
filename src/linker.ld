@@ -1,35 +1,62 @@
-ENTRY(_start)
-
 PHDRS
 {
+  text32 PT_LOAD FLAGS(5) /* r-x */;
+  data32 PT_LOAD FLAGS(6) /* rw- */;
   text PT_LOAD FLAGS(5) /* r-x */;
   data PT_LOAD FLAGS(6) /* rw- */;
 }
 
-KERNEL_BASE = -2048M;
+KERNEL_VIRT_BASE = -2048M;
 
 SECTIONS
 {
-    . = KERNEL_BASE + 1M;
+    . = 1M;
 
-    .text : ALIGN(4K)
+    .bootstrap.text ALIGN(4K) : AT(.) ALIGN(4K)
     {
-        *(.text)
+        ENTRY(_start)
+        KEEP(*(.text.mb2_header))
+        *(.bootstrap.text)
+    } :text32
+
+    .bootstrap.data ALIGN(4K) : AT(.) ALIGN(4K)
+    {
+        *(.bootstrap.data)
+    } :data32
+
+    .bootstrap.bss ALIGN(4K) : AT(.) ALIGN(4K)
+    {
+        *(.bootstrap.bss)
+    } :data32
+
+    .bootstrap.bss ALIGN(4K) : AT(.) ALIGN(4K)
+    {
+        *(.bootstrap.bss)
+    } :data32
+
+    . += KERNEL_VIRT_BASE;
+
+    .text ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
+    {
+        KEEP(*(.text.mb2_header))
+        *(.text .text.*)
     } :text
 
-    .rodata : ALIGN(4K)
+    .rodata ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
-        *(.rodata)
+        *(.rodata .rodata.*)
+        KERNEL_PHYS_BEGIN_SYM = LOADADDR(.bootstrap.text);
+        KERNEL_PHYS_END_SYM = LOADADDR(.bss) + SIZEOF(.bss);
     } :data
 
-    .data : ALIGN(4K)
+    .data ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
-        *(.data)
+        *(.data .data.*)
     } :data
 
-    .bss : ALIGN(4K)
+    .bss ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
+        *(.bss .bss.*)
         *(COMMON)
-        *(.bss)
     } :data
 }

@@ -3,7 +3,6 @@ use shared::memory::{addr::*, page::*};
 use core::ptr;
 
 use static_assertions as sa;
-use x86_64::registers::control::{Cr3, Cr3Flags};
 
 pub const MAX_PHYS_ADDR_BITS: u32 = 52;
 pub const MAX_PHYS_ADDR: PhysAddress = PhysAddress::from_raw(2 << MAX_PHYS_ADDR_BITS);
@@ -149,7 +148,6 @@ where
         }
     }
 
-    #[must_use]
     pub unsafe fn map(
         &mut self,
         page: Page,
@@ -249,40 +247,5 @@ where
         // ... this is sound. (1) and (3) rely on the client upholding their
         // contract. (2) relies on us upholding our invariants.
         unsafe { Ok(&mut *next_table_ptr) }
-    }
-
-    #[inline]
-    pub fn get_l4_entry(&mut self, page: Page) -> &mut PageTableEntry {
-        &mut self.level_4.entries[page.l4_index()]
-    }
-
-    #[inline]
-    pub fn get_l3_entry<'s>(&'s mut self, page: Page) -> Option<&'s mut PageTableEntry> {
-        let l4 = self.get_l4_entry(page).clone();
-        let l3: *mut PageTable = (self.translator)(l4.get_addr())?.as_mut_ptr();
-        // SAFETY: assuming the invariants required by the other unsafe methods
-        // are upheld, we can dereference.
-        let l3: &mut PageTable = unsafe { &mut *l3 };
-        Some(&mut l3.entries[page.l3_index()])
-    }
-
-    #[inline]
-    pub fn get_l2_entry(&mut self, page: Page) -> Option<&mut PageTableEntry> {
-        let l3 = self.get_l3_entry(page)?.clone();
-        let l2: *mut PageTable = (self.translator)(l3.get_addr())?.as_mut_ptr();
-        // SAFETY: assuming the invariants required by the other unsafe methods
-        // are upheld, we can dereference.
-        let l2: &mut PageTable = unsafe { &mut *l2 };
-        Some(&mut l2.entries[page.l2_index()])
-    }
-
-    #[inline]
-    pub fn get_l1_entry(&mut self, page: Page) -> Option<&mut PageTableEntry> {
-        let l2 = self.get_l2_entry(page)?.clone();
-        let l1: *mut PageTable = (self.translator)(l2.get_addr())?.as_mut_ptr();
-        // SAFETY: assuming the invariants required by the other unsafe methods
-        // are upheld, we can dereference.
-        let l1: &mut PageTable = unsafe { &mut *l1 };
-        Some(&mut l1.entries[page.l1_index()])
     }
 }

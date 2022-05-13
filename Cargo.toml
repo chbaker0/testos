@@ -24,11 +24,6 @@ shared = { path = "shared" }
 spin = "0.9.2"
 static_assertions = "1.1.0"
 
-[dependencies.goblin]
-version = "0.5.1"
-default-features = false
-features = ["elf64", "log"]
-
 [build-dependencies]
 anyhow = "1.0"
 buildutil = { path = "buildutil" }

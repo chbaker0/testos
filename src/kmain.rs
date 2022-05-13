@@ -8,8 +8,6 @@ use multiboot2 as mb2;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
 
-use shared::handoff::BootInfo;
-
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
 #[no_mangle]
@@ -21,8 +19,6 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
 
     let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
     info!("{:?}", mbinfo);
-
-    let boot_info = translate_boot_info(&mbinfo);
 
     interrupts::disable();
 
@@ -46,17 +42,6 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     pic::install_irq_handler(1, Some(keyboard_handler));
 
     halt_loop();
-}
-
-fn translate_boot_info(mb2_info: &mb2::BootInformation) -> BootInfo {
-    use shared::memory::*;
-    BootInfo {
-        memory_map: mm::translate_memory_map(mb2_info),
-        // Fill these in with dummy values for now...
-        kernel_extent: PhysExtent::from_raw(1024 * 1024, 1024 * 1024 * 6),
-        boot_info_extent: PhysExtent::from_raw(0, 1),
-        page_table_extent: PhysExtent::from_raw(0, 1),
-    }
 }
 
 fn keyboard_handler(_: InterruptStackFrame) {

@@ -1,8 +1,4 @@
-use std::path::{Path, PathBuf};
 use std::process::{self, Command};
-
-use clap::Parser;
-use multiboot2_header::*;
 
 use anyhow::Error;
 

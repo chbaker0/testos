@@ -10,6 +10,5 @@
 #[cfg(test)]
 extern crate std;
 
-pub mod handoff;
 pub mod memory;
 pub mod vga;

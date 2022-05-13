@@ -10,7 +10,6 @@ use shared::memory::*;
 
 use paging::*;
 
-use goblin::elf64;
 use log::info;
 use multiboot2 as mb2;
 use x86_64::registers::control::{Cr3, Cr3Flags};
@@ -51,7 +50,7 @@ pub fn init(boot_info: &mb2::BootInformation) {
     let kernel_extent = get_kernel_phys_extent();
     info!("Kernel extent: {kernel_extent:X?}");
 
-    let memory_map = translate_memory_map(&boot_info);
+    let memory_map = translate_memory_map(boot_info);
     let mut frame_bitmap = FRAME_BITMAP.lock();
     fill_bitmap_from_map(&mut *frame_bitmap, &memory_map);
 

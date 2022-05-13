@@ -1,11 +1,9 @@
 use buildutil::*;
 
-use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use cargo_metadata::Message;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -15,7 +13,6 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let cargo = env::var("CARGO").unwrap();
 
     println!("Building image from {}...", args.kernel_image.display());
 

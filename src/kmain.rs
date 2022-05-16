@@ -34,6 +34,14 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     info!("Initialized frame allocator");
 
     unsafe {
+        sched::init_kernel_main_thread(kernel_main);
+    }
+}
+
+pub extern "C" fn kernel_main() -> ! {
+    info!("In kernel_main");
+
+    unsafe {
         pic::init();
         interrupts::enable();
     }

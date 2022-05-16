@@ -87,12 +87,49 @@ pub fn init(boot_info: &mb2::BootInformation) {
     }
 }
 
-#[allow(unused)]
 #[inline(never)]
 pub fn allocate_frame() -> Option<Frame> {
+    Some(allocate_frames(0)?.first())
+}
+
+#[inline(never)]
+pub fn allocate_frames(order: usize) -> Option<FrameRange> {
     let mut guard = FRAME_ALLOCATOR.lock();
     let frame_allocator = guard.get_mut().unwrap();
-    frame_allocator.allocate()
+    frame_allocator.allocate_range(order)
+}
+
+#[inline(never)]
+pub unsafe fn deallocate_frames(frames: FrameRange) {
+    let mut guard = FRAME_ALLOCATOR.lock();
+    let frame_allocator = guard.get_mut().unwrap();
+    frame_allocator.deallocate_range(frames);
+}
+
+#[inline(never)]
+pub fn allocate_owned_frames(order: usize) -> Option<OwnedFrameRange> {
+    Some(OwnedFrameRange {
+        frames: allocate_frames(order)?,
+    })
+}
+
+/// An exclusively owned frame range that will be deallocated on destruction.
+pub struct OwnedFrameRange {
+    frames: FrameRange,
+}
+
+impl OwnedFrameRange {
+    pub fn frames(&self) -> FrameRange {
+        self.frames
+    }
+}
+
+impl Drop for OwnedFrameRange {
+    fn drop(&mut self) {
+        unsafe {
+            deallocate_frames(self.frames);
+        }
+    }
 }
 
 pub fn translate_memory_map(mb2_info: &mb2::BootInformation) -> Map {
@@ -215,6 +252,18 @@ unsafe fn install_page_table(root_table: &mut paging::PageTable) {
     }
 }
 
+/// Get a kernel space virtual address corresponding to a physical memory
+/// adddress.
+///
+/// The address is suitable but not necessarily safe for dereferencing as a
+/// pointer in kernel code. This is unsafe if aliasing rules are broken
+/// including if `phys` refers to memory backing another virtual mapping.
+/// Furthermore, the memory at `phys` must be safe to read/write (which may not
+/// be true e.g. for memory-mapped IO addresses).
+///
+/// This can be safe if `phys` was allocated by `allocate_frames` and not
+/// subsequently deallocated. Even so, care must be taken to ensure to use it
+/// safely if it was shared with other users.
 #[inline]
 pub fn phys_to_virt(phys: PhysAddress) -> VirtAddress {
     assert!(phys < PhysAddress::from_zero(MAX_MEMORY));

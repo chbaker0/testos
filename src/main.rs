@@ -8,3 +8,4 @@ mod idt;
 mod kmain;
 mod mm;
 mod pic;
+mod sched;

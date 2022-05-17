@@ -3,6 +3,10 @@ name = "mkimage"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Use local grub-mkrescue instead of xorriso + prebuilt GRUB image.
+grub-mkrescue = []
+
 [dependencies]
 anyhow = "1.0"
 buildutil = { path = "../buildutil" }

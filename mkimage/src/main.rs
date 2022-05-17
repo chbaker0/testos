@@ -26,14 +26,43 @@ fn main() -> anyhow::Result<()> {
     fs::copy("grub.cfg", "out/iso/boot/grub/grub.cfg").unwrap();
     fs::copy(args.kernel_image, "out/iso/boot/kernel").unwrap();
 
-    run_and_check(
-        Command::new("grub-mkrescue")
-            .arg("-o")
-            .arg("out/kernel.iso")
-            .arg("-d")
-            .arg("/usr/lib/grub/i386-pc")
-            .arg("out/iso"),
-    )?;
+    if cfg!(feature = "grub-mkrescue") {
+        run_and_check(
+            Command::new("grub-mkrescue")
+                .arg("-o")
+                .arg("out/kernel.iso")
+                .arg("-d")
+                .arg("/usr/lib/grub/i386-pc")
+                .arg("out/iso"),
+        )?;
+    } else {
+        run_and_check(Command::new("xorriso").args(&[
+            "-as",
+            "mkisofs",
+            "-graft-points",
+            "-b",
+            "boot/grub/i386-pc/eltorito.img",
+            "-no-emul-boot",
+            "-boot-load-size",
+            "4",
+            "-boot-info-table",
+            "--grub2-boot-info",
+            "--grub2-mbr",
+            "third_party/boot_hybrid.img",
+            "--protective-msdos-label",
+            "-o",
+            "out/kernel.iso",
+            "-r",
+            "third_party/grub-image",
+            "--sort-weight",
+            "0",
+            "/",
+            "--sort-weight",
+            "1",
+            "/boot",
+            "out/iso",
+        ]))?
+    }
 
     Ok(())
 }

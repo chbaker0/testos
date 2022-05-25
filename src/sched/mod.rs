@@ -2,6 +2,7 @@ use crate::mm;
 
 use core::arch::asm;
 use core::mem;
+use core::ptr::NonNull;
 
 use spin;
 
@@ -11,12 +12,13 @@ pub struct Task {
     stack_frames: mm::OwnedFrameRange,
 
     // Scheduler info
-    /// Per-task info required by the scheduler
-    next_in_list: TaskPtr,
+    prev_in_list: Option<TaskPtr>,
+    next_in_list: Option<TaskPtr>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct TaskPtr(*mut Task);
+#[repr(transparent)]
+pub struct TaskPtr(NonNull<Task>);
 
 unsafe impl Send for TaskPtr {}
 
@@ -25,17 +27,22 @@ pub struct Scheduler {
 }
 
 pub unsafe fn init_kernel_main_thread(kernel_main: extern "C" fn() -> !) -> ! {
+    // Set up idle task, which is the task of last resort when nothing else is
+    // runnable.
+    let idle_task = create_task();
+
     let main_task = create_task();
+
     {
         let mut current_task = CURRENT_TASK.lock();
-        if current_task.0 != core::ptr::null_mut() {
+        if *current_task != None {
             drop(current_task);
             panic!("current task existed while initializing tasks");
         }
-        *current_task = main_task;
+        *current_task = Some(main_task);
     }
 
-    let stack_top: *mut () = main_task.0 as *mut ();
+    let stack_top: *mut () = main_task.0.as_ptr() as *mut ();
 
     // Discard the old stack, load the new one, and jump to `kernel_main`.
     //
@@ -61,6 +68,8 @@ fn create_task() -> TaskPtr {
     let task = Task {
         // Allocate 2^1 = 2 frames for the stack.
         stack_frames: mm::allocate_owned_frames(1).unwrap(),
+        prev_in_list: None,
+        next_in_list: None,
     };
 
     // For the stack pointer, simply use our direct mapping of physical to virtual memory.
@@ -76,12 +85,21 @@ fn create_task() -> TaskPtr {
         &mut *stack_ptr
     };
 
-    TaskPtr(stack_ptr)
+    TaskPtr(NonNull::new(stack_ptr).unwrap())
+}
+
+extern "C" fn idle_task_fn() -> ! {
+    crate::halt_loop();
 }
 
 /// The currently running task. Null before the scheduling system is
 /// initialized.
-static CURRENT_TASK: spin::Mutex<TaskPtr> = spin::Mutex::new(TaskPtr(core::ptr::null_mut()));
+static CURRENT_TASK: spin::Mutex<Option<TaskPtr>> = spin::Mutex::new(None);
+
+/// The "idle task" which runs when no other task is ready.
+static IDLE_TASK: spin::Mutex<Option<TaskPtr>> = spin::Mutex::new(None);
+
+static SCHEDULER: spin::Mutex<Option<Scheduler>> = spin::Mutex::new(None);
 
 pub const STACK_FRAMES_ORDER: usize = 2;
 pub const STACK_FRAMES: usize = 2 << STACK_FRAMES_ORDER;

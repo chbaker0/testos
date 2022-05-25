@@ -56,12 +56,6 @@ fn keyboard_handler(_: InterruptStackFrame) {
     panic!("keyboard interrupt received");
 }
 
-fn halt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
 extern "C" {
     // These point to valid memory, but they must not be dereferenced as is.
     static _binary_mb2_header_start: core::ffi::c_void;

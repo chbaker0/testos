@@ -9,3 +9,9 @@ mod kmain;
 mod mm;
 mod pic;
 mod sched;
+
+fn halt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}

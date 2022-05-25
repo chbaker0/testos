@@ -6,13 +6,23 @@ use core::mem;
 use spin;
 
 pub struct Task {
+    /// Owned frames on which the task's kernel stack resides. This task's
+    /// `Task` instance itself resides here.
     stack_frames: mm::OwnedFrameRange,
+
+    // Scheduler info
+    /// Per-task info required by the scheduler
+    next_in_list: TaskPtr,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct TaskPtr(*mut Task);
 
 unsafe impl Send for TaskPtr {}
+
+pub struct Scheduler {
+    ready_list_head: TaskPtr,
+}
 
 pub unsafe fn init_kernel_main_thread(kernel_main: extern "C" fn() -> !) -> ! {
     let main_task = create_task();

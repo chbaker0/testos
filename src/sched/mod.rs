@@ -33,7 +33,7 @@ pub struct Scheduler {
 pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
     // SAFETY: `kernel_main` is a primitive pointer-sized type. It is safe to
     // transmute to `usize`, even as a function argument.
-    let main_task = unsafe { create_task_typed(kernel_main_init_fn, kernel_main) };
+    let mut main_task = unsafe { create_task_typed(kernel_main_init_fn, kernel_main) };
 
     {
         let mut current_task = CURRENT_TASK.lock();
@@ -44,7 +44,7 @@ pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
         *current_task = Some(main_task);
     }
 
-    let stack_top: usize = unsafe { main_task.0.as_ref().rsp.unwrap().get() };
+    let stack_top: usize = unsafe { main_task.0.as_mut().rsp.take().unwrap().get() };
 
     // Discard the old stack, load the new one, and jump to
     // `kernel_main_init_fn`. This continues initialization once in a task
@@ -99,12 +99,14 @@ fn create_task(task_fn: extern "C" fn(usize) -> !, context: usize) -> TaskPtr {
 
     // We write three things to the stack, from top downward:
     // 1. the Task instance (which is never accessed by the task),
-    // 2. the task_fn, which is called by task_init_trampoline,
-    // 3. the context, which is passed by task_init_trampoline to task_fn, and
-    // 4. task_init_trampoline which is returned to.
+    // 2. a 0usize, a null return address at the bottom of the call stack,
+    // 3. the task_fn, which is called by task_init_trampoline,
+    // 4. the context, which is passed by task_init_trampoline to task_fn, and
+    // 5. task_init_trampoline which is returned to.
     let mut stack_writer = StackWriter::new(stack_top.as_mut_ptr());
     let task_ptr = unsafe { stack_writer.push(task) };
     unsafe {
+        stack_writer.push(0usize);
         stack_writer.push(task_fn);
         stack_writer.push(context);
         stack_writer.push(task_init_trampoline);

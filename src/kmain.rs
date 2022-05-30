@@ -38,7 +38,7 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     }
 }
 
-pub extern "C" fn kernel_main() -> ! {
+pub fn kernel_main() -> ! {
     info!("In kernel_main");
 
     unsafe {

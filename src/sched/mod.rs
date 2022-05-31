@@ -3,9 +3,10 @@ use crate::mm;
 use core::arch::asm;
 use core::mem;
 use core::num::NonZeroUsize;
-use core::ptr::NonNull;
+use core::ptr::{null_mut, NonNull};
 
 use spin;
+use x86_64::instructions::interrupts;
 
 pub struct Task {
     /// Owned frames on which the task's kernel stack resides. This task's
@@ -20,14 +21,14 @@ pub struct Task {
     next_in_list: Option<TaskPtr>,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct TaskPtr(NonNull<Task>);
 
 unsafe impl Send for TaskPtr {}
 
-pub struct Scheduler {
-    ready_list_head: TaskPtr,
+struct Scheduler {
+    ready_list_head: Option<TaskPtr>,
 }
 
 pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
@@ -44,6 +45,12 @@ pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
         *current_task = Some(main_task);
     }
 
+    {
+        *SCHEDULER.lock() = Some(Scheduler {
+            ready_list_head: None,
+        });
+    }
+
     let stack_top: usize = unsafe { main_task.0.as_mut().rsp.take().unwrap().get() };
 
     // Discard the old stack, load the new one, and jump to
@@ -57,6 +64,171 @@ pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
             "mov rsp, {stack_top}",
             "ret",
             stack_top = in(reg) stack_top,
+            options(noreturn),
+        )
+    }
+}
+
+pub fn spawn_kthread(task_fn: extern "C" fn(usize) -> !, context: usize) {
+    let task = create_task(task_fn, context);
+    unsafe {
+        add_task_to_ready_list(task);
+    }
+}
+
+pub fn quit_current() -> ! {
+    {
+        let mut cur_task_guard = CURRENT_TASK.lock();
+        let cur_task = &mut *cur_task_guard;
+
+        let old_task = cur_task.take().unwrap();
+
+        // We can't clean up the current task on its own stack frame. Dropping
+        // the `Task` object effectively invalidates our stack immediately,
+        // which is fundamentally unsafe.
+        //
+        // Instead, we defer cleanup to the next task by pushing our cleanup
+        // function to the top of its stack. This is OK because we know there is
+        // always a next task: worst case, it's the idle task.
+        let mut next_task = pop_next_ready_task();
+        let next_task_stack: usize = unsafe { next_task.0.as_mut().rsp.take().unwrap().get() };
+        let mut stack_writer = StackWriter::new(next_task_stack as *mut ());
+        let next_task_stack = unsafe {
+            stack_writer.push(clean_quit_task);
+            stack_writer.into_ptr() as usize
+        };
+
+        unsafe {
+            asm!(
+                "mov rsp, rdi",
+                "push {restore_task_state}",
+                "push {clean_quit_task}",
+                "ret",
+                restore_task_state = sym restore_task_state,
+                clean_quit_task = sym clean_quit_task,
+                in("rdi") next_task_stack,
+                in("rsi") old_task.0.as_ptr(),
+                options(noreturn),
+            )
+        }
+    }
+}
+
+unsafe extern "C" fn clean_quit_task(next_rsp: usize, task: TaskPtr) {
+    // Read the value out of the task's stack so we can drop it safely (it
+    // owns its own stack).
+    let task = unsafe { task.0.as_ptr().read() };
+    assert_eq!(task.next_in_list, None);
+    assert_eq!(task.prev_in_list, None);
+    assert_eq!(task.rsp, None);
+
+    unsafe {
+        asm!(
+            "ret",
+            in("rdi") next_rsp,
+            options(noreturn),
+        )
+    }
+}
+
+pub fn yield_current() {
+    let (next_task, prev_task) = {
+        let mut cur_task_guard = CURRENT_TASK.lock();
+        let cur_task = &mut *cur_task_guard;
+
+        let prev_task = cur_task.take().unwrap();
+        unsafe {
+            add_task_to_ready_list(prev_task);
+        }
+        let next_task = pop_next_ready_task();
+        *cur_task = Some(next_task);
+
+        (next_task, prev_task)
+    };
+
+    unsafe {
+        switch_to(next_task, Some(prev_task));
+    }
+}
+
+fn pop_next_ready_task() -> TaskPtr {
+    interrupts::without_interrupts(|| {
+        let mut scheduler_guard = SCHEDULER.lock();
+        let mut scheduler = scheduler_guard.as_mut().unwrap();
+        if let Some(mut list_head) = scheduler.ready_list_head {
+            let mut head_task = unsafe { list_head.0.as_mut() };
+            scheduler.ready_list_head = head_task.next_in_list;
+            head_task.next_in_list = None;
+            head_task.prev_in_list = None;
+            list_head
+        } else {
+            IDLE_TASK.lock().unwrap()
+        }
+    })
+}
+
+unsafe fn add_task_to_ready_list(mut task: TaskPtr) {
+    interrupts::without_interrupts(|| {
+        let mut scheduler_guard = SCHEDULER.lock();
+        let mut scheduler = scheduler_guard.as_mut().unwrap();
+        if let Some(mut list_tail) = scheduler.ready_list_head {
+            while let Some(next) = unsafe { list_tail.0.as_mut().next_in_list } {
+                list_tail = next;
+            }
+
+            unsafe {
+                task.0.as_mut().prev_in_list = Some(list_tail);
+                list_tail.0.as_mut().next_in_list = Some(task);
+            }
+        } else {
+            scheduler.ready_list_head = Some(task);
+        }
+    });
+}
+
+unsafe extern "C" fn switch_to(mut next_task: TaskPtr, prev_task: Option<TaskPtr>) {
+    let next_rsp = unsafe { next_task.0.as_mut().rsp.take().unwrap() };
+    let prev_rsp: *mut NonZeroUsize = if let Some(mut prev_task) = prev_task {
+        unsafe { &mut prev_task.0.as_mut().rsp as *mut Option<NonZeroUsize> as *mut NonZeroUsize }
+    } else {
+        null_mut()
+    };
+    unsafe {
+        asm!(
+            "pushfq",
+            "push rbp",
+            "push rbx",
+            "push r12",
+            "push r13",
+            "push r14",
+            "push r15",
+
+            "test rax, rax",
+            "jz 2",
+            "mov [rax], rsp",
+            "2:",
+            "jmp [rip+{restore_task_state}]",
+
+            restore_task_state = sym restore_task_state,
+            in("rax") prev_rsp,
+            in("rdi") next_rsp.get(),
+            clobber_abi("C"),
+        )
+    }
+}
+
+#[naked]
+unsafe extern "C" fn restore_task_state(next_rsp: usize) {
+    unsafe {
+        asm!(
+            "mov rsp, rdi",
+            "pop r15",
+            "pop r14",
+            "pop r13",
+            "pop r12",
+            "pop rbx",
+            "pop rbp",
+            "popfq",
             options(noreturn),
         )
     }
@@ -197,7 +369,7 @@ static CURRENT_TASK: spin::Mutex<Option<TaskPtr>> = spin::Mutex::new(None);
 /// The "idle task" which runs when no other task is ready.
 static IDLE_TASK: spin::Mutex<Option<TaskPtr>> = spin::Mutex::new(None);
 
-// static SCHEDULER: spin::Mutex<Option<Scheduler>> = spin::Mutex::new(None);
+static SCHEDULER: spin::Mutex<Option<Scheduler>> = spin::Mutex::new(None);
 
 pub const STACK_FRAMES_ORDER: usize = 2;
 pub const STACK_FRAMES: usize = 2 << STACK_FRAMES_ORDER;

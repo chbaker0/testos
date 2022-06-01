@@ -146,6 +146,10 @@ pub fn yield_current() {
         (next_task, prev_task)
     };
 
+    if next_task == prev_task {
+        return;
+    }
+
     unsafe {
         switch_to(next_task, Some(prev_task));
     }
@@ -204,7 +208,7 @@ unsafe extern "C" fn switch_to(mut next_task: TaskPtr, prev_task: Option<TaskPtr
             "push r15",
 
             "test rax, rax",
-            "jz 2",
+            "jz 2f",
             "mov [rax], rsp",
             "2:",
             "jmp [rip+{restore_task_state}]",

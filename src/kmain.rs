@@ -41,6 +41,9 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
 pub fn kernel_main() -> ! {
     info!("In kernel_main");
 
+    // This should do nothing.
+    sched::yield_current();
+
     unsafe {
         pic::init();
         interrupts::enable();
@@ -49,7 +52,21 @@ pub fn kernel_main() -> ! {
 
     pic::install_irq_handler(1, Some(keyboard_handler));
 
+    sched::spawn_kthread(test_thread, 0);
+    info!("kernel_main yield");
+    sched::yield_current();
+    info!("kernel_main yield");
+    sched::yield_current();
+    info!("kernel_main after yield");
+
     halt_loop();
+}
+
+pub extern "C" fn test_thread(_context: usize) -> ! {
+    info!("Test thread before yield");
+    sched::yield_current();
+    info!("Test thread after yield");
+    sched::quit_current();
 }
 
 fn keyboard_handler(_: InterruptStackFrame) {

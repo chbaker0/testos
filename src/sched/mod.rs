@@ -94,45 +94,35 @@ pub fn quit_current() -> ! {
         let next_task_stack: usize = unsafe { next_task.0.as_mut().rsp.take().unwrap().get() };
         let mut stack_writer = StackWriter::new(next_task_stack as *mut ());
         let next_task_stack = unsafe {
-            stack_writer.push(clean_quit_task);
+            stack_writer.push(&clean_quit_task);
             stack_writer.into_ptr() as usize
         };
 
         unsafe {
             asm!(
-                "mov rsp, rdi",
-                "push {restore_task_state}",
+                "mov rsp, rax",
                 "push {clean_quit_task}",
                 "ret",
-                restore_task_state = sym restore_task_state,
                 clean_quit_task = sym clean_quit_task,
-                in("rdi") next_task_stack,
-                in("rsi") old_task.0.as_ptr(),
+                in("rax") next_task_stack,
+                in("rdi") old_task.0.as_ptr(),
                 options(noreturn),
             )
         }
     }
 }
 
-unsafe extern "C" fn clean_quit_task(next_rsp: usize, task: TaskPtr) {
+unsafe extern "C" fn clean_quit_task(task: *const Task) {
     // Read the value out of the task's stack so we can drop it safely (it
     // owns its own stack).
-    let task = unsafe { task.0.as_ptr().read() };
+    let task = unsafe { task.read() };
     assert_eq!(task.next_in_list, None);
     assert_eq!(task.prev_in_list, None);
     assert_eq!(task.rsp, None);
-
-    unsafe {
-        asm!(
-            "ret",
-            in("rdi") next_rsp,
-            options(noreturn),
-        )
-    }
 }
 
 pub fn yield_current() {
-    let (next_task, prev_task) = {
+    let (mut next_task, mut prev_task) = {
         let mut cur_task_guard = CURRENT_TASK.lock();
         let cur_task = &mut *cur_task_guard;
 
@@ -150,8 +140,12 @@ pub fn yield_current() {
         return;
     }
 
+    let next_rsp: usize = unsafe { next_task.0.as_mut().rsp.take().unwrap().get() };
+    let prev_rsp: *mut usize =
+        unsafe { &mut prev_task.0.as_mut().rsp as *mut Option<NonZeroUsize> as *mut usize };
+
     unsafe {
-        switch_to(next_task, Some(prev_task));
+        switch_to(next_rsp, prev_rsp, restore_task_state);
     }
 }
 
@@ -190,13 +184,12 @@ unsafe fn add_task_to_ready_list(mut task: TaskPtr) {
     });
 }
 
-unsafe extern "C" fn switch_to(mut next_task: TaskPtr, prev_task: Option<TaskPtr>) {
-    let next_rsp = unsafe { next_task.0.as_mut().rsp.take().unwrap() };
-    let prev_rsp: *mut NonZeroUsize = if let Some(mut prev_task) = prev_task {
-        unsafe { &mut prev_task.0.as_mut().rsp as *mut Option<NonZeroUsize> as *mut NonZeroUsize }
-    } else {
-        null_mut()
-    };
+#[naked]
+unsafe extern "C" fn switch_to(
+    next_rsp: usize,                    /* rdi */
+    prev_rsp: *mut usize,               /* rsi */
+    restore_fn: unsafe extern "C" fn(), /* rdx */
+) {
     unsafe {
         asm!(
             "pushfq",
@@ -206,26 +199,22 @@ unsafe extern "C" fn switch_to(mut next_task: TaskPtr, prev_task: Option<TaskPtr
             "push r13",
             "push r14",
             "push r15",
-
+            "push rdx",
             "test rax, rax",
             "jz 2f",
-            "mov [rax], rsp",
+            "mov [rsi], rsp",
             "2:",
-            "jmp [rip+{restore_task_state}]",
-
-            restore_task_state = sym restore_task_state,
-            in("rax") prev_rsp,
-            in("rdi") next_rsp.get(),
-            clobber_abi("C"),
+            "mov rsp, rdi",
+            "ret",
+            options(noreturn),
         )
     }
 }
 
 #[naked]
-unsafe extern "C" fn restore_task_state(next_rsp: usize) {
+unsafe extern "C" fn restore_task_state() {
     unsafe {
         asm!(
-            "mov rsp, rdi",
             "pop r15",
             "pop r14",
             "pop r13",
@@ -233,6 +222,7 @@ unsafe extern "C" fn restore_task_state(next_rsp: usize) {
             "pop rbx",
             "pop rbp",
             "popfq",
+            "ret",
             options(noreturn),
         )
     }
@@ -285,7 +275,7 @@ fn create_task(task_fn: extern "C" fn(usize) -> !, context: usize) -> TaskPtr {
         stack_writer.push(0usize);
         stack_writer.push(task_fn);
         stack_writer.push(context);
-        stack_writer.push(task_init_trampoline);
+        stack_writer.push(task_init_trampoline as unsafe extern "C" fn() -> !);
 
         (*task_ptr).rsp = NonZeroUsize::new(stack_writer.into_ptr() as usize);
     }
@@ -349,6 +339,7 @@ impl StackWriter {
     ///   alignment and the sizes of values pushed before.
     unsafe fn push<T>(&mut self, val: T) -> *mut T {
         unsafe {
+            assert_ne!(mem::size_of_val(&val), 0);
             // Get the stack pointer and offset it down by one T. This ignores
             // alignment requirements for T.
             let val_ptr = self.ptr.cast::<T>().sub(1);

@@ -149,7 +149,8 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    panic!("page fault 14 {:?} {:?}", error_code, stack_frame);
+    let cr2 = x86_64::registers::control::Cr2::read_raw();
+    panic!("page fault 14 {:?} {:X} {:?}", error_code, cr2, stack_frame);
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {

@@ -77,7 +77,7 @@ pub fn spawn_kthread(task_fn: extern "C" fn(usize) -> !, context: usize) {
 }
 
 pub fn quit_current() -> ! {
-    {
+    let (next_task_stack, old_task): (usize, *const Task) = {
         let mut cur_task_guard = CURRENT_TASK.lock();
         let cur_task = &mut *cur_task_guard;
 
@@ -98,17 +98,17 @@ pub fn quit_current() -> ! {
             stack_writer.into_ptr() as usize
         };
 
-        unsafe {
-            asm!(
-                "mov rsp, rax",
-                "push {clean_quit_task}",
-                "ret",
-                clean_quit_task = sym clean_quit_task,
-                in("rax") next_task_stack,
-                in("rdi") old_task.0.as_ptr(),
-                options(noreturn),
-            )
-        }
+        (next_task_stack, old_task.0.as_ptr())
+    };
+
+    unsafe {
+        asm!(
+            "mov rsp, rax",
+            "ret",
+            in("rax") next_task_stack,
+            in("rdi") old_task,
+            options(noreturn),
+        )
     }
 }
 

@@ -106,6 +106,10 @@ impl VgaLog {
             writer: Mutex::new(writer),
         }
     }
+
+    pub fn is_locked(&self) -> bool {
+        self.writer.is_locked()
+    }
 }
 
 impl Log for VgaLog {

@@ -3,7 +3,7 @@ use super::*;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
-use log::info;
+use log::{error, info};
 use multiboot2 as mb2;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
@@ -105,8 +105,15 @@ fn init_logger() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
-    let _ = write!(&mut writer, "{}", info);
+    // It is unlikely that we panicked while our LOGGER instance was locked, and
+    // if we were, we'll likely triple fault anyway. Try to use the existing
+    // LOGGER, and otherwise try to use a new VgaWriter.
+    if !LOGGER.is_locked() {
+        error!("{info}");
+    } else {
+        let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
+        let _ = write!(&mut writer, "{info}");
+    }
     interrupts::disable();
     halt_loop();
 }

@@ -3,9 +3,8 @@ use crate::mm;
 use core::arch::asm;
 use core::mem;
 use core::num::NonZeroUsize;
-use core::ptr::{null_mut, NonNull};
+use core::ptr::NonNull;
 
-use spin;
 use x86_64::instructions::interrupts;
 
 pub struct Task {
@@ -236,14 +235,15 @@ unsafe extern "C" fn restore_task_state() {
 /// `T` must be a primitive type (such as a *const, *mut, or fn pointer). It
 /// must have no alignment constraint stronger than `usize`.
 unsafe fn create_task_typed<T>(task_fn: extern "C" fn(T) -> !, context: T) -> TaskPtr {
+    assert_eq!(mem::size_of_val(&context), mem::size_of::<usize>());
     // SAFETY: an extern "C" fn on x86-64 expects a single 8-byte primitive
     // argument to be passed by register. This is safe if `T` meets the
     // requirements imposed on the caller.
     unsafe {
         let task_fn = mem::transmute::<extern "C" fn(T) -> !, extern "C" fn(usize) -> !>(task_fn);
-        let context = mem::transmute_copy::<T, usize>(&context);
+        let context_int = mem::transmute_copy::<T, usize>(&context);
         mem::forget(context);
-        create_task(task_fn, context)
+        create_task(task_fn, context_int)
     }
 }
 

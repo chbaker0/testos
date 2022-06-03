@@ -94,7 +94,7 @@ pub fn quit_current() -> ! {
         let next_task_stack: usize = unsafe { next_task.0.as_mut().rsp.take().unwrap().get() };
         let mut stack_writer = StackWriter::new(next_task_stack as *mut ());
         let next_task_stack = unsafe {
-            stack_writer.push(&clean_quit_task);
+            stack_writer.push(clean_quit_task as unsafe extern "C" fn(*const Task));
             stack_writer.into_ptr() as usize
         };
 

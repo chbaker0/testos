@@ -3,7 +3,7 @@ use super::*;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
-use log::info;
+use log::{error, info};
 use multiboot2 as mb2;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
@@ -38,8 +38,11 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     }
 }
 
-pub extern "C" fn kernel_main() -> ! {
+pub fn kernel_main() -> ! {
     info!("In kernel_main");
+
+    // This should do nothing.
+    sched::yield_current();
 
     unsafe {
         pic::init();
@@ -49,17 +52,25 @@ pub extern "C" fn kernel_main() -> ! {
 
     pic::install_irq_handler(1, Some(keyboard_handler));
 
+    sched::spawn_kthread(test_thread, 0);
+    info!("kernel_main yield");
+    sched::yield_current();
+    info!("kernel_main yield");
+    sched::yield_current();
+    info!("kernel_main after yield");
+
     halt_loop();
+}
+
+pub extern "C" fn test_thread(_context: usize) -> ! {
+    info!("Test thread before yield");
+    sched::yield_current();
+    info!("Test thread after yield");
+    sched::quit_current();
 }
 
 fn keyboard_handler(_: InterruptStackFrame) {
     panic!("keyboard interrupt received");
-}
-
-fn halt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
 }
 
 extern "C" {
@@ -94,8 +105,15 @@ fn init_logger() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
-    let _ = write!(&mut writer, "{}", info);
+    // It is unlikely that we panicked while our LOGGER instance was locked, and
+    // if we were, we'll likely triple fault anyway. Try to use the existing
+    // LOGGER, and otherwise try to use a new VgaWriter.
+    if !LOGGER.is_locked() {
+        error!("{info}");
+    } else {
+        let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
+        let _ = write!(&mut writer, "{info}");
+    }
     interrupts::disable();
     halt_loop();
 }

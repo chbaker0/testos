@@ -192,8 +192,9 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
     }
 
     fn deallocate_range(&mut self, range: FrameRange) {
-        assert_eq!(range.count(), 1);
-        self.deallocate(range.first());
+        for frame in range.iter() {
+            self.deallocate(frame);
+        }
     }
 
     fn reserve(&mut self, frame: Frame) -> Result<(), FrameReserveError> {

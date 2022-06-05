@@ -294,6 +294,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "init"
+version = "0.1.0"
+
+[[package]]
 name = "intrusive-collections"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

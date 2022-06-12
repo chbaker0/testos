@@ -14,6 +14,7 @@ pub fn generate_mb2_header() -> Vec<u8> {
         HeaderTagFlag::Required,
         ConsoleHeaderTagFlags::ConsoleRequired,
     ));
+    builder = builder.module_align_tag(ModuleAlignHeaderTag::new(HeaderTagFlag::Required));
 
     let mut mbi_builder = InformationRequestHeaderTagBuilder::new(HeaderTagFlag::Required);
     mbi_builder = mbi_builder.add_irs(&[MbiTagType::Mmap, MbiTagType::AcpiV2, MbiTagType::End]);

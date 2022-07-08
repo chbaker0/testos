@@ -41,7 +41,7 @@ static KERNEL_PAGE_TABLE: spin::Mutex<paging::PageTable> =
 
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
-pub fn init(boot_info: &mb2::BootInformation) {
+pub fn init(boot_info: &mb2::BootInformation, reserved: impl Iterator<Item = PhysExtent>) {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
@@ -62,7 +62,7 @@ pub fn init(boot_info: &mb2::BootInformation) {
 
     // Mark all reserved areas. Important so we don't hand out memory containing
     // kernel code or data structures.
-    for reserved_extent in [
+    for reserved_extent in reserved.chain([
         // Exclude the kernel image itself.
         get_kernel_phys_extent(),
         // Exclude the boot_info structure.
@@ -72,7 +72,7 @@ pub fn init(boot_info: &mb2::BootInformation) {
         ),
         // Exclude the first MB.
         PhysExtent::from_raw(0, 1024 * 1024),
-    ] {
+    ]) {
         for frame in FrameRange::containing_extent(reserved_extent).iter() {
             // Ignore if the frame isn't available. TODO: investigate why
             // unwrapping fails.
@@ -268,6 +268,15 @@ unsafe fn install_page_table(root_table: &mut paging::PageTable) {
 pub fn phys_to_virt(phys: PhysAddress) -> VirtAddress {
     assert!(phys < PhysAddress::from_zero(MAX_MEMORY));
     PHYSICAL_MEMORY_MAP_OFFSET + (phys - PhysAddress::zero())
+}
+
+/// Get a kernel space virtual extent corresponding to a physical memory
+/// extent.
+///
+/// The same safety considerations as for `phys_to_virt` apply.
+#[inline]
+pub fn phys_extent_to_virt(phys: PhysExtent) -> VirtExtent {
+    VirtExtent::new(phys_to_virt(phys.address()), phys.length())
 }
 
 /// All physical memory is linearly mapped starting here. The address is the

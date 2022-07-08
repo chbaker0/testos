@@ -1,3 +1,5 @@
+use crate::mm::phys_extent_to_virt;
+
 use super::*;
 
 use core::fmt::Write;
@@ -31,8 +33,17 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     idt::init();
     info!("Set up IDT");
 
-    mm::init(&mbinfo);
+    let init_module = mbinfo.module_tags().next().unwrap();
+    let init_extent = mm::PhysExtent::from_raw_range_exclusive(
+        init_module.start_address().into(),
+        init_module.end_address().into(),
+    );
+
+    mm::init(&mbinfo, core::iter::once(init_extent));
     info!("Initialized frame allocator");
+
+    let init_extent = phys_extent_to_virt(init_extent);
+    let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
 
     unsafe {
         sched::init_kernel_main_thread(kernel_main);

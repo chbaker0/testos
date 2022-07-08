@@ -359,6 +359,12 @@ impl<Type: AddressType> Extent<Type> {
     }
 }
 
+impl Extent<VirtAddressType> {
+    pub fn as_slice<T>(self) -> *const [T] {
+        core::ptr::slice_from_raw_parts(self.address().as_ptr(), self.length().as_raw() as usize)
+    }
+}
+
 /// Given power-of-two `alignment`, returns the largest value below `x` aligned
 /// to `alignment`
 const fn align_u64_down(x: u64, alignment: u64) -> u64 {

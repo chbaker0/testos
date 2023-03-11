@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 
-use multiboot2_header::*;
+use multiboot2_header::{builder::*, *};
 
 pub fn generate_mb2_header() -> Vec<u8> {
     let mut builder = Multiboot2HeaderBuilder::new(HeaderTagISA::I386);

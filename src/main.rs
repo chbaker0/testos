@@ -1,6 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![feature(abi_x86_interrupt)]
-#![feature(asm_sym)]
 #![feature(naked_functions)]
 #![no_std]
 #![no_main]

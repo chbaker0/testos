@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 itertools = { version = "0.10.5", default-features = false }
 log = "0.4.17"
+memoffset = "0.8.0"
 spin = "0.9.5"
 static_assertions = "1.1.0"
 
@@ -20,5 +21,8 @@ default-features = false
 features = ["nightly"]
 
 [dev-dependencies]
+aligned = "0.4.1"
+env_logger = "*"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
+test-log = "0.2.11"

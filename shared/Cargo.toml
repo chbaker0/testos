@@ -4,10 +4,16 @@ version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
 edition = "2021"
 
+[features]
+default = ["alloc"]
+alloc = []
+
 [dependencies]
 itertools = { version = "0.10.5", default-features = false }
 log = "0.4.17"
 memoffset = "0.8.0"
+num-traits = "0.2"
+num-derive = "0.3"
 spin = "0.9.5"
 static_assertions = "1.1.0"
 

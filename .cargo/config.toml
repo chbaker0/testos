@@ -1,3 +1,8 @@
+[env]
+# Ideally we wouldn't disable stacked borrow checking, but unfortunately some
+# intrusive collection code isn't compatible with the rules.
+MIRIFLAGS = "-Zmiri-strict-provenance -Zmiri-disable-stacked-borrows"
+
 [target.i686-unknown-none]
 rustflags = ["-C", "link-arg=-Tloader/src/linker.ld"]
 

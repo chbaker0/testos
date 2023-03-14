@@ -20,7 +20,7 @@ lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
 log = "0.4.14"
 multiboot2 = "0.14.1"
 once_cell = { version = "1.17.1", default-features = false }
-shared = { path = "shared" }
+shared = { path = "shared", default-features = false }
 spin = "0.9.5"
 static_assertions = "1.1.0"
 

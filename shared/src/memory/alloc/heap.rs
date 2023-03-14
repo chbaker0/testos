@@ -1,15 +1,20 @@
 //! A simple heap allocator for arbitrary-sized allocations.
 
-use core::char::MAX;
+use core::alloc::{AllocError, Allocator, GlobalAlloc, Layout};
 use core::mem::MaybeUninit;
 use core::ptr::{addr_of, NonNull};
 
-use intrusive_collections::{intrusive_adapter, UnsafeRef};
+use intrusive_collections::UnsafeRef;
 use intrusive_collections::{singly_linked_list as sll, Adapter};
-use log::info;
+use num_traits::{FromPrimitive, ToPrimitive};
+use spin::Mutex;
 use static_assertions::const_assert;
 
 /// Provides backing memory to `Heap`. `CHUNK_SIZE` must be a power of 2.
+///
+/// # Safety
+///
+/// Follow safety comments on methods.
 pub unsafe trait ChunkProvider<
     const CHUNK_SIZE: usize = { crate::memory::page::PAGE_SIZE.as_raw() as usize },
 >
@@ -36,6 +41,15 @@ pub struct Heap<
 struct BlockAdapter {
     link_ops: sll::AtomicLinkOps,
     pointer_ops: intrusive_collections::DefaultPointerOps<UnsafeRef<FreeBlock>>,
+}
+
+impl BlockAdapter {
+    const fn new() -> Self {
+        BlockAdapter {
+            link_ops: sll::AtomicLinkOps,
+            pointer_ops: intrusive_collections::DefaultPointerOps::new(),
+        }
+    }
 }
 
 unsafe impl Adapter for BlockAdapter {
@@ -80,22 +94,79 @@ unsafe impl Adapter for BlockAdapter {
     }
 }
 
-// intrusive_adapter!(BlockAdapter = UnsafeRef<FreeBlock>: FreeBlock { header: FreeBlockData { link: sll::AtomicLink }});
-
 impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Heap<Provider, CHUNK_SIZE> {
-    pub fn new(provider: Provider) -> Self {
+    pub const fn new(provider: Provider) -> Self {
         // Ideally this would be a static assertion like in C++, but I can't
         // figure out how. This will almost definitely be optimized out anyway.
         assert!(CHUNK_SIZE >= *BLOCK_SIZES.last().unwrap());
         assert!(CHUNK_SIZE.is_power_of_two());
         Heap {
-            free_lists: core::array::from_fn(|_| {
-                sll::SinglyLinkedList::new(BlockAdapter::default())
-            }),
+            free_lists: [
+                sll::SinglyLinkedList::new(BlockAdapter::new()),
+                sll::SinglyLinkedList::new(BlockAdapter::new()),
+                sll::SinglyLinkedList::new(BlockAdapter::new()),
+                sll::SinglyLinkedList::new(BlockAdapter::new()),
+                sll::SinglyLinkedList::new(BlockAdapter::new()),
+            ],
             provider,
         }
     }
 
+    fn allocate(&mut self, layout: Layout) -> *mut [u8] {
+        let key = match self.key_for_size_align(layout.size(), layout.align()) {
+            Some(key) => key,
+            None => {
+                let chunks = layout.size().div_ceil(CHUNK_SIZE);
+                let ptr: *mut [MaybeUninit<u8>] = self.provider.allocate(chunks);
+                return ptr as *mut [u8];
+            }
+        };
+
+        self.allocate_small(key, layout)
+    }
+
+    fn allocate_small(&mut self, key: BlockSizeKey, layout: Layout) -> *mut [u8] {
+        let first_fit: &mut sll::SinglyLinkedList<_> = match self.free_lists
+            [key.to_usize().unwrap()..]
+            .iter_mut()
+            .find(|l| !l.is_empty())
+        {
+            Some(l) => l,
+            None => {
+                self.fetch_chunk();
+                return self.allocate_small(key, layout);
+            }
+        };
+
+        let block_ptr = UnsafeRef::into_raw(first_fit.pop_front().unwrap());
+        assert!(block_ptr.is_aligned_to(layout.align()));
+        let block = unsafe { &mut *block_ptr };
+        assert!(block.header.size.size() >= layout.size());
+
+        // The data in `block` does not need to be dropped. It was already
+        // unlinked from the list. It can be returned directly as a pointer,
+        // taking into account the size.
+        core::ptr::slice_from_raw_parts_mut(block_ptr as *mut u8, layout.size())
+    }
+
+    /// Get the smallest `BlockSizeKey` to fit `size`, or `None` if no block
+    /// size is large enough.
+    fn key_for_size_align(&mut self, size: usize, align: usize) -> Option<BlockSizeKey> {
+        let size = core::cmp::max(size, align);
+        let key_ndx = match BLOCK_SIZES.binary_search(&size) {
+            Ok(ndx) => ndx,
+            // Too big...need to allocate chunks directly for this.
+            Err(NUM_BLOCK_SIZES) => return None,
+            // `ndx` is the insertion point for `size` to keep it sorted. This
+            // means it points to the first element larger than `size`, which
+            // is what we want.
+            Err(ndx) => ndx,
+        };
+
+        Some(BlockSizeKey::from_usize(key_ndx).unwrap())
+    }
+
+    /// Get a new chunk from the system and link in its free blocks.
     fn fetch_chunk(&mut self) {
         let chunk_ptr = self.provider.allocate(1);
 
@@ -122,17 +193,55 @@ impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Heap<Provider
             free_list.push_front(unsafe { UnsafeRef::from_raw(block as *mut _) });
         }
     }
-
-    /// Number of maximally-sized blocks we can fit in a chunk. Hopefully it
-    /// divides evenly.
-    const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE / MAXIMAL_BLOCK_SIZE;
 }
 
 const NUM_BLOCK_SIZES: usize = 5;
 const BLOCK_SIZES: [usize; NUM_BLOCK_SIZES] = [16, 32, 64, 128, 256];
 const MAXIMAL_BLOCK_SIZE: usize = *BLOCK_SIZES.last().unwrap();
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CheckedHeap<Provider, const CHUNK_SIZE: usize>(pub Mutex<Heap<Provider, CHUNK_SIZE>>);
+
+impl<Provider, const CHUNK_SIZE: usize> CheckedHeap<Provider, CHUNK_SIZE> {
+    pub fn get(&self) -> spin::MutexGuard<Heap<Provider, CHUNK_SIZE>> {
+        self.0.try_lock().unwrap()
+    }
+}
+
+unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> GlobalAlloc
+    for CheckedHeap<Provider, CHUNK_SIZE>
+{
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.get().allocate(layout) as *mut u8
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        // Do nothing for now...
+    }
+}
+
+unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Allocator
+    for CheckedHeap<Provider, CHUNK_SIZE>
+{
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, core::alloc::AllocError> {
+        NonNull::new(self.0.try_lock().ok_or(AllocError)?.allocate(layout)).ok_or(AllocError)
+    }
+
+    unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {
+        // Do nothing for now...
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    num_derive::FromPrimitive,
+    num_derive::ToPrimitive,
+)]
 #[repr(usize)]
 enum BlockSizeKey {
     Size16 = 0,
@@ -168,10 +277,10 @@ impl FreeBlock {
     /// Construct `FreeBlock` from a reference to a block. This constructs the
     /// block header and returns a `&mut FreeBlock`, which is dynamically-sized.
     /// It also returns a reference to the remaining memory after the block.
-    fn build<'a>(
-        mem: &'a mut [MaybeUninit<u8>],
+    fn build(
+        mem: &mut [MaybeUninit<u8>],
         size: BlockSizeKey,
-    ) -> (&'a mut FreeBlock, &'a mut [MaybeUninit<u8>]) {
+    ) -> (&mut FreeBlock, &mut [MaybeUninit<u8>]) {
         let (block_mem, rest) = mem.split_at_mut(size.size());
         let block_len = block_mem.len();
 
@@ -231,15 +340,16 @@ mod test {
         assert_eq!(core::mem::size_of_val(&*block), 256);
     }
 
-    // Unfortunately, the intrusive list techniques violate stacked borrow
-    // rules.
-    #[cfg(not(miri))]
     #[test]
     fn heap() {
         let mut heap = Heap::new(TestProvider {
             allocations: Vec::new(),
         });
-        heap.fetch_chunk();
+
+        // Fetch a bunch of chunks and see what happens.
+        for i in 0..50 {
+            heap.fetch_chunk();
+        }
 
         let free_list = heap.free_lists.last_mut().unwrap();
         for block in free_list.iter() {
@@ -251,6 +361,28 @@ mod test {
             let block = unsafe { &*UnsafeRef::into_raw(block) };
             assert_eq!(core::mem::size_of_val(block), block.header.size.size());
             assert_eq!(BlockSizeKey::Size256, block.header.size);
+        }
+    }
+
+    // Using standard collections with `Heap` should be enough of a stress test.
+    #[test]
+    fn test_heap_with_collections() {
+        let provider = TestProvider {
+            allocations: Vec::new(),
+        };
+        let allocator = CheckedHeap(Mutex::new(Heap::new(provider)));
+        let mut vec = Vec::new_in(&allocator);
+        for i in 0..1000 {
+            vec.push(i);
+        }
+
+        let mut set = std::collections::HashSet::new();
+        for i in 0..1000 {
+            set.insert(i);
+        }
+
+        for i in (0..1000).rev() {
+            set.remove(&i);
         }
     }
 

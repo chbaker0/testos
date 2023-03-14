@@ -306,6 +306,33 @@ pub fn get_kernel_phys_extent() -> PhysExtent {
     }
 }
 
+/// Provides "chunks" or pages to the heap implementation. This is very basic:
+/// it simply grabs frames, calculates the offset into our mapping of phys mem,
+/// and hands that pointer down.
+///
+/// TODO: manage this better. I'd like to set aside a portion of the kernel's
+/// address space for the heap.
+struct HeapProvider;
+
+unsafe impl heap::ChunkProvider for HeapProvider {
+    fn allocate(&mut self, num_chunks: usize) -> *mut [core::mem::MaybeUninit<u8>] {
+        let mut guard = FRAME_ALLOCATOR.lock();
+        let frame_alloc = guard.get_mut().unwrap();
+
+        let num_frames = num_chunks.next_power_of_two();
+        let order = num_frames.trailing_zeros() as usize;
+        let frames = frame_alloc.allocate_range(order).unwrap();
+
+        let ptr: *mut core::mem::MaybeUninit<u8> =
+            phys_to_virt(frames.first().start()).as_mut_ptr();
+        core::ptr::slice_from_raw_parts_mut(ptr, num_chunks * PAGE_SIZE.as_raw() as usize)
+    }
+}
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: heap::CheckedHeap<HeapProvider> =
+    heap::CheckedHeap::new(heap::Heap::new(HeapProvider));
+
 mod internal {
     extern "C" {
         #![allow(improper_ctypes)]

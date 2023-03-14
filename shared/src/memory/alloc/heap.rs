@@ -10,15 +10,14 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use spin::Mutex;
 use static_assertions::const_assert;
 
+pub const DEFAULT_CHUNK_SIZE: usize = crate::memory::page::PAGE_SIZE.as_raw() as usize;
+
 /// Provides backing memory to `Heap`. `CHUNK_SIZE` must be a power of 2.
 ///
 /// # Safety
 ///
 /// Follow safety comments on methods.
-pub unsafe trait ChunkProvider<
-    const CHUNK_SIZE: usize = { crate::memory::page::PAGE_SIZE.as_raw() as usize },
->
-{
+pub unsafe trait ChunkProvider<const CHUNK_SIZE: usize = DEFAULT_CHUNK_SIZE> {
     /// Allocate `num_chunks` contiguous chunks.
     ///
     /// # Safety
@@ -29,10 +28,7 @@ pub unsafe trait ChunkProvider<
     fn allocate(&mut self, num_chunks: usize) -> *mut [MaybeUninit<u8>];
 }
 
-pub struct Heap<
-    Provider,
-    const CHUNK_SIZE: usize = { crate::memory::page::PAGE_SIZE.as_raw() as usize },
-> {
+pub struct Heap<Provider, const CHUNK_SIZE: usize = DEFAULT_CHUNK_SIZE> {
     free_lists: [sll::SinglyLinkedList<BlockAdapter>; NUM_BLOCK_SIZES],
     provider: Provider,
 }
@@ -199,9 +195,15 @@ const NUM_BLOCK_SIZES: usize = 5;
 const BLOCK_SIZES: [usize; NUM_BLOCK_SIZES] = [16, 32, 64, 128, 256];
 const MAXIMAL_BLOCK_SIZE: usize = *BLOCK_SIZES.last().unwrap();
 
-pub struct CheckedHeap<Provider, const CHUNK_SIZE: usize>(pub Mutex<Heap<Provider, CHUNK_SIZE>>);
+pub struct CheckedHeap<Provider, const CHUNK_SIZE: usize = DEFAULT_CHUNK_SIZE>(
+    pub Mutex<Heap<Provider, CHUNK_SIZE>>,
+);
 
 impl<Provider, const CHUNK_SIZE: usize> CheckedHeap<Provider, CHUNK_SIZE> {
+    pub const fn new(heap: Heap<Provider, CHUNK_SIZE>) -> Self {
+        CheckedHeap(Mutex::new(heap))
+    }
+
     pub fn get(&self) -> spin::MutexGuard<Heap<Provider, CHUNK_SIZE>> {
         self.0.try_lock().unwrap()
     }

@@ -11,10 +11,10 @@ rustflags = ["-C", "link-arg=-Tsrc/linker.ld"]
 runner = "cargo run --package mkimage --"
 
 [alias]
-kbuild = "build --target targets/x86_64-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
-kimage = "run --target targets/x86_64-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
-kcheck = "check --target targets/x86_64-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
-kfix = "fix --target targets/x86_64-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+kbuild = "build --target targets/x86_64-unknown-none.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+kimage = "run --target targets/x86_64-unknown-none.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+kcheck = "check --target targets/x86_64-unknown-none.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+kfix = "fix --target targets/x86_64-unknown-none.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 scheck = "check --package shared"
 kclippy = "clippy --target targets/x86_64-unknown-none.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 sclippy = "clippy --package shared"

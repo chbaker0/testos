@@ -2,6 +2,7 @@ use super::*;
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
+
 use lazy_static::lazy_static;
 use log::{error, info};
 use multiboot2 as mb2;
@@ -58,6 +59,15 @@ pub fn kernel_main() -> ! {
     info!("kernel_main yield");
     sched::yield_current();
     info!("kernel_main after yield");
+
+    // Try to use our really basic allocator.
+    let vec: alloc::vec::Vec<u32> = (0..100).into_iter().collect();
+    let mut string = alloc::string::String::new();
+    for i in vec.iter() {
+        write!(&mut string, "{i} ").unwrap();
+    }
+
+    info!("{string}");
 
     halt_loop();
 }

@@ -47,23 +47,23 @@ impl<Type: AddressType> Address<Type> {
         Some(Self(self.0.checked_add(length.0)?, PhantomData))
     }
 
-    pub fn is_aligned_to(self, alignment: u64) -> bool {
-        self == self.align_down(alignment)
+    pub const fn is_aligned_to(self, alignment: u64) -> bool {
+        self.0 == self.align_down(alignment).0
     }
 
-    pub fn is_aligned_to_length(self, alignment: Length) -> bool {
+    pub const fn is_aligned_to_length(self, alignment: Length) -> bool {
         self.is_aligned_to(alignment.0)
     }
 
     /// Returns the last address below `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_down(self, alignment: u64) -> Self {
+    pub const fn align_down(self, alignment: u64) -> Self {
         Self::from_raw(align_u64_down(self.as_raw(), alignment))
     }
 
     /// Returns the first address above `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_up(self, alignment: u64) -> Self {
+    pub const fn align_up(self, alignment: u64) -> Self {
         Self::from_raw(align_u64_up(self.as_raw(), alignment))
     }
 }
@@ -106,11 +106,11 @@ impl Address<VirtAddressType> {
         Self::from_raw(p as usize as u64)
     }
 
-    pub fn as_ptr<T>(self) -> *const T {
+    pub const fn as_ptr<T>(self) -> *const T {
         self.0 as usize as *const _
     }
 
-    pub fn as_mut_ptr<T>(self) -> *mut T {
+    pub const fn as_mut_ptr<T>(self) -> *mut T {
         self.0 as usize as *mut _
     }
 }
@@ -127,19 +127,19 @@ impl Length {
         self.0
     }
 
-    pub fn is_aligned_to(self, alignment: u64) -> bool {
-        self == self.align_down(alignment)
+    pub const fn is_aligned_to(self, alignment: u64) -> bool {
+        self.0 == self.align_down(alignment).0
     }
 
     /// Returns the last length lesser than `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_down(self, alignment: u64) -> Length {
+    pub const fn align_down(self, alignment: u64) -> Length {
         Length::from_raw(align_u64_down(self.as_raw(), alignment))
     }
 
     /// Returns the first length greater than `self` that is aligned to `alignment`,
     /// which must be a power of two.
-    pub fn align_up(self, alignment: u64) -> Length {
+    pub const fn align_up(self, alignment: u64) -> Length {
         Length::from_raw(align_u64_up(self.as_raw(), alignment))
     }
 }
@@ -199,11 +199,11 @@ pub type PhysExtent = Extent<PhysAddressType>;
 pub type VirtExtent = Extent<VirtAddressType>;
 
 impl<Type: AddressType> Extent<Type> {
-    pub fn new(address: Address<Type>, length: Length) -> Self {
+    pub const fn new(address: Address<Type>, length: Length) -> Self {
         Self::new_checked(address, length).unwrap()
     }
 
-    pub fn new_checked(address: Address<Type>, length: Length) -> Option<Self> {
+    pub const fn new_checked(address: Address<Type>, length: Length) -> Option<Self> {
         if length.as_raw() == 0 || length.as_raw() > u64::MAX - address.as_raw() {
             None
         } else {
@@ -211,11 +211,11 @@ impl<Type: AddressType> Extent<Type> {
         }
     }
 
-    pub fn from_raw(address: u64, length: u64) -> Self {
+    pub const fn from_raw(address: u64, length: u64) -> Self {
         Self::new(Address::<Type>::from_raw(address), Length::from_raw(length))
     }
 
-    pub fn from_raw_range_exclusive(begin_address: u64, end_address: u64) -> Self {
+    pub const fn from_raw_range_exclusive(begin_address: u64, end_address: u64) -> Self {
         Self::from_range_exclusive(
             Address::<Type>::from_raw(begin_address),
             Address::<Type>::from_raw(end_address),
@@ -236,11 +236,11 @@ impl<Type: AddressType> Extent<Type> {
         }
     }
 
-    pub fn address(self) -> Address<Type> {
+    pub const fn address(self) -> Address<Type> {
         self.address
     }
 
-    pub fn length(self) -> Length {
+    pub const fn length(self) -> Length {
         self.length
     }
 

@@ -290,6 +290,11 @@ impl<Type: AddressType> Extent<Type> {
         self.overlap(other).is_some()
     }
 
+    pub fn contains(self, other: Self) -> bool {
+        let Some(overlap) = self.overlap(other) else { return false };
+        overlap == other
+    }
+
     pub fn left_difference(self, other: Self) -> Option<Self> {
         if self.address >= other.address {
             return None;
@@ -579,5 +584,16 @@ mod tests {
             PhysExtent::from_raw(10, 10).right_difference(PhysExtent::from_raw(8, 14)),
             None
         );
+    }
+
+    #[test]
+    fn contains() {
+        assert!(!PhysExtent::from_raw(10, 10).contains(PhysExtent::from_raw(0, 10)));
+        assert!(PhysExtent::from_raw(10, 10).contains(PhysExtent::from_raw(10, 10)));
+        assert!(!PhysExtent::from_raw(10, 10).contains(PhysExtent::from_raw(20, 10)));
+
+        assert!(!PhysExtent::from_raw(10, 10).contains(PhysExtent::from_raw(5, 10)));
+
+        assert!(PhysExtent::from_raw(0, 10).contains(PhysExtent::from_raw(5, 4)));
     }
 }

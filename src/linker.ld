@@ -59,4 +59,11 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
     } :data
+
+    /DISCARD/ :
+    {
+        /* These are used for unwinding, which we don't support (yet?) */
+        *(.eh_frame)
+        *(.eh_frame_hdr)
+    }
 }

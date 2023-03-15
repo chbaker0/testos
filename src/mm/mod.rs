@@ -14,13 +14,27 @@ use log::info;
 use multiboot2 as mb2;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
-// The maximum amount of memory the physical memory allocator supports. Exactly
-// 128 GiB. TODO: remove this limit.
-const MAX_MEMORY_BYTES: usize = 137438953472;
-const MAX_MEMORY: Length = Length::from_raw(MAX_MEMORY_BYTES as u64);
+/// The map of virtual address space. Assigns different ranges to various
+/// purposes.
+pub struct VirtualMap;
 
-// The maximum number of frames the physical memory allocator supports. TODO: remove this limit.
-const MAX_MEMORY_FRAMES: usize = MAX_MEMORY_BYTES / page::PAGE_SIZE.as_raw() as usize;
+impl VirtualMap {
+    /// Range of all user virtual address space. This is the lower-half.
+    pub const fn user() -> VirtExtent {
+        VirtExtent::from_raw_range_exclusive(0x0000_0000_0000_0000, 0x0000_8000_0000_0000)
+    }
+
+    /// Mapping of all physical memory in kernel space. This is currently 2^40
+    /// bytes worth.
+    pub const fn phys_map() -> VirtExtent {
+        VirtExtent::from_raw_range_exclusive(0xffff_8000_0000_0000, 0xffff_80ff_ffff_ffff)
+    }
+
+    /// Kernel image's address. This is the last 2GiB of memory.
+    pub const fn kernel_image() -> VirtExtent {
+        VirtExtent::from_raw_range_exclusive(0xffff_ffff_8000_0000, 0xffff_ffff_ffff_ffff)
+    }
+}
 
 static FRAME_ALLOCATOR: spin::Mutex<once_cell::unsync::OnceCell<BitmapFrameAllocator>> =
     spin::Mutex::new(once_cell::unsync::OnceCell::new());
@@ -35,6 +49,13 @@ static FRAME_ALLOCATOR: spin::Mutex<once_cell::unsync::OnceCell<BitmapFrameAlloc
 // bitmap's storage.
 static FRAME_BITMAP: spin::Mutex<[u8; MAX_MEMORY_FRAMES / 8]> =
     spin::Mutex::new([0; MAX_MEMORY_FRAMES / 8]);
+
+// The maximum amount of memory the physical memory allocator supports. Exactly
+// 128 GiB. TODO: remove this limit.
+const MAX_MEMORY: Length = Length::from_raw(137438953472u64);
+
+// The maximum number of frames the physical memory allocator supports. TODO: remove this limit.
+const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.as_raw() as usize;
 
 static KERNEL_PAGE_TABLE: spin::Mutex<paging::PageTable> =
     spin::Mutex::new(paging::PageTable::zero());
@@ -194,11 +215,26 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         let section_flags = section.flags();
         let section_extent = VirtExtent::from_raw(section.start_address(), section.size());
 
-        // Ignore sections below our base address (e.g. bootstrap sections).
-        if section_extent.address() < get_kernel_virt_base() {
+        // Filter sections that don't occupy address space.
+        if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
+            info!("Not allocated...");
+            continue;
+        }
+
+        // Filter lower-half sections, used for bootstrap.
+        if section.name().starts_with(".bootstrap") {
             info!("Ignoring lower half section {}", section.name());
             continue;
         }
+
+        // Confirm the section is in the area we expect.
+        assert!(
+            VirtualMap::kernel_image().contains(section_extent),
+            "{}: {:x?} does not contain {:x?}",
+            section.name(),
+            VirtualMap::kernel_image(),
+            section_extent
+        );
 
         match section_type {
             mb2::ElfSectionType::ProgramSection | mb2::ElfSectionType::Uninitialized => {
@@ -208,10 +244,6 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         }
 
         let mut page_flags = PageTableFlags::PRESENT;
-        if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
-            info!("Not allocated...");
-            continue;
-        }
         if section_flags.contains(mb2::ElfSectionFlags::WRITABLE) {
             page_flags |= PageTableFlags::WRITABLE;
         }
@@ -267,7 +299,7 @@ unsafe fn install_page_table(root_table: &mut paging::PageTable) {
 #[inline]
 pub fn phys_to_virt(phys: PhysAddress) -> VirtAddress {
     assert!(phys < PhysAddress::from_zero(MAX_MEMORY));
-    PHYSICAL_MEMORY_MAP_OFFSET + (phys - PhysAddress::zero())
+    VirtualMap::phys_map().address() + (phys - PhysAddress::zero())
 }
 
 /// Get a kernel space virtual extent corresponding to a physical memory
@@ -278,10 +310,6 @@ pub fn phys_to_virt(phys: PhysAddress) -> VirtAddress {
 pub fn phys_extent_to_virt(phys: PhysExtent) -> VirtExtent {
     VirtExtent::new(phys_to_virt(phys.address()), phys.length())
 }
-
-/// All physical memory is linearly mapped starting here. The address is the
-/// start of the higher half.
-pub const PHYSICAL_MEMORY_MAP_OFFSET: VirtAddress = VirtAddress::from_raw(0xffff_8000_0000_0000);
 
 /// Given a pointer `p` in the kernel's address space, return the physical
 /// address referenced. `p` *must* point within the kernel's address space above

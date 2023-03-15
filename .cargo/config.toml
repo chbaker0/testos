@@ -4,7 +4,7 @@
 MIRIFLAGS = "-Zmiri-strict-provenance -Zmiri-disable-stacked-borrows"
 
 [target.x86_64-unknown-none]
-rustflags = ["-C", "link-arg=-Tsrc/linker.ld"]
+rustflags = ["-C", "link-arg=-Tsrc/linker.ld", "-C", "panic=abort"]
 runner = "cargo run --package mkimage --"
 
 [alias]

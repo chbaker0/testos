@@ -57,9 +57,6 @@ const MAX_MEMORY: Length = Length::from_raw(137438953472u64);
 // The maximum number of frames the physical memory allocator supports. TODO: remove this limit.
 const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.as_raw() as usize;
 
-static KERNEL_PAGE_TABLE: spin::Mutex<paging::PageTable> =
-    spin::Mutex::new(paging::PageTable::zero());
-
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
 pub fn init(boot_info: &mb2::BootInformation, reserved: impl Iterator<Item = PhysExtent>) {
@@ -174,7 +171,7 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         Some(VirtAddress::from_raw(phys.as_raw()))
     };
 
-    let mut root_table = KERNEL_PAGE_TABLE.lock();
+    let mut root_table = INIT_PAGE_TABLE.lock();
     // SAFETY:
     // * `root_table` is an empty page table, so all addresses are valid.
     // * `first_gb_translator` provides valid translations as long as the
@@ -265,6 +262,13 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         install_page_table(&mut root_table);
     }
 }
+
+/// Contains kernel mappings that are exist in all page tables.
+static PAGE_TABLE_TEMPLATE: spin::Mutex<paging::PageTable> =
+    spin::Mutex::new(paging::PageTable::zero());
+
+static INIT_PAGE_TABLE: spin::Mutex<paging::PageTable> =
+    spin::Mutex::new(paging::PageTable::zero());
 
 /// Install `root_table` as the active page table.
 ///

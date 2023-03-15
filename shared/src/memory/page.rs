@@ -3,6 +3,7 @@
 use super::addr::{Length, PhysAddress, PhysExtent, VirtAddress, VirtExtent};
 
 use core::iter::{self, Iterator};
+use core::num::NonZeroU64;
 
 pub const PAGE_SIZE: Length = Length::from_raw(4096);
 
@@ -112,19 +113,17 @@ impl Page {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrameRange {
     first: Frame,
-    count: u64,
+    count: NonZeroU64,
 }
 
 impl FrameRange {
     pub fn new(first: Frame, count: u64) -> Option<FrameRange> {
-        if count == 0 {
-            return None;
-        }
+        let count = NonZeroU64::new(count)?;
 
         // Check that `count` frames after and including `first` are
         // addressable. `first.next(count)` may not be addressable if the range
         // includes the last frame.
-        first.next(count - 1)?;
+        first.next(count.get() - 1)?;
 
         Some(FrameRange { first, count })
     }
@@ -159,17 +158,17 @@ impl FrameRange {
     }
 
     pub fn count(&self) -> u64 {
-        self.count
+        self.count.get()
     }
 
     // The last `Frame` within the range
     pub fn last(&self) -> Frame {
-        self.first.next(self.count - 1).unwrap()
+        self.first.next(self.count.get() - 1).unwrap()
     }
 
     // The first `Frame` after the range, or `None` if it ends at the last frame.
     pub fn end(&self) -> Option<Frame> {
-        self.first.next(self.count)
+        self.first.next(self.count.get())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Frame> {

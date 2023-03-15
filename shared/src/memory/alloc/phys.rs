@@ -61,6 +61,40 @@ pub unsafe trait FrameAllocator {
     fn unreserve(&mut self, frame: Frame);
 }
 
+/// Allocates successive frames from a given set. This can be "unwrapped" to get
+/// back the unallocated frames.
+///
+/// Useful for allocating initial memory before using a better allocator, or
+/// various other allocation patterns. Importantly, it's not possible to return
+/// frames allocated by this. It's best for allocations that will last until
+/// shutdown.
+///
+/// It does not implement `FrameAllocator` because of these restrictions.
+#[derive(Debug)]
+pub struct BumpFrameAllocator {
+    remain: Option<FrameRange>,
+}
+
+impl BumpFrameAllocator {
+    pub fn new(frames: FrameRange) -> Self {
+        BumpFrameAllocator {
+            remain: Some(frames),
+        }
+    }
+
+    pub fn allocate(&mut self) -> Option<Frame> {
+        let remain = self.remain?;
+        let frame = remain.first();
+        self.remain = FrameRange::new(frame.next(1)?, remain.count() - 1);
+        Some(frame)
+    }
+
+    /// Get the remaining frames.
+    pub fn unwrap(self) -> Option<FrameRange> {
+        self.remain
+    }
+}
+
 /// A very rudimentary allocator. Simply stores 1 bit per frame representing
 /// whether it's available. Allocations search this bitmap for a free frame.
 #[derive(Debug)]

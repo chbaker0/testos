@@ -3,9 +3,6 @@
 # intrusive collection code isn't compatible with the rules.
 MIRIFLAGS = "-Zmiri-strict-provenance -Zmiri-disable-stacked-borrows"
 
-[target.i686-unknown-none]
-rustflags = ["-C", "link-arg=-Tloader/src/linker.ld"]
-
 [target.x86_64-unknown-none]
 rustflags = ["-C", "link-arg=-Tsrc/linker.ld"]
 runner = "cargo run --package mkimage --"

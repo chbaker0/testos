@@ -10,6 +10,7 @@ use shared::memory::*;
 
 use paging::*;
 
+use arrayvec::ArrayVec;
 use log::info;
 use multiboot2 as mb2;
 use x86_64::registers::control::{Cr3, Cr3Flags};
@@ -59,7 +60,7 @@ const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.
 
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
-pub fn init(boot_info: &mb2::BootInformation, reserved: impl Iterator<Item = PhysExtent>) {
+pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<Item = PhysExtent>) {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
@@ -69,6 +70,45 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Iterator<Item = Phy
     info!("Kernel extent: {kernel_extent:X?}");
 
     let memory_map = translate_memory_map(boot_info);
+
+    // Rewrite the memory map to exclude kernel areas.
+    let memory_map = Map::from_entries(mark_kernel_areas(
+        mark_kernel_areas(memory_map.entries().iter().copied(), reserved.clone()),
+        core::iter::once(kernel_extent),
+    ));
+
+    for e in memory_map.entries().iter() {
+        info!("{e:?}");
+    }
+
+    // // The memory map includes area we're already using (like the kernel image)
+    // // and stuff we don't want to overwrite (the init image, 1st MB of memory,
+    // // ...). Collect the list of extents that we can use.
+    // let avail_frames: ArrayVec<PhysExtent, 128> = memory_map
+    //     .iter_type(MemoryType::Available)
+    //     .map(|range| {
+    //         let frames = FrameRange::containing_extent(
+    //             range.extent.shrink_to_alignment(PAGE_SIZE.as_raw())?,
+    //         );
+    //     })
+    //     .collect();
+
+    // // Set up a bump allocator for bootstrapping allocations that will live
+    // // forever, especially the kernel page tables.
+    // //
+    // // Each full leaf page table maps 512 pages. As a generous overestimate, we
+    // // can reserve 1 frame for every 256 frames we're mapping. Most of what we
+    // // map here will be the entirety of physical memory, so use that for the
+    // // estimate.
+    // let total_phys_mem = memory_map
+    //     .entries()
+    //     .iter()
+    //     .map(|e| e.extent.length().as_raw())
+    //     .sum();
+    // let init_alloc_frames = total_phys_mem / PAGE_SIZE.as_raw();
+
+    // let mut init_allocator = BumpFrameAllocator::new(frames);
+
     let mut frame_bitmap = FRAME_BITMAP.lock();
     fill_bitmap_from_map(&mut *frame_bitmap, &memory_map);
 
@@ -214,13 +254,11 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
 
         // Filter sections that don't occupy address space.
         if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
-            info!("Not allocated...");
             continue;
         }
 
         // Filter lower-half sections, used for bootstrap.
         if section.name().starts_with(".bootstrap") {
-            info!("Ignoring lower half section {}", section.name());
             continue;
         }
 
@@ -234,9 +272,7 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         );
 
         match section_type {
-            mb2::ElfSectionType::ProgramSection | mb2::ElfSectionType::Uninitialized => {
-                info!("Mapping {} at {:X?}", section.name(), section_extent);
-            }
+            mb2::ElfSectionType::ProgramSection | mb2::ElfSectionType::Uninitialized => (),
             _ => continue,
         }
 

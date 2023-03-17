@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::memory::addr::*;
 use crate::memory::page::*;
 
@@ -260,7 +262,7 @@ pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) 
     // The number of memory frames per byte of `bitmap`
     const FRAMES_PER_ENTRY: u64 = 8;
     // The number of memory bytes per byte of `bitmap`.
-    const BYTES_PER_ENTRY: u64 = PAGE_SIZE.as_raw() * FRAMES_PER_ENTRY;
+    const BYTES_PER_ENTRY: u64 = PAGE_SIZE.as_raw() * FRAMES_PER_ENTRY as u64;
 
     assert!(
         bitmap.len() as u64
@@ -280,68 +282,47 @@ pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) 
         *x = 0;
     }
 
-    for e in memory_map.entries() {
-        if e.mem_type != MemoryType::Available {
-            continue;
-        }
-
-        // Only mark the inner frame-aligned part as available.
-        let maybe_avail_extent = e.extent.shrink_to_alignment(PAGE_SIZE.as_raw());
-        if maybe_avail_extent.is_none() {
-            continue;
-        }
-
-        let avail_extent = maybe_avail_extent.unwrap();
-
+    for avail_frames in crate::memory::iter_map_frames(memory_map.iter_type(MemoryType::Available))
+    {
         // Ensure `bitmap` is large enough.
-        assert!(bitmap.len() as u64 >= avail_extent.end_address().as_raw() / BYTES_PER_ENTRY);
+        assert!(bitmap.len() as u64 >= avail_frames.count() / FRAMES_PER_ENTRY);
 
-        // Get the inner part that is aligned to byte boundaries in `bitmap`. We
-        // can fill this section of the bitmap more efficiently.
-        let maybe_aligned_extent = e.extent.shrink_to_alignment(BYTES_PER_ENTRY);
+        // For each FrameRange, we need to do at least one of the following, in
+        // order from lowest to highest byte in the bitmap:
+        // * set some bits at the end of a byte,
+        // * set all bits for some range of bytes,
+        // * set some bits at the beginning of a byte.
+        //
+        // Obviously, all bytes we touch will be contiguous for one FrameRange.
 
-        // For simplicity, skip entries that are too small to fill an entire
-        // byte of `bitmap`. TODO: remove this restriction.
-        if maybe_aligned_extent.is_none() {
-            continue;
-        }
+        let first = avail_frames.first().index();
+        let end = avail_frames.last().index() + 1;
 
-        let aligned_extent = maybe_aligned_extent.unwrap();
+        let first_aligned = first.next_multiple_of(FRAMES_PER_ENTRY);
+        let end_aligned = end / FRAMES_PER_ENTRY * FRAMES_PER_ENTRY;
 
-        if let Some(aligned_extent) = maybe_aligned_extent {
-            for x in (aligned_extent.address().as_raw()..aligned_extent.end_address().as_raw())
-                .step_by(BYTES_PER_ENTRY as usize)
-            {
-                let byte_offset = x / BYTES_PER_ENTRY;
-
-                // u8::MAX has all bits set.
-                bitmap[byte_offset as usize] = u8::MAX;
-            }
+        for i in (first_aligned..end_aligned).step_by(FRAMES_PER_ENTRY as usize) {
+            let byte_offset = i / FRAMES_PER_ENTRY;
+            bitmap[byte_offset as usize] = u8::MAX;
         }
 
         // Now fill `bitmap` for the leading and trailing ends.
 
-        if let Some(left_end) = avail_extent.left_difference(aligned_extent) {
-            // We should only have to touch one bitmap byte, and only the last n
-            // bits of it at that.
-            assert!(left_end.end_address().is_aligned_to(BYTES_PER_ENTRY));
-            assert!(left_end.length().as_raw() / PAGE_SIZE.as_raw() < FRAMES_PER_ENTRY);
-
-            let byte_offset = left_end.address().as_raw() / BYTES_PER_ENTRY;
-            let set_bits = left_end.length().as_raw() / PAGE_SIZE.as_raw();
-
-            bitmap[byte_offset as usize] |= set_most_significant_bits(set_bits as u8);
+        if first != first_aligned {
+            let first_byte = (first / FRAMES_PER_ENTRY) as usize;
+            assert_eq!(first_byte, (first_aligned / FRAMES_PER_ENTRY - 1) as usize);
+            bitmap[first_byte] |=
+                set_most_significant_bits((first_aligned - first).try_into().unwrap());
         }
 
-        if let Some(right_end) = avail_extent.right_difference(aligned_extent) {
-            // Like the above, but the first n bits.
-            assert!(right_end.address().is_aligned_to(BYTES_PER_ENTRY));
-            assert!(right_end.length().as_raw() / PAGE_SIZE.as_raw() < FRAMES_PER_ENTRY);
-
-            let byte_offset = right_end.address().as_raw() / BYTES_PER_ENTRY;
-            let set_bits = right_end.length().as_raw() / PAGE_SIZE.as_raw();
-
-            bitmap[byte_offset as usize] |= set_least_significant_bits(set_bits as u8);
+        if end != end_aligned {
+            let last_byte = (end / FRAMES_PER_ENTRY) as usize;
+            assert_eq!(
+                last_byte,
+                ((end_aligned - 1) / FRAMES_PER_ENTRY + 1) as usize
+            );
+            bitmap[last_byte] |=
+                set_least_significant_bits((end - end_aligned).try_into().unwrap());
         }
     }
 }
@@ -405,7 +386,6 @@ mod tests {
 
     use crate::memory;
 
-    use quickcheck_macros::quickcheck;
     use std::vec::Vec;
 
     #[test]
@@ -681,24 +661,28 @@ mod tests {
         assert_eq!(allocator.allocate().unwrap(), frame1);
     }
 
-    #[quickcheck]
-    fn bitmap_allocator_uses_all_available_memory(mut bitmap: Vec<u8>) {
-        let free_frame_count = bitmap
-            .iter()
-            .copied()
-            .map(u8::count_ones)
-            .fold(0, |acc, x| acc + x as u64);
+    use proptest::prelude::*;
 
-        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
-        let mut allocated_frames = std::collections::BTreeSet::new();
+    proptest! {
+        #[test]
+        fn bitmap_allocator_uses_all_available_memory(mut bitmap in any::<Vec<u8>>()) {
+            let free_frame_count = bitmap
+                .iter()
+                .copied()
+                .map(u8::count_ones)
+                .fold(0, |acc, x| acc + x as u64);
 
-        // Check that all available frames could be allocated and are unique.
-        for _i in 0..free_frame_count {
-            let frame = allocator.allocate().unwrap();
-            assert!(allocated_frames.insert(frame));
+            let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
+            let mut allocated_frames = std::collections::BTreeSet::new();
+
+            // Check that all available frames could be allocated and are unique.
+            for _i in 0..free_frame_count {
+                let frame = allocator.allocate().unwrap();
+                prop_assert!(allocated_frames.insert(frame));
+            }
+
+            // Check that the allocator fails when all memory is used.
+            prop_assert_eq!(allocator.allocate(), None);
         }
-
-        // Check that the allocator fails when all memory is used.
-        assert_eq!(allocator.allocate(), None);
     }
 }

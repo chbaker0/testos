@@ -596,4 +596,17 @@ mod tests {
 
         assert!(PhysExtent::from_raw(0, 10).contains(PhysExtent::from_raw(5, 4)));
     }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn overlap_is_commutative((a_first, a_last, b_first, b_last) in any::<(u64, u64, u64, u64)>()) {
+            prop_assume!(a_first <= a_last);
+            prop_assume!(b_first <= b_last);
+            let a = PhysExtent::from_range_inclusive(PhysAddress::from_raw(a_first), PhysAddress::from_raw(a_last));
+            let b = PhysExtent::from_range_inclusive(PhysAddress::from_raw(b_first), PhysAddress::from_raw(b_last));
+            prop_assert_eq!(a.overlap(b), b.overlap(a));
+        }
+    }
 }

@@ -24,6 +24,12 @@ impl Frame {
         Frame { start }
     }
 
+    /// Which number frame this is; in other words, the start address divided by
+    /// the page size.
+    pub fn index(self) -> u64 {
+        self.start.as_raw() / PAGE_SIZE.as_raw()
+    }
+
     /// Gets the `Frame` that contains `addr`.
     pub fn containing(addr: PhysAddress) -> Frame {
         Self::new(addr.align_down(PAGE_SIZE.as_raw()))

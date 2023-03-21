@@ -29,7 +29,10 @@ impl VirtualMap {
     /// Range of all user virtual address space. This is almost all of the
     /// lower-half.
     pub const fn user() -> VirtExtent {
-        VirtExtent::from_raw_range_exclusive(0x0000_0000_0000_0000, 0x0000_8000_0000_0000)
+        VirtExtent::from_raw_range_exclusive(
+            Self::first_mib().address().as_raw(),
+            0x0000_8000_0000_0000,
+        )
     }
 
     /// Mapping of all physical memory in kernel space. This is currently 2^40

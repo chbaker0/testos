@@ -72,7 +72,7 @@ pub fn kernel_main() -> ! {
     info!("kernel_main after yield");
 
     // Try to use our really basic allocator.
-    let vec: alloc::vec::Vec<u32> = (0..100).into_iter().collect();
+    let vec: alloc::vec::Vec<u32> = (0..100).collect();
     let mut string = alloc::string::String::new();
     for i in vec.iter() {
         write!(&mut string, "{i} ").unwrap();

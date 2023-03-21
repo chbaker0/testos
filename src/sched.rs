@@ -37,7 +37,7 @@ pub unsafe fn init_kernel_main_thread(kernel_main: fn() -> !) -> ! {
 
     {
         let mut current_task = CURRENT_TASK.lock();
-        if *current_task != None {
+        if current_task.is_some() {
             drop(current_task);
             panic!("current task existed while initializing tasks");
         }

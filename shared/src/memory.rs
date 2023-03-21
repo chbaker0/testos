@@ -172,13 +172,11 @@ impl core::fmt::Debug for Map {
 pub fn iter_map_frames<Iter: IntoIterator<Item = MapEntry>>(
     iter: Iter,
 ) -> impl Iterator<Item = FrameRange> {
-    iter.into_iter()
-        .map(|e| {
-            Some(FrameRange::containing_extent(
-                e.extent.shrink_to_alignment(PAGE_SIZE.as_raw())?,
-            ))
-        })
-        .flatten()
+    iter.into_iter().flat_map(|e| {
+        Some(FrameRange::containing_extent(
+            e.extent.shrink_to_alignment(PAGE_SIZE.as_raw())?,
+        ))
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

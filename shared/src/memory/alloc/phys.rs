@@ -131,13 +131,7 @@ impl<'a> BitmapFrameAllocator<'a> {
     // Finds the first byte of `bitmap` after `offset` with an available slot.
     #[allow(dead_code)]
     fn search_from_offset(&self, offset: usize) -> Option<usize> {
-        for i in offset..self.bitmap.len() {
-            if self.bitmap[i] > 0 {
-                return Some(i);
-            }
-        }
-
-        None
+        (offset..self.bitmap.len()).find(|&i| self.bitmap[i] > 0)
     }
 
     fn offsets_to_frame(byte_offset: usize, bit_offset: u32) -> Frame {
@@ -271,7 +265,7 @@ pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) 
     // The number of memory frames per byte of `bitmap`
     const FRAMES_PER_ENTRY: u64 = 8;
     // The number of memory bytes per byte of `bitmap`.
-    const BYTES_PER_ENTRY: u64 = PAGE_SIZE.as_raw() * FRAMES_PER_ENTRY as u64;
+    const BYTES_PER_ENTRY: u64 = PAGE_SIZE.as_raw() * FRAMES_PER_ENTRY;
 
     assert!(
         bitmap.len() as u64

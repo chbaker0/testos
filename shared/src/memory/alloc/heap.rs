@@ -336,7 +336,7 @@ mod test {
     fn block_build() {
         let mut mem_array = aligned::Aligned::<aligned::A64, _>([MaybeUninit::uninit(); PAGE_SIZE]);
         let mem = &mut *mem_array;
-        let (block, rest) = FreeBlock::build(mem, BlockSizeKey::Size256);
+        let (block, _rest) = FreeBlock::build(mem, BlockSizeKey::Size256);
 
         assert_eq!(block.header.size, BlockSizeKey::Size256);
         assert_eq!(core::mem::size_of_val(&*block), 256);
@@ -349,7 +349,7 @@ mod test {
         });
 
         // Fetch a bunch of chunks and see what happens.
-        for i in 0..50 {
+        for _i in 0..50 {
             heap.fetch_chunk();
         }
 

@@ -88,18 +88,6 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
         info!("{e:?}");
     }
 
-    // // The memory map includes area we're already using (like the kernel image)
-    // // and stuff we don't want to overwrite (the init image, 1st MB of memory,
-    // // ...). Collect the list of extents that we can use.
-    // let avail_frames: ArrayVec<PhysExtent, 128> = memory_map
-    //     .iter_type(MemoryType::Available)
-    //     .map(|range| {
-    //         let frames = FrameRange::containing_extent(
-    //             range.extent.shrink_to_alignment(PAGE_SIZE.as_raw())?,
-    //         );
-    //     })
-    //     .collect();
-
     // Set up a bump allocator for bootstrapping allocations that will live
     // forever, especially the kernel page tables.
     //

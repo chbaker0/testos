@@ -150,6 +150,8 @@ impl<T: Iterator<Item = MapEntry>, U: Iterator<Item = PhysExtent>> Iterator
             mem_type: MemoryType::KernelLoad,
         });
 
+        self.kernel_areas.put_back(kernel);
+
         Some(parts)
     }
 }
@@ -175,7 +177,7 @@ pub fn iter_map_frames<Iter: IntoIterator<Item = MapEntry>>(
         .flatten()
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(C)]
 pub struct MapEntry {
     pub extent: PhysExtent,
@@ -198,4 +200,136 @@ pub enum MemoryType {
     /// Available, but where the bootloader loaded us. Can't be used unless
     /// relocated.
     KernelLoad,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mark_kernel_areas() {
+        let regions = [
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(0, 100),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(100, 200),
+                mem_type: MemoryType::Reserved,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(200, 300),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(325, 375),
+                mem_type: MemoryType::Defective,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(400, 600),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(700, 800),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(800, 900),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(900, 1000),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(1100, 1200),
+                mem_type: MemoryType::Available,
+            },
+        ];
+
+        let areas = [
+            PhysExtent::from_raw_range_exclusive(25, 75),
+            PhysExtent::from_raw_range_exclusive(200, 300),
+            PhysExtent::from_raw_range_exclusive(400, 500),
+            PhysExtent::from_raw_range_exclusive(750, 775),
+            PhysExtent::from_raw_range_exclusive(790, 825),
+            PhysExtent::from_raw_range_exclusive(950, 1000),
+        ];
+
+        let correct = [
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(0, 25),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(25, 75),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(75, 100),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(100, 200),
+                mem_type: MemoryType::Reserved,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(200, 300),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(325, 375),
+                mem_type: MemoryType::Defective,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(400, 500),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(500, 600),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(700, 750),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(750, 775),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(775, 790),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(790, 800),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(800, 825),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(825, 900),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(900, 950),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(950, 1000),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(1100, 1200),
+                mem_type: MemoryType::Available,
+            },
+        ];
+
+        pretty_assertions::assert_eq!(
+            mark_kernel_areas(regions, areas).collect::<Vec<_>>(),
+            correct.to_vec()
+        );
+    }
 }

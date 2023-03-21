@@ -220,23 +220,6 @@ where
         Ok(())
     }
 
-    pub unsafe fn map_default_parent_flags(
-        &mut self,
-        page: Page,
-        frame: Frame,
-        leaf_flags: PageTableFlags,
-    ) -> Result<(), MapError> {
-        unsafe {
-            self.map(
-                page,
-                frame,
-                leaf_flags,
-                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
-                PageTableFlags::all(),
-            )
-        }
-    }
-
     /// Traverse from `entry` in a parent table to the lower-level table it
     /// points to. If it is not present, fetches a physical memory frame with
     /// `frame_allocator`, places an empty table there, and points `entry` to it

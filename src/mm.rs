@@ -19,7 +19,15 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 pub struct VirtualMap;
 
 impl VirtualMap {
-    /// Range of all user virtual address space. This is the lower-half.
+    /// The first MiB is identity mapped and not available for other mappings.
+    ///
+    /// TODO: remove this restriction.
+    pub const fn first_mib() -> VirtExtent {
+        VirtExtent::from_raw(0, 1024 * 1024)
+    }
+
+    /// Range of all user virtual address space. This is almost all of the
+    /// lower-half.
     pub const fn user() -> VirtExtent {
         VirtExtent::from_raw_range_exclusive(0x0000_0000_0000_0000, 0x0000_8000_0000_0000)
     }
@@ -68,11 +76,11 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     let kernel_extent = get_kernel_phys_extent();
     info!("Kernel extent: {kernel_extent:X?}");
 
-    let memory_map = translate_memory_map(boot_info);
+    let orig_memory_map = translate_memory_map(boot_info);
 
     // Rewrite the memory map to exclude kernel areas.
     let mut memory_map = Map::from_entries(mark_kernel_areas(
-        mark_kernel_areas(memory_map.entries().iter().copied(), reserved.clone()),
+        mark_kernel_areas(orig_memory_map.entries().iter().copied(), reserved.clone()),
         core::iter::once(kernel_extent),
     ));
 
@@ -148,7 +156,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     let page_table_template = unsafe {
         create_page_table_template(
             boot_info,
-            &memory_map,
+            &orig_memory_map,
             || init_allocator.allocate(),
             first_gb_translator,
         )
@@ -287,8 +295,22 @@ unsafe fn create_page_table_template<
         .flat_map(|e| FrameRange::containing_extent(e.extent).iter())
     {
         let phys = frame.start();
-        let virt = phys_to_virt(phys);
-        let page = Page::new(virt);
+        let page = Page::new(phys_to_virt(phys));
+        unsafe {
+            mapper
+                .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
+                .unwrap();
+        }
+    }
+
+    // We still identity map the first 1 MiB. We still hold a couple absolute
+    // pointers (e.g. VGA memory) here. TODO: fix this and get rid of this
+    // mapping.
+    let leaf_flags =
+        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
+    let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
+    for page in PageRange::containing_extent(VirtualMap::first_mib()).iter() {
+        let frame = Frame::new(PhysAddress::from_raw(page.start().as_raw()));
         unsafe {
             mapper
                 .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
@@ -353,36 +375,8 @@ unsafe fn create_page_table_template<
 }
 
 unsafe fn set_up_initial_page_table(template: &PageTable) {
-    // Our bootstrap page table identity maps the first GB of memory.
-    let first_gb_translator = |phys: PhysAddress| {
-        assert!(phys.as_raw() < 1024 * 1024 * 1024, "{phys:?}");
-        Some(VirtAddress::from_raw(phys.as_raw()))
-    };
-
     let mut root_table = INIT_PAGE_TABLE.lock();
     *root_table = template.clone();
-    // SAFETY:
-    // * `root_table` is from `template`, so all addresses are valid.
-    // * `first_gb_translator` provides valid translations as long as the
-    //   bootstrap page tables are in place.
-    // * `allocate_frame` returns valid frames with our memory map in place.
-    // * `root_table` is not yet the active page table.
-    let mut mapper =
-        unsafe { paging::Mapper::new(&mut root_table, first_gb_translator, allocate_frame) };
-
-    let present_writable_nx =
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
-
-    // Identity map first GB.
-    for i in (0..1024 * 1024 * 1024).step_by(PAGE_SIZE.as_raw() as usize) {
-        let page = Page::new(VirtAddress::from_raw(i));
-        let frame = Frame::new(PhysAddress::from_raw(i));
-        unsafe {
-            mapper
-                .map_default_parent_flags(page, frame, present_writable_nx)
-                .unwrap();
-        }
-    }
 
     unsafe {
         install_page_table(&mut root_table);

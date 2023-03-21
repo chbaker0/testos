@@ -10,7 +10,6 @@ use shared::memory::*;
 
 use paging::*;
 
-use arrayvec::ArrayVec;
 use log::info;
 use multiboot2 as mb2;
 use x86_64::registers::control::{Cr3, Cr3Flags};
@@ -72,7 +71,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     let memory_map = translate_memory_map(boot_info);
 
     // Rewrite the memory map to exclude kernel areas.
-    let memory_map = Map::from_entries(mark_kernel_areas(
+    let mut memory_map = Map::from_entries(mark_kernel_areas(
         mark_kernel_areas(memory_map.entries().iter().copied(), reserved.clone()),
         core::iter::once(kernel_extent),
     ));
@@ -93,21 +92,77 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     //     })
     //     .collect();
 
-    // // Set up a bump allocator for bootstrapping allocations that will live
-    // // forever, especially the kernel page tables.
-    // //
-    // // Each full leaf page table maps 512 pages. As a generous overestimate, we
-    // // can reserve 1 frame for every 256 frames we're mapping. Most of what we
-    // // map here will be the entirety of physical memory, so use that for the
-    // // estimate.
-    // let total_phys_mem = memory_map
-    //     .entries()
-    //     .iter()
-    //     .map(|e| e.extent.length().as_raw())
-    //     .sum();
-    // let init_alloc_frames = total_phys_mem / PAGE_SIZE.as_raw();
+    // Set up a bump allocator for bootstrapping allocations that will live
+    // forever, especially the kernel page tables.
+    //
+    // Each full leaf page table maps 512 pages. As a generous overestimate, we
+    // can reserve 1 frame for every 256 frames we're mapping. Most of what we
+    // map here will be the entirety of physical memory, so use that for the
+    // estimate.
+    let total_phys_frames: u64 = memory_map
+        .entries()
+        .iter()
+        .map(|e| FrameRange::containing_extent(e.extent).count())
+        .sum();
+    let init_alloc_frames = total_phys_frames / 256;
 
-    // let mut init_allocator = BumpFrameAllocator::new(frames);
+    // Find a chunk of available memory. Skip the first 1 MiB.
+    let (init_alloc_map_ndx, _) = memory_map
+        .entries()
+        .iter()
+        .enumerate()
+        .skip_while(|(_, e)| e.extent.address() < PhysAddress::from_raw(1024 * 1024))
+        .find(|(_, e)| {
+            e.mem_type == MemoryType::Available
+                && FrameRange::containing_extent(e.extent).count() >= init_alloc_frames
+        })
+        .unwrap();
+
+    // We mutate this in place.
+    let entry_for_init_alloc = &mut memory_map.entries_mut()[init_alloc_map_ndx];
+    let init_alloc_frames = FrameRange::new(
+        FrameRange::containing_extent(entry_for_init_alloc.extent).first(),
+        init_alloc_frames,
+    )
+    .unwrap();
+    entry_for_init_alloc.extent = PhysExtent::from_range_exclusive(
+        init_alloc_frames.end().unwrap().start(),
+        entry_for_init_alloc.extent.end_address(),
+    );
+
+    // In our bootstrap phase, we are limited to our identity mapping of the
+    // first 1 GiB. Ensure we are within that.
+    assert!(
+        init_alloc_frames.end().unwrap().extent().address() - PhysAddress::zero()
+            <= Length::from_raw(1024 * 1024 * 1024)
+    );
+
+    let mut init_allocator = BumpFrameAllocator::new(init_alloc_frames);
+
+    // Our bootstrap page table identity maps the first GB of memory.
+    let first_gb_translator = |phys: PhysAddress| {
+        assert!(phys.as_raw() < 1024 * 1024 * 1024, "{phys:?}");
+        Some(VirtAddress::from_raw(phys.as_raw()))
+    };
+
+    let page_table_template = unsafe {
+        create_page_table_template(
+            boot_info,
+            &memory_map,
+            || init_allocator.allocate(),
+            first_gb_translator,
+        )
+    };
+
+    // The frames used for the page-table template are perma-reserved. Maybe we
+    // will add to them later, but the current ones are leaked: they are not
+    // known to either `memory_map` or the future allocator.
+    //
+    // Restore the remaining frames to the map entry.
+    if let Some(remain) = init_allocator.unwrap() {
+        let extent = &mut memory_map.entries_mut()[init_alloc_map_ndx].extent;
+        *extent = PhysExtent::from_range_exclusive(remain.first().start(), extent.end_address());
+    }
 
     let mut frame_bitmap = FRAME_BITMAP.lock();
     fill_bitmap_from_map(&mut *frame_bitmap, &memory_map);
@@ -116,7 +171,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     // Now `frame_allocator` has exclusive access to the frame bitmap.
     let frame_bitmap_ref = spin::MutexGuard::leak(frame_bitmap);
 
-    let mut frame_allocator = BitmapFrameAllocator::new(frame_bitmap_ref);
+    let mut frame_allocator = unsafe { BitmapFrameAllocator::new(frame_bitmap_ref) };
 
     // Mark all reserved areas. Important so we don't hand out memory containing
     // kernel code or data structures.
@@ -141,7 +196,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     FRAME_ALLOCATOR.lock().set(frame_allocator).unwrap();
 
     unsafe {
-        set_up_initial_page_table(boot_info, &memory_map);
+        set_up_initial_page_table(&page_table_template);
     }
 }
 
@@ -204,49 +259,45 @@ pub fn translate_memory_map(mb2_info: &mb2::BootInformation) -> Map {
     }))
 }
 
-unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map: &Map) {
-    // Our bootstrap page table identity maps the first GB of memory.
-    let first_gb_translator = |phys: PhysAddress| {
-        assert!(phys.as_raw() < 1024 * 1024 * 1024, "{phys:?}");
-        Some(VirtAddress::from_raw(phys.as_raw()))
-    };
+unsafe fn create_page_table_template<
+    F: FnMut() -> Option<Frame>,
+    T: Fn(PhysAddress) -> Option<VirtAddress>,
+>(
+    boot_info: &mb2::BootInformation,
+    memory_map: &Map,
+    get_frame: F,
+    translator: T,
+) -> PageTable {
+    let mut table = PageTable::zero();
+    let mut mapper = unsafe { paging::Mapper::new(&mut table, translator, get_frame) };
 
-    let mut root_table = INIT_PAGE_TABLE.lock();
-    // SAFETY:
-    // * `root_table` is an empty page table, so all addresses are valid.
-    // * `first_gb_translator` provides valid translations as long as the
-    //   bootstrap page tables are in place.
-    // * `allocate_frame` returns valid frames with our memory map in place.
-    // * `root_table` is not yet the active page table.
-    let mut mapper =
-        unsafe { paging::Mapper::new(&mut root_table, first_gb_translator, allocate_frame) };
+    // All mappings here will have the global and frozen flags. This table is
+    // shared for all address spaces.
+    let shared_parent_flags =
+        PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::APP_PARENT_FROZEN;
 
-    let present_writable_nx =
+    // First, set up the physical memory mapping. It must be read/write. For
+    // safety make it non-executable.
+    let leaf_flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
-
-    // Identity map first GB.
-    for i in (0..1024 * 1024 * 1024).step_by(PAGE_SIZE.as_raw() as usize) {
-        let page = Page::new(VirtAddress::from_raw(i));
-        let frame = Frame::new(PhysAddress::from_raw(i));
+    let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
+    for frame in memory_map
+        .entries()
+        .iter()
+        .flat_map(|e| FrameRange::containing_extent(e.extent).iter())
+    {
+        let phys = frame.start();
+        let virt = phys_to_virt(phys);
+        let page = Page::new(virt);
         unsafe {
-            mapper.map(page, frame, present_writable_nx).unwrap();
+            mapper
+                .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
+                .unwrap();
         }
     }
 
-    // Map all phys memory at `PHYSICAL_MEMORY_MAP_OFFSET`.
-    for entry in memory_map.entries() {
-        let frames = FrameRange::containing_extent(entry.extent);
-        for frame in frames.iter() {
-            let phys = frame.start();
-            let virt = phys_to_virt(phys);
-            let page = Page::new(virt);
-            unsafe {
-                mapper.map(page, frame, present_writable_nx).unwrap();
-            }
-        }
-    }
-
-    // Map kernel.
+    // Map the kernel image. Leaf flags are determined per-section.
+    let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
     for section in boot_info.elf_sections_tag().unwrap().sections() {
         let section_type = section.section_type();
         let section_flags = section.flags();
@@ -276,12 +327,13 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
             _ => continue,
         }
 
-        let mut page_flags = PageTableFlags::PRESENT;
-        if section_flags.contains(mb2::ElfSectionFlags::WRITABLE) {
-            page_flags |= PageTableFlags::WRITABLE;
-        }
+        let mut leaf_flags = PageTableFlags::PRESENT;
         if !section_flags.contains(mb2::ElfSectionFlags::EXECUTABLE) {
-            page_flags |= PageTableFlags::EXECUTE_DISABLE;
+            leaf_flags |= PageTableFlags::EXECUTE_DISABLE;
+        }
+        if section_flags.contains(mb2::ElfSectionFlags::WRITABLE) {
+            assert!(!section_flags.contains(mb2::ElfSectionFlags::EXECUTABLE));
+            leaf_flags |= PageTableFlags::WRITABLE;
         }
 
         for page in PageRange::containing_extent(section_extent).iter() {
@@ -289,8 +341,46 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
                 page.start() - get_kernel_virt_base(),
             ));
             unsafe {
-                mapper.map(page, frame, page_flags).unwrap();
+                mapper
+                    .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
+                    .unwrap();
             }
+        }
+    }
+
+    core::mem::drop(mapper);
+    table
+}
+
+unsafe fn set_up_initial_page_table(template: &PageTable) {
+    // Our bootstrap page table identity maps the first GB of memory.
+    let first_gb_translator = |phys: PhysAddress| {
+        assert!(phys.as_raw() < 1024 * 1024 * 1024, "{phys:?}");
+        Some(VirtAddress::from_raw(phys.as_raw()))
+    };
+
+    let mut root_table = INIT_PAGE_TABLE.lock();
+    *root_table = template.clone();
+    // SAFETY:
+    // * `root_table` is from `template`, so all addresses are valid.
+    // * `first_gb_translator` provides valid translations as long as the
+    //   bootstrap page tables are in place.
+    // * `allocate_frame` returns valid frames with our memory map in place.
+    // * `root_table` is not yet the active page table.
+    let mut mapper =
+        unsafe { paging::Mapper::new(&mut root_table, first_gb_translator, allocate_frame) };
+
+    let present_writable_nx =
+        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
+
+    // Identity map first GB.
+    for i in (0..1024 * 1024 * 1024).step_by(PAGE_SIZE.as_raw() as usize) {
+        let page = Page::new(VirtAddress::from_raw(i));
+        let frame = Frame::new(PhysAddress::from_raw(i));
+        unsafe {
+            mapper
+                .map_default_parent_flags(page, frame, present_writable_nx)
+                .unwrap();
         }
     }
 
@@ -298,10 +388,6 @@ unsafe fn set_up_initial_page_table(boot_info: &mb2::BootInformation, memory_map
         install_page_table(&mut root_table);
     }
 }
-
-/// Contains kernel mappings that are exist in all page tables.
-static PAGE_TABLE_TEMPLATE: spin::Mutex<paging::PageTable> =
-    spin::Mutex::new(paging::PageTable::zero());
 
 static INIT_PAGE_TABLE: spin::Mutex<paging::PageTable> =
     spin::Mutex::new(paging::PageTable::zero());

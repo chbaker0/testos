@@ -7,8 +7,8 @@ use page::{FrameRange, PAGE_SIZE};
 use core::iter::IntoIterator;
 
 use arrayvec::ArrayVec;
+use itertools::put_back;
 use itertools::structs::PutBack;
-use itertools::{put_back, Itertools};
 
 pub use addr::*;
 
@@ -45,6 +45,10 @@ impl Map {
 
     pub fn entries(&self) -> &[MapEntry] {
         &self.entries[0..self.num_entries as usize]
+    }
+
+    pub fn entries_mut(&mut self) -> &mut [MapEntry] {
+        &mut self.entries[0..self.num_entries as usize]
     }
 
     pub fn iter_type(&self, mem_type: MemoryType) -> impl Iterator<Item = MapEntry> + '_ {

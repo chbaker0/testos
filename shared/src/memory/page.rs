@@ -177,7 +177,7 @@ impl FrameRange {
         self.first.next(self.count.get())
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Frame> {
+    pub fn iter(&self) -> impl Clone + Iterator<Item = Frame> {
         let last = self.last();
         iter::successors(Some(self.first), move |frame| {
             if frame < &last {

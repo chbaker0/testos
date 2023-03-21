@@ -1,5 +1,3 @@
-use log::info;
-
 use crate::memory::addr::*;
 use crate::memory::page::*;
 
@@ -115,8 +113,19 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// All frames that must be preserved or which refer to invalid memory must
     /// be marked used. All frames marked free must be available for use and not used
     /// by other code.
-    pub fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
+    pub unsafe fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
         BitmapFrameAllocator { bitmap }
+    }
+
+    /// Add a new frame that wasn't present in the initial bitmap. Intended for
+    /// yielding frames used during bootstrapping so they can be used later.
+    ///
+    /// # Safety
+    ///
+    /// `frame` must obviously be a valid frame of physical memory. In addition,
+    /// it must not have been known by the allocator when constructed.
+    pub unsafe fn add_new_frame(&mut self, frame: Frame) {
+        self.unreserve_impl(frame)
     }
 
     // Finds the first byte of `bitmap` after `offset` with an available slot.
@@ -604,7 +613,7 @@ mod tests {
         // In each byte, the LSB represents the first frame in the range of 8
         // frames, and the MSB represents the last.
         let mut bitmap = [0b00100000, 0b00010000, 0b00000010];
-        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
         let mut allocated_frames = std::collections::BTreeSet::new();
 
         assert!(allocated_frames.insert(allocator.allocate().unwrap()));
@@ -626,7 +635,7 @@ mod tests {
     #[test]
     fn bitmap_allocator_does_not_return_reserved_frame() {
         let mut bitmap = [0b01000010];
-        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
 
         allocator
             .reserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64)))
@@ -648,7 +657,7 @@ mod tests {
     #[test]
     fn bitmap_allocator_returns_freed_frame() {
         let mut bitmap = [0b01000010];
-        let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
+        let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
 
         let frame1 = allocator.allocate().unwrap();
         let frame2 = allocator.allocate().unwrap();
@@ -672,7 +681,7 @@ mod tests {
                 .map(u8::count_ones)
                 .fold(0, |acc, x| acc + x as u64);
 
-            let mut allocator = BitmapFrameAllocator::new(&mut bitmap);
+            let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
             let mut allocated_frames = std::collections::BTreeSet::new();
 
             // Check that all available frames could be allocated and are unique.

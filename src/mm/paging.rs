@@ -1,6 +1,7 @@
 use shared::memory::{addr::*, page::*};
 
 use core::ptr;
+use core::sync::atomic::{compiler_fence, Ordering};
 
 use static_assertions as sa;
 
@@ -88,6 +89,9 @@ bitflags::bitflags! {
     /// Control bits for a page table entry. Documented in architecture manual.
     /// Note that some bits may not be valid for some table levels, and not
     /// every combination of bits may be valid.
+    ///
+    /// Entries prefixed with `APP_` are from "available" bits, so any meaning
+    /// is attributed by us.
     pub struct PageTableFlags: u64 {
         const PRESENT = 1 << 0;
         const WRITABLE = 1 << 1;
@@ -99,6 +103,14 @@ bitflags::bitflags! {
         const PAGE_SIZE = 1 << 7;
         const GLOBAL = 1 << 8;
         const EXECUTE_DISABLE = 1 << 63;
+
+        /// A non-leaf entry with this bit is "frozen", meaning all descendent
+        /// tables cannot be modified. This allows for mappings shared by
+        /// multiple address spaces; remapping one should not change any others.
+        ///
+        /// Kernel mappings shared between all processes have this and the
+        /// `GLOBAL` bit set.
+        const APP_PARENT_FROZEN = 1 << 62;
 
         const DEFAULT_PARENT_TABLE_FLAGS = Self::PRESENT.bits | Self::WRITABLE.bits;
     }
@@ -148,11 +160,20 @@ where
         }
     }
 
+    /// Map `page` to `frame` in the table. The leaf table entry will have
+    /// `leaf_flags`. All parent table entries, if already present, will have
+    /// their flags masked with `parent_mask_flags`, then those in
+    /// `parent_set_flags` will be set. If not present, a new table will be
+    /// allocated and the parent entry will have `parent_set_flags`.
+    ///
+    /// Note that this currently will overwrite any existing leaf entries.
     pub unsafe fn map(
         &mut self,
         page: Page,
         frame: Frame,
-        flags: PageTableFlags,
+        leaf_flags: PageTableFlags,
+        parent_set_flags: PageTableFlags,
+        parent_mask_flags: PageTableFlags,
     ) -> Result<(), MapError> {
         let l4e: &mut PageTableEntry = &mut self.level_4.entries[page.l4_index()];
         // SAFETY: each traversal requires that the passed entry is a valid
@@ -162,7 +183,8 @@ where
                 l4e,
                 &mut self.translator,
                 &mut self.frame_allocator,
-                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+                parent_set_flags,
+                parent_mask_flags,
             )?
         };
         let l3e = &mut l3.entries[page.l3_index()];
@@ -171,7 +193,8 @@ where
                 l3e,
                 &mut self.translator,
                 &mut self.frame_allocator,
-                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+                parent_set_flags,
+                parent_mask_flags,
             )?
         };
         let l2e = &mut l2.entries[page.l2_index()];
@@ -180,24 +203,45 @@ where
                 l2e,
                 &mut self.translator,
                 &mut self.frame_allocator,
-                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+                parent_set_flags,
+                parent_mask_flags,
             )?
         };
         let mut l1e = PageTableEntry::zero();
         // TODO: handle existing mapping.
         l1e.set_addr(frame.start());
-        l1e.set_flags(flags);
+        l1e.set_flags(leaf_flags);
         unsafe {
+            compiler_fence(Ordering::AcqRel);
             ptr::write_volatile(&mut l1.entries[page.l1_index()] as *mut _, l1e);
+            compiler_fence(Ordering::AcqRel);
         }
 
         Ok(())
     }
 
+    pub unsafe fn map_default_parent_flags(
+        &mut self,
+        page: Page,
+        frame: Frame,
+        leaf_flags: PageTableFlags,
+    ) -> Result<(), MapError> {
+        unsafe {
+            self.map(
+                page,
+                frame,
+                leaf_flags,
+                PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS,
+                PageTableFlags::all(),
+            )
+        }
+    }
+
     /// Traverse from `entry` in a parent table to the lower-level table it
     /// points to. If it is not present, fetches a physical memory frame with
     /// `frame_allocator`, places an empty table there, and points `entry` to it
-    /// with `new_flags`. Otherwise, does not modify `entry`.
+    /// with `set_flags`. If it is, & masks `entry` flags with `mask_flags`
+    /// then sets those in `set_flags` and otherwise does not modify the entry.
     ///
     /// `translator` is used to map physical to virtual addresses to access the
     /// next table. `translator` and `frame_allocator` must abide by the same
@@ -210,7 +254,8 @@ where
         entry: &'b mut PageTableEntry,
         translator: &mut Translator,
         frame_allocator: &mut Allocator,
-        new_flags: PageTableFlags,
+        set_flags: PageTableFlags,
+        mask_flags: PageTableFlags,
     ) -> Result<&'b mut PageTable, MapError> {
         let mut translate = |phys: PhysAddress| {
             let virt = translator(phys).ok_or(MapError::TranslationFailed)?;
@@ -224,6 +269,8 @@ where
         // leak a frame. This is not unsafe, but it is a case to watch out for.
         let next_table_ptr: *mut PageTable = if entry.get_flags().contains(PageTableFlags::PRESENT)
         {
+            let new_flags = entry.get_flags() & mask_flags | set_flags;
+            entry.set_flags(new_flags);
             translate(entry.get_addr())?
         } else {
             // Allocate a new frame to hold the next level table and zero it.
@@ -233,7 +280,7 @@ where
                 ptr::write(ptr, PageTable::zero());
             }
             entry.set_addr(new_frame.start());
-            entry.set_flags(new_flags.union(PageTableFlags::PRESENT));
+            entry.set_flags(set_flags.union(PageTableFlags::PRESENT));
             ptr
         };
 

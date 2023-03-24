@@ -77,7 +77,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     assert!(!IS_INITIALIZED.swap(true, core::sync::atomic::Ordering::SeqCst));
 
     let kernel_extent = get_kernel_phys_extent();
-    info!("Kernel extent: {kernel_extent:X?}");
+    info!("Kernel extent: {kernel_extent:x?}");
 
     let orig_memory_map = translate_memory_map(boot_info);
 
@@ -88,7 +88,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     ));
 
     for e in memory_map.entries().iter() {
-        info!("{e:?}");
+        info!("{e:x?}");
     }
 
     // Set up a bump allocator for bootstrapping allocations that will live
@@ -105,6 +105,9 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
         .sum();
     let init_alloc_frames = total_phys_frames / 256;
 
+    // TODO: change memory map to work with frames instead of addresses. This is
+    // more sensible since it is how we will basically always consume memory.
+
     // Find a chunk of available memory. Skip the first 1 MiB.
     let (init_alloc_map_ndx, _) = memory_map
         .entries()
@@ -113,14 +116,16 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
         .skip_while(|(_, e)| e.extent.address() < PhysAddress::from_raw(1024 * 1024))
         .find(|(_, e)| {
             e.mem_type == MemoryType::Available
-                && FrameRange::containing_extent(e.extent).count() >= init_alloc_frames
+                && FrameRange::contained_by_extent(e.extent).unwrap().count() >= init_alloc_frames
         })
         .unwrap();
 
     // We mutate this in place.
     let entry_for_init_alloc = &mut memory_map.entries_mut()[init_alloc_map_ndx];
     let init_alloc_frames = FrameRange::new(
-        FrameRange::containing_extent(entry_for_init_alloc.extent).first(),
+        FrameRange::contained_by_extent(entry_for_init_alloc.extent)
+            .unwrap()
+            .first(),
         init_alloc_frames,
     )
     .unwrap();
@@ -135,6 +140,8 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
         init_alloc_frames.end().unwrap().extent().address() - PhysAddress::zero()
             <= Length::from_raw(1024 * 1024 * 1024)
     );
+
+    assert!(init_alloc_frames.first().start() >= get_kernel_phys_extent().end_address());
 
     let mut init_allocator = BumpFrameAllocator::new(init_alloc_frames);
 

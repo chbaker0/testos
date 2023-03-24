@@ -153,10 +153,25 @@ impl FrameRange {
         Self::new(first, count).unwrap()
     }
 
+    /// The minimal range fully containing `extent`.
     pub fn containing_extent(extent: PhysExtent) -> FrameRange {
         let first = Frame::containing(extent.address());
         let last = Frame::containing(extent.last_address());
         Self::between_inclusive(first, last)
+    }
+
+    /// The maximal range fully contained in `extent`.
+    pub fn contained_by_extent(extent: PhysExtent) -> Option<FrameRange> {
+        let first = extent.address().align_up(PAGE_SIZE.as_raw());
+        let last = (extent.last_address() - PAGE_SIZE + Length::from_raw(1))
+            .align_down(PAGE_SIZE.as_raw());
+        if first >= last {
+            return None;
+        }
+
+        let len = last - first;
+        assert!(len.is_aligned_to(PAGE_SIZE.as_raw()));
+        FrameRange::new(Frame::new(first), len.as_raw() / PAGE_SIZE.as_raw())
     }
 
     pub fn first(&self) -> Frame {

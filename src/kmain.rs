@@ -109,6 +109,23 @@ lazy_static! {
 }
 
 fn init_logger() {
+    use shared::log::LogSink;
+    use shared::vga::VgaWriter;
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "qemu_debugcon")] {
+            use shared::log::{LogPipe, QemuDebugWriter};
+
+            lazy_static! {
+                static ref LOGGER: LogPipe<LogSink<QemuDebugWriter>, LogSink<VgaWriter>> = unsafe { LogPipe(LogSink::new(QemuDebugWriter::new()), LogSink::new(VgaWriter::new(VMEM))) };
+            }
+        } else {
+            lazy_static! {
+                static ref LOGGER: LogSink<VgaWriter> = unsafe { LogSink::new(VgaWriter::new(VMEM)) };
+            }
+        }
+    }
+
     log::set_logger(&*LOGGER).unwrap();
     log::set_max_level(log::LevelFilter::Info);
 }
@@ -121,6 +138,12 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     if !LOGGER.is_locked() {
         error!("{info}");
     } else {
+        #[cfg(feature = "qemu_debugcon")]
+        {
+            let mut writer = unsafe { shared::log::QemuDebugWriter::new() };
+            let _ = write!(&mut writer, "{info}");
+        }
+
         let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
         let _ = write!(&mut writer, "{info}");
     }

@@ -240,12 +240,17 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
         let (byte_offset, bit_offset) = Self::frame_to_offsets(frame);
         let mask = 1 << bit_offset;
 
-        let frame_is_available = self.bitmap[byte_offset] & mask > 0;
+        let len = self.bitmap.len();
+        let bitmap_byte = self
+            .bitmap
+            .get_mut(byte_offset)
+            .unwrap_or_else(|| panic!("frame {frame:?} exceeded bitmap size {len}"));
+        let frame_is_available = *bitmap_byte & mask > 0;
         if !frame_is_available {
             return Err(FrameReserveError::FrameInUse);
         }
 
-        self.bitmap[byte_offset] &= !mask;
+        *bitmap_byte &= !mask;
         Ok(())
     }
 

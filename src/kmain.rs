@@ -39,6 +39,8 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
         init_module.end_address().into(),
     );
 
+    info!("init_extent = {init_extent:?}");
+
     mm::init(&mbinfo, core::iter::once(init_extent));
     info!("Initialized frame allocator");
 

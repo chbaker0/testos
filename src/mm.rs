@@ -185,6 +185,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
         // Exclude the first MB.
         PhysExtent::from_raw(0, 1024 * 1024),
     ]) {
+        info!("reserving extent {reserved_extent:?}");
         for frame in FrameRange::containing_extent(reserved_extent).iter() {
             // Ignore if the frame isn't available. TODO: investigate why
             // unwrapping fails.

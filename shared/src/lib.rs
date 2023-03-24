@@ -21,5 +21,6 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod log;
 pub mod memory;
 pub mod vga;

@@ -1,8 +1,6 @@
 //! VGA helpers
 
 use core::fmt::Write;
-use log::*;
-use spin::Mutex;
 
 const ROWS: usize = 25;
 const COLS: usize = 80;
@@ -96,51 +94,4 @@ impl Write for VgaWriter {
     }
 }
 
-pub struct VgaLog {
-    writer: Mutex<VgaWriter>,
-}
-
-impl VgaLog {
-    pub fn new(writer: VgaWriter) -> VgaLog {
-        VgaLog {
-            writer: Mutex::new(writer),
-        }
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.writer.is_locked()
-    }
-}
-
-impl Log for VgaLog {
-    fn enabled(&self, _: &Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &Record) {
-        let mut writer = self.writer.lock();
-        let _ = writeln!(
-            &mut writer,
-            "[{}] {}: {}",
-            level_as_string(record.level()),
-            record.target(),
-            record.args()
-        );
-    }
-
-    fn flush(&self) {
-        // No-op since we write directly to screen.
-    }
-}
-
-fn level_as_string(level: Level) -> &'static str {
-    use Level::*;
-
-    match level {
-        Error => "ERROR",
-        Warn => " WARN",
-        Info => " INFO",
-        Debug => "DEBUG",
-        Trace => "TRACE",
-    }
-}
+pub type VgaLog = crate::log::LogSink<VgaWriter>;

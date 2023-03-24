@@ -412,6 +412,7 @@ dependencies = [
  "arrayvec",
  "bitflags",
  "buildutil",
+ "cfg-if",
  "intrusive-collections",
  "lazy_static",
  "log",
@@ -834,6 +835,7 @@ dependencies = [
  "spin 0.9.5",
  "static_assertions",
  "test-log",
+ "x86_64",
 ]
 
 [[package]]

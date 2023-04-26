@@ -1,9 +1,11 @@
 use buildutil::*;
 
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use cargo_metadata::Message;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -13,6 +15,32 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    // Build init binary:
+    let mut init_build_command = Command::new(env::var("CARGO")?)
+        .args(&["ibuild", "--message-format=json-render-diagnostics"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+
+    let mut init_bin: Option<PathBuf> = None;
+    for message in cargo_metadata::Message::parse_stream(std::io::BufReader::new(
+        init_build_command.stdout.take().unwrap(),
+    )) {
+        let message = message?;
+        match message {
+            Message::CompilerArtifact(artifact) => {
+                if let Some(ref exe) = artifact.executable {
+                    assert_eq!(init_bin, None, "other artifact {:?}", artifact);
+                    init_bin = Some(exe.as_std_path().to_path_buf());
+                }
+            }
+            Message::BuildFinished(m) => assert!(m.success),
+            _ => (),
+        }
+    }
+
+    assert!(init_build_command.wait()?.success());
+    let init_bin = init_bin.unwrap();
 
     println!("Building image from {}...", args.kernel_image.display());
 
@@ -25,6 +53,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir_all("out/iso/boot/grub").unwrap();
     fs::copy("grub.cfg", "out/iso/boot/grub/grub.cfg").unwrap();
     fs::copy(args.kernel_image, "out/iso/boot/kernel").unwrap();
+    fs::copy(init_bin, "out/iso/boot/init").unwrap();
 
     if cfg!(feature = "grub-mkrescue") {
         run_and_check(

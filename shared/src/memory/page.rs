@@ -3,6 +3,7 @@
 use super::addr::{Length, PhysAddress, PhysExtent, VirtAddress, VirtExtent};
 
 use core::iter::{self, Iterator};
+use core::num::NonZeroU64;
 
 pub const PAGE_SIZE: Length = Length::from_raw(4096);
 
@@ -21,6 +22,12 @@ impl Frame {
     pub fn new(start: PhysAddress) -> Frame {
         assert!(start.is_aligned_to(PAGE_SIZE.as_raw()));
         Frame { start }
+    }
+
+    /// Which number frame this is; in other words, the start address divided by
+    /// the page size.
+    pub fn index(self) -> u64 {
+        self.start.as_raw() / PAGE_SIZE.as_raw()
     }
 
     /// Gets the `Frame` that contains `addr`.
@@ -112,19 +119,17 @@ impl Page {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrameRange {
     first: Frame,
-    count: u64,
+    count: NonZeroU64,
 }
 
 impl FrameRange {
     pub fn new(first: Frame, count: u64) -> Option<FrameRange> {
-        if count == 0 {
-            return None;
-        }
+        let count = NonZeroU64::new(count)?;
 
         // Check that `count` frames after and including `first` are
         // addressable. `first.next(count)` may not be addressable if the range
         // includes the last frame.
-        first.next(count - 1)?;
+        first.next(count.get() - 1)?;
 
         Some(FrameRange { first, count })
     }
@@ -148,10 +153,25 @@ impl FrameRange {
         Self::new(first, count).unwrap()
     }
 
+    /// The minimal range fully containing `extent`.
     pub fn containing_extent(extent: PhysExtent) -> FrameRange {
         let first = Frame::containing(extent.address());
         let last = Frame::containing(extent.last_address());
         Self::between_inclusive(first, last)
+    }
+
+    /// The maximal range fully contained in `extent`.
+    pub fn contained_by_extent(extent: PhysExtent) -> Option<FrameRange> {
+        let first = extent.address().align_up(PAGE_SIZE.as_raw());
+        let last = (extent.last_address() - PAGE_SIZE + Length::from_raw(1))
+            .align_down(PAGE_SIZE.as_raw());
+        if first >= last {
+            return None;
+        }
+
+        let len = last - first;
+        assert!(len.is_aligned_to(PAGE_SIZE.as_raw()));
+        FrameRange::new(Frame::new(first), len.as_raw() / PAGE_SIZE.as_raw())
     }
 
     pub fn first(&self) -> Frame {
@@ -159,20 +179,20 @@ impl FrameRange {
     }
 
     pub fn count(&self) -> u64 {
-        self.count
+        self.count.get()
     }
 
     // The last `Frame` within the range
     pub fn last(&self) -> Frame {
-        self.first.next(self.count - 1).unwrap()
+        self.first.next(self.count.get() - 1).unwrap()
     }
 
     // The first `Frame` after the range, or `None` if it ends at the last frame.
     pub fn end(&self) -> Option<Frame> {
-        self.first.next(self.count)
+        self.first.next(self.count.get())
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Frame> {
+    pub fn iter(&self) -> impl Clone + Iterator<Item = Frame> {
         let last = self.last();
         iter::successors(Some(self.first), move |frame| {
             if frame < &last {

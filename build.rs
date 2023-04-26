@@ -14,6 +14,7 @@ pub fn generate_mb2_header() -> Vec<u8> {
         HeaderTagFlag::Required,
         ConsoleHeaderTagFlags::ConsoleRequired,
     ));
+    builder = builder.module_align_tag(ModuleAlignHeaderTag::new(HeaderTagFlag::Required));
 
     let mut mbi_builder = InformationRequestHeaderTagBuilder::new(HeaderTagFlag::Required);
     mbi_builder = mbi_builder.add_irs(&[MbiTagType::Mmap, MbiTagType::AcpiV2, MbiTagType::End]);
@@ -26,11 +27,11 @@ fn main() -> anyhow::Result<()> {
     let out_dir = PathBuf::from_str(&env::var("OUT_DIR")?)?;
 
     let mb2_header_bin = "mb2_header";
-    fs::write(out_dir.join(&mb2_header_bin), generate_mb2_header())?;
+    fs::write(out_dir.join(mb2_header_bin), generate_mb2_header())?;
 
     let mb2_header_elf = "mb2_header.o";
 
-    run_and_check(Command::new("objcopy").current_dir(&out_dir).args(&[
+    run_and_check(Command::new("objcopy").current_dir(&out_dir).args([
         "-Ibinary",
         "-Oelf64-x86-64",
         // "--binary-architecture=x64",
@@ -40,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         mb2_header_elf,
     ]))?;
 
-    run_and_check(Command::new("ar").current_dir(&out_dir).args(&[
+    run_and_check(Command::new("ar").current_dir(&out_dir).args([
         "crus",
         "libmb2_header.a",
         mb2_header_elf,
@@ -58,12 +59,12 @@ fn main() -> anyhow::Result<()> {
     run_and_check(
         Command::new("nasm")
             .args(debug_flags)
-            .args(&["-f", "elf64", "-o"])
+            .args(["-f", "elf64", "-o"])
             .arg(&format!("{}/entry.o", out_dir.to_str().unwrap()))
             .arg("src/entry.nasm"),
     )?;
 
-    run_and_check(Command::new("ar").current_dir(&out_dir).args(&[
+    run_and_check(Command::new("ar").current_dir(&out_dir).args([
         "crus",
         "libentry.a",
         "entry.o",

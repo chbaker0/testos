@@ -30,6 +30,6 @@ features = ["nightly"]
 [dev-dependencies]
 aligned = "0.4.1"
 env_logger = "*"
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
+pretty_assertions = "1.3.0"
+proptest = "1.1.0"
 test-log = "0.2.11"

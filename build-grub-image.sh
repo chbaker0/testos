@@ -4,4 +4,4 @@
 
 grub-mkimage -C auto -d /usr/lib/grub/i386-pc -O i386-pc-eltorito \
     -o third_party/grub-image/boot/grub/i386-pc/eltorito.img -p '/boot/grub' \
-    biosdisk iso9660 normal vga vbe multiboot2
+    biosdisk iso9660 normal vga vbe multiboot multiboot2 normal

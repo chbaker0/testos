@@ -2,6 +2,8 @@ pub mod addr;
 pub mod alloc;
 pub mod page;
 
+use page::{FrameRange, PAGE_SIZE};
+
 use core::iter::IntoIterator;
 
 use arrayvec::ArrayVec;
@@ -45,11 +47,116 @@ impl Map {
         &self.entries[0..self.num_entries as usize]
     }
 
-    pub fn iter_type(&self, mem_type: MemoryType) -> impl Iterator<Item = PhysExtent> + '_ {
+    pub fn entries_mut(&mut self) -> &mut [MapEntry] {
+        &mut self.entries[0..self.num_entries as usize]
+    }
+
+    pub fn iter_type(&self, mem_type: MemoryType) -> impl Iterator<Item = MapEntry> + '_ {
         self.entries
             .iter()
             .filter(move |e| e.mem_type == mem_type)
-            .map(|e| e.extent)
+            .copied()
+    }
+}
+
+/// Given a sequence of memory regions, mark which areas contain kernel data
+/// from another sequence of extents. Both sequences must be sorted and
+/// non-overlapping.
+///
+/// Returns a sorted sequence of corrected regions.
+pub fn mark_kernel_areas<T: IntoIterator<Item = MapEntry>, U: IntoIterator<Item = PhysExtent>>(
+    regions: T,
+    kernel_areas: U,
+) -> impl Iterator<Item = MapEntry> {
+    KernelAreaMarker {
+        regions: put_back(regions),
+        kernel_areas: put_back(kernel_areas),
+    }
+    .flatten()
+}
+
+/// Implementation of `mark_kernel_areas`. Ideally we'd have a generator
+/// function but that's too unstable to rely on.
+struct KernelAreaMarker<T: Iterator<Item = MapEntry>, U: Iterator<Item = PhysExtent>> {
+    regions: PutBack<T>,
+    kernel_areas: PutBack<U>,
+}
+
+impl<T: Iterator<Item = MapEntry>, U: Iterator<Item = PhysExtent>> Iterator
+    for KernelAreaMarker<T, U>
+{
+    type Item = ArrayVec<MapEntry, 2>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cur = self.regions.next()?;
+
+        let one_vec = |x| {
+            let mut v = ArrayVec::new();
+            v.push(x);
+            v
+        };
+
+        // Some types we don't care about. Kernel extents shouldn't overlap with
+        // anything other than `Available`, and in the off chance they do
+        // there's nothing we can do.
+        match cur.mem_type {
+            MemoryType::Available => (),
+            MemoryType::Acpi => (),
+            _ => return Some(one_vec(cur)),
+        }
+
+        // Skip kernel pieces until we overlap the current region. This should
+        // only be one, but just in case...
+        while let Some(kernel) = self.kernel_areas.next() {
+            if kernel.overlap(cur.extent).is_none() && kernel.address < cur.extent.address {
+                continue;
+            }
+
+            self.kernel_areas.put_back(kernel);
+            break;
+        }
+
+        // If there's no more kernel areas to consider, we just return the
+        // region as is.
+        let Some(kernel) = self.kernel_areas.next() else { return Some(one_vec(cur)) };
+
+        // If this extent is completely after `cur`, we can return `cur`.
+        // Put the extent back so we can consider it next round.
+        if kernel.overlap(cur.extent).is_none() && kernel.address > cur.extent.address {
+            self.kernel_areas.put_back(kernel);
+            return Some(one_vec(cur));
+        }
+
+        // Otherwise, we have overlap and need to split. We return the left
+        // difference and the kernel overlap, but not the right side which
+        // we put back. We also put back the kernel extent. The right may
+        // overlap the next kernel piece, and the next kernel piece might
+        // overlap the next region.
+        if let Some(right) = cur.extent.right_difference(kernel) {
+            self.regions.put_back(MapEntry {
+                extent: right,
+                mem_type: cur.mem_type,
+            })
+        }
+
+        let mut parts = ArrayVec::new();
+
+        // Yield the left side (if it exists) and the kernel region.
+        if let Some(left) = cur.extent.left_difference(kernel) {
+            parts.push(MapEntry {
+                extent: left,
+                mem_type: cur.mem_type,
+            });
+        }
+
+        parts.push(MapEntry {
+            extent: cur.extent.overlap(kernel).unwrap(),
+            mem_type: MemoryType::KernelLoad,
+        });
+
+        self.kernel_areas.put_back(kernel);
+
+        Some(parts)
     }
 }
 
@@ -62,7 +169,17 @@ impl core::fmt::Debug for Map {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+pub fn iter_map_frames<Iter: IntoIterator<Item = MapEntry>>(
+    iter: Iter,
+) -> impl Iterator<Item = FrameRange> {
+    iter.into_iter().flat_map(|e| {
+        Some(FrameRange::containing_extent(
+            e.extent.shrink_to_alignment(PAGE_SIZE.as_raw())?,
+        ))
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(C)]
 pub struct MapEntry {
     pub extent: PhysExtent,
@@ -82,222 +199,9 @@ pub enum MemoryType {
     Defective,
     /// Cannot be used
     Reserved,
-}
-
-/// Allocates physical pages of a given size from the lowest to highest address.
-/// Does not support freeing.
-pub struct BumpAllocator {
-    // This is in reverse order.
-    free: ArrayVec<PhysExtent, 128>,
-    // This is the base 2 log of the page size.
-    page_size_log2: usize,
-}
-
-impl BumpAllocator {
-    /// Allocates from the listed Extents.
-    ///
-    /// `blocks` must be sorted. Addresses do not need to be aligned. However,
-    /// all returned allocations will be aligned to `page_size`, which must be a
-    /// power of two.
-    pub fn new<T: IntoIterator<Item = PhysExtent>>(blocks: T, page_size: u64) -> BumpAllocator {
-        // Make sure `page_size` is a power of two.
-        assert_eq!(page_size.count_ones(), 1);
-
-        // The base 2 log of a power of 2 is simply the number of trailing
-        // zeros.
-        let page_size_log2 = page_size.trailing_zeros() as usize;
-
-        let mut free: ArrayVec<PhysExtent, 128> = blocks
-            .into_iter()
-            .flat_map(|e| e.shrink_to_alignment(page_size))
-            .collect();
-
-        assert!(is_sorted_and_nonoverlapping(free.iter().copied()));
-        free = free.iter().rev().copied().collect();
-
-        BumpAllocator {
-            free,
-            page_size_log2,
-        }
-    }
-
-    /// Allocates from the available memory in `map` after removing specified
-    /// regions in `holes`. Allocations are multiples of `page_size`, which must
-    /// be a power of two.
-    ///
-    /// `holes` must be sorted.
-    ///
-    /// Addresses in `map` and `holes` do not need to be aligned. However, all
-    /// returned allocations will be aligned to `page_size`.
-    pub fn from_memory_map<T: IntoIterator<Item = PhysExtent>>(
-        page_size: u64,
-        map: &Map,
-        holes: T,
-    ) -> BumpAllocator {
-        let map_iter = map.iter_type(MemoryType::Available);
-        Self::new(remove_reserved(map_iter, holes), page_size)
-    }
-
-    pub fn page_size(&self) -> u64 {
-        1 << self.page_size_log2
-    }
-
-    pub fn allocate_pages(&mut self, pages: u64) -> PhysExtent {
-        // Check that pages * (2^page_size_log2) <= u64::MAX without overflow.
-        assert!(pages as u64 <= (u64::MAX >> self.page_size_log2));
-        let length = Length::from_raw(pages << self.page_size_log2);
-
-        PhysExtent::new(
-            self.allocate_impl(Length::from_raw(pages << self.page_size_log2)),
-            length,
-        )
-    }
-
-    pub fn allocate(&mut self, length: Length) -> PhysExtent {
-        PhysExtent::new(
-            self.allocate_impl(length.align_up(1 << self.page_size_log2)),
-            length,
-        )
-    }
-
-    // `alloc_length` must be aligned to the page size.
-    fn allocate_impl(&mut self, alloc_length: Length) -> PhysAddress {
-        assert!(alloc_length.as_raw().trailing_zeros() >= self.page_size_log2 as u32);
-
-        // The last element of `self.free` contains the first available block.
-        let mut block;
-        loop {
-            block = match self.free.pop() {
-                Some(block) => block,
-                None => panic!("out of memory"),
-            };
-
-            // Use this block if it's big enough.
-            if alloc_length <= block.length() {
-                break;
-            }
-
-            // Discard the block. We're just a bump allocator, after all.
-        }
-
-        let alloc_address = block.address();
-
-        let maybe_remainder = Extent::new_checked(
-            block.address() + alloc_length,
-            block.length() - alloc_length,
-        );
-
-        if let Some(remainder) = maybe_remainder {
-            self.free.push(remainder);
-        }
-
-        alloc_address
-    }
-}
-
-/// Removes specified regions from a list of memory blocks.
-///
-/// Given `blocks`, a list of available memory, removes the regions specified in
-/// `holes` and returns the remaining free memory. This may involve splitting
-/// extents in `blocks`. The resulting list may be larger than `blocks`.
-///
-/// Both lists must be sorted by start address and non-overlapping.
-pub fn remove_reserved<T: IntoIterator<Item = PhysExtent>, U: IntoIterator<Item = PhysExtent>>(
-    blocks: T,
-    holes: U,
-) -> impl Iterator<Item = PhysExtent> {
-    ReserveIter {
-        blocks: put_back(blocks),
-        holes: put_back(holes),
-    }
-    .flatten()
-}
-
-struct ReserveIter<I1: Iterator, I2: Iterator> {
-    blocks: PutBack<I1>,
-    holes: PutBack<I2>,
-}
-
-impl<I1, I2> Iterator for ReserveIter<I1, I2>
-where
-    I1: Iterator<Item = PhysExtent>,
-    I2: Iterator<Item = PhysExtent>,
-{
-    type Item = Option<PhysExtent>;
-
-    fn next(&mut self) -> Option<Option<PhysExtent>> {
-        let block = self.blocks.next()?;
-
-        // Remove holes completely before `ext`; they can be ignored.
-        while let Some(hole) = self.holes.next() {
-            if hole.last_address() >= block.address() {
-                self.holes.put_back(hole);
-                break;
-            }
-        }
-
-        // Get the next hole. If there are none left, we can simply return
-        // `block`.
-        let hole = match self.holes.next() {
-            Some(hole) => hole,
-            None => return Some(Some(block)),
-        };
-
-        // If `hole` is completely after `block`, we can return `block`.
-        // However, we must retain `hole` in case it intersects with a future
-        // `block`.
-        if block.last_address() < hole.address() {
-            self.holes.put_back(hole);
-            return Some(Some(block));
-        }
-
-        // We now know `hole` intersects `ext`: it is not completely before
-        // `ext`, nor completely after `ext`. Get both sides of the
-        // difference of `hole` from `ext`.
-        assert!(block.has_overlap(hole));
-        let maybe_left = block.left_difference(hole);
-        let maybe_right = block.right_difference(hole);
-
-        if let Some(right) = maybe_right {
-            // There may be another hole that will intersect `right`. Put it
-            // back for next iteration. We can throw away `hole` though.
-            self.blocks.put_back(right);
-        } else {
-            // `hole` may extend beyond `block`. Put it back for next iteration.
-            self.holes.put_back(hole);
-        }
-
-        // There are no holes left that may intersect `maybe_left`, if it
-        // exists. If `block` is none our caller will ignore the `Some(None)`
-        // return value.
-        Some(maybe_left)
-    }
-}
-
-pub fn is_sorted_and_nonoverlapping<
-    AddrType: AddressType,
-    T: IntoIterator<Item = Extent<AddrType>>,
->(
-    blocks: T,
-) -> bool {
-    let mut iter = blocks.into_iter().peekable();
-
-    while let Some(cur) = iter.next() {
-        let next = match iter.peek().copied() {
-            Some(next) => next,
-            None => return true,
-        };
-
-        if cur.address() >= next.address() {
-            return false;
-        }
-
-        if cur.has_overlap(next) {
-            return false;
-        }
-    }
-
-    true
+    /// Available, but where the bootloader loaded us. Can't be used unless
+    /// relocated.
+    KernelLoad,
 }
 
 #[cfg(test)]
@@ -305,140 +209,129 @@ mod tests {
     use super::*;
 
     #[test]
-    fn remove_reserved_no_holes() {
-        let result: Vec<_> = remove_reserved(
-            [Extent::from_raw(1, 4), Extent::from_raw(10, 4)]
-                .iter()
-                .copied(),
-            [].iter().copied(),
-        )
-        .collect();
-        assert_eq!(result, [Extent::from_raw(1, 4), Extent::from_raw(10, 4)]);
-
-        let result: Vec<_> = remove_reserved([].iter().copied(), [].iter().copied()).collect();
-        assert_eq!(result, []);
-    }
-
-    #[test]
-    fn remove_reserved_no_blocks() {
-        let result: Vec<_> = remove_reserved(
-            [].iter().copied(),
-            [Extent::from_raw(5, 5), Extent::from_raw(15, 5)]
-                .iter()
-                .copied(),
-        )
-        .collect();
-        assert_eq!(result, []);
-    }
-
-    #[test]
-    fn remove_reserved_big() {
-        let result: Vec<_> = remove_reserved(
-            [
-                Extent::from_raw(0, 5),
-                Extent::from_raw(7, 2),
-                Extent::from_raw(10, 10),
-                Extent::from_raw(25, 5),
-                Extent::from_raw(35, 10),
-            ]
-            .iter()
-            .copied(),
-            [
-                Extent::from_raw(0, 3),
-                Extent::from_raw(6, 4),
-                Extent::from_raw(12, 4),
-                Extent::from_raw(27, 3),
-                Extent::from_raw(32, 4),
-                Extent::from_raw(44, 2),
-            ]
-            .iter()
-            .copied(),
-        )
-        .collect();
-
-        assert_eq!(
-            result,
-            [
-                Extent::from_raw(3, 2),
-                Extent::from_raw(10, 2),
-                Extent::from_raw(16, 4),
-                Extent::from_raw(25, 2),
-                Extent::from_raw(36, 8)
-            ]
-        );
-    }
-
-    #[test]
-    fn remove_reserved_multiple_holes_in_one_block() {
-        let result: Vec<_> = remove_reserved(
-            [Extent::from_raw(10, 20)].iter().copied(),
-            [
-                Extent::from_raw(8, 4),
-                Extent::from_raw(15, 5),
-                Extent::from_raw(22, 2),
-                Extent::from_raw(28, 10),
-            ]
-            .iter()
-            .copied(),
-        )
-        .collect();
-
-        assert_eq!(
-            result,
-            [
-                Extent::from_raw(12, 3),
-                Extent::from_raw(20, 2),
-                Extent::from_raw(24, 4)
-            ]
-        );
-    }
-
-    #[test]
-    fn remove_reserved_multiple_blocks_in_one_hole() {
-        let result: Vec<_> = remove_reserved(
-            [
-                Extent::from_raw(4, 2),
-                Extent::from_raw(10, 5),
-                Extent::from_raw(20, 10),
-                Extent::from_raw(38, 4),
-            ]
-            .iter()
-            .copied(),
-            [Extent::from_raw(5, 35)].iter().copied(),
-        )
-        .collect();
-
-        assert_eq!(result, [Extent::from_raw(4, 1), Extent::from_raw(40, 2)]);
-    }
-
-    #[test]
-    fn bump_allocator() {
-        let page_size = 4096;
-
-        let map = Map::from_entries(
-            [MapEntry {
-                extent: Extent::from_raw(0, 131072),
+    fn test_mark_kernel_areas() {
+        let regions = [
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(0, 100),
                 mem_type: MemoryType::Available,
-            }]
-            .iter()
-            .copied(),
-        );
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(100, 200),
+                mem_type: MemoryType::Reserved,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(200, 300),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(325, 375),
+                mem_type: MemoryType::Defective,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(400, 600),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(700, 800),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(800, 900),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(900, 1000),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(1100, 1200),
+                mem_type: MemoryType::Available,
+            },
+        ];
 
-        let holes = [Extent::from_raw(4095, 4098)];
+        let areas = [
+            PhysExtent::from_raw_range_exclusive(25, 75),
+            PhysExtent::from_raw_range_exclusive(200, 300),
+            PhysExtent::from_raw_range_exclusive(400, 500),
+            PhysExtent::from_raw_range_exclusive(750, 775),
+            PhysExtent::from_raw_range_exclusive(790, 825),
+            PhysExtent::from_raw_range_exclusive(950, 1000),
+        ];
 
-        let mut allocator = BumpAllocator::from_memory_map(page_size, &map, holes.iter().copied());
+        let correct = [
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(0, 25),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(25, 75),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(75, 100),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(100, 200),
+                mem_type: MemoryType::Reserved,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(200, 300),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(325, 375),
+                mem_type: MemoryType::Defective,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(400, 500),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(500, 600),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(700, 750),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(750, 775),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(775, 790),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(790, 800),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(800, 825),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(825, 900),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(900, 950),
+                mem_type: MemoryType::Available,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(950, 1000),
+                mem_type: MemoryType::KernelLoad,
+            },
+            MapEntry {
+                extent: PhysExtent::from_raw_range_exclusive(1100, 1200),
+                mem_type: MemoryType::Available,
+            },
+        ];
 
-        assert_eq!(
-            allocator.allocate_pages(2),
-            PhysExtent::from_raw(page_size * 3, page_size * 2)
-        );
-        assert_eq!(
-            allocator.allocate(Length::from_raw(20)),
-            PhysExtent::from_raw(page_size * 5, 20)
-        );
-        assert_eq!(
-            allocator.allocate_pages(1),
-            PhysExtent::from_raw(page_size * 6, page_size * 1)
+        pretty_assertions::assert_eq!(
+            mark_kernel_areas(regions, areas).collect::<Vec<_>>(),
+            correct.to_vec()
         );
     }
 }

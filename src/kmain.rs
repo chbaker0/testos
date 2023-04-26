@@ -47,6 +47,14 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     let init_extent = phys_extent_to_virt(init_extent);
     let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
 
+    info!("init sections:");
+    for section in init_elf
+        .section_iter()
+        .flat_map(|s| s.get_name(&init_elf).ok())
+    {
+        info!("  {}", section);
+    }
+
     unsafe {
         sched::init_kernel_main_thread(kernel_main);
     }

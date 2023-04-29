@@ -1,11 +1,11 @@
-#![feature(start)]
+#![no_main]
 #![no_std]
 
 use core::panic::PanicInfo;
 
-#[start]
-fn start(_argc: isize, _argv: *const *const u8) -> isize {
-    0
+#[export_name = "_start"]
+pub extern "C" fn start() -> ! {
+    loop {}
 }
 
 #[panic_handler]

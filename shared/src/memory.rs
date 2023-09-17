@@ -118,7 +118,9 @@ impl<T: Iterator<Item = MapEntry>, U: Iterator<Item = PhysExtent>> Iterator
 
         // If there's no more kernel areas to consider, we just return the
         // region as is.
-        let Some(kernel) = self.kernel_areas.next() else { return Some(one_vec(cur)) };
+        let Some(kernel) = self.kernel_areas.next() else {
+            return Some(one_vec(cur));
+        };
 
         // If this extent is completely after `cur`, we can return `cur`.
         // Put the extent back so we can consider it next round.

@@ -291,7 +291,9 @@ impl<Type: AddressType> Extent<Type> {
     }
 
     pub fn contains(self, other: Self) -> bool {
-        let Some(overlap) = self.overlap(other) else { return false };
+        let Some(overlap) = self.overlap(other) else {
+            return false;
+        };
         overlap == other
     }
 

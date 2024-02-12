@@ -12,4 +12,4 @@ buildutil = { path = "../buildutil" }
 
 anyhow = { workspace = true }
 cargo_metadata = { workspace = true }
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true, features = ["derive"] }

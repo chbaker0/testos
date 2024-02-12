@@ -79,7 +79,7 @@ impl PageTableEntry {
         // SAFETY: PageTableFlags::all().bits() only returns bits valid for
         // PageTableFlags. Bitwise-and with any other value will yield only
         // valid bits.
-        unsafe { PageTableFlags::from_bits_unchecked(self.raw & PageTableFlags::all().bits()) }
+        PageTableFlags::from_bits(self.raw & PageTableFlags::all().bits()).unwrap()
     }
 }
 
@@ -92,6 +92,7 @@ bitflags::bitflags! {
     ///
     /// Entries prefixed with `APP_` are from "available" bits, so any meaning
     /// is attributed by us.
+    #[derive(Clone, Copy, Debug)]
     pub struct PageTableFlags: u64 {
         const PRESENT = 1 << 0;
         const WRITABLE = 1 << 1;
@@ -112,7 +113,7 @@ bitflags::bitflags! {
         /// `GLOBAL` bit set.
         const APP_PARENT_FROZEN = 1 << 62;
 
-        const DEFAULT_PARENT_TABLE_FLAGS = Self::PRESENT.bits | Self::WRITABLE.bits;
+        const DEFAULT_PARENT_TABLE_FLAGS = Self::PRESENT.bits() | Self::WRITABLE.bits();
     }
 }
 

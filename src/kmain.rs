@@ -20,7 +20,9 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     info!("Multiboot info: {mbinfo_addr:X}");
     info!("{:X?}", *MB2_HEADER);
 
-    let mbinfo = unsafe { mb2::load(mbinfo_addr as usize) }.unwrap();
+    let mbinfo =
+        unsafe { mb2::BootInformation::load(mbinfo_addr as *const mb2::BootInformationHeader) }
+            .unwrap();
     info!("{:?}", mbinfo);
 
     interrupts::disable();

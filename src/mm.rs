@@ -254,14 +254,15 @@ impl Drop for OwnedFrameRange {
 
 pub fn translate_memory_map(mb2_info: &mb2::BootInformation) -> Map {
     let mem_map_tag = mb2_info.memory_map_tag().unwrap();
-    Map::from_entries(mem_map_tag.all_memory_areas().map(|area| MapEntry {
+    Map::from_entries(mem_map_tag.memory_areas().iter().map(|area| MapEntry {
         extent: PhysExtent::from_raw(area.start_address(), area.size()),
-        mem_type: match area.typ() {
+        mem_type: match area.typ().into() {
             mb2::MemoryAreaType::Available => MemoryType::Available,
             mb2::MemoryAreaType::Reserved => MemoryType::Reserved,
             mb2::MemoryAreaType::AcpiAvailable => MemoryType::Acpi,
             mb2::MemoryAreaType::ReservedHibernate => MemoryType::ReservedPreserveOnHibernation,
             mb2::MemoryAreaType::Defective => MemoryType::Defective,
+            t => panic!("unknown mb2 memory type {t:?}"),
         },
     }))
 }
@@ -319,7 +320,7 @@ unsafe fn create_page_table_template<
 
     // Map the kernel image. Leaf flags are determined per-section.
     let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
-    for section in boot_info.elf_sections_tag().unwrap().sections() {
+    for section in boot_info.elf_sections().unwrap() {
         let section_type = section.section_type();
         let section_flags = section.flags();
         let section_extent = VirtExtent::from_raw(section.start_address(), section.size());
@@ -330,7 +331,7 @@ unsafe fn create_page_table_template<
         }
 
         // Filter lower-half sections, used for bootstrap.
-        if section.name().starts_with(".bootstrap") {
+        if section.name().unwrap().starts_with(".bootstrap") {
             continue;
         }
 
@@ -338,7 +339,7 @@ unsafe fn create_page_table_template<
         assert!(
             VirtualMap::kernel_image().contains(section_extent),
             "{}: {:x?} does not contain {:x?}",
-            section.name(),
+            section.name().unwrap_or("<invalid utf8>"),
             VirtualMap::kernel_image(),
             section_extent
         );

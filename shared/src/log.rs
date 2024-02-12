@@ -6,6 +6,14 @@ use core::marker::Send;
 use log::{Level, Log, Metadata, Record};
 use spin::Mutex;
 
+/// Extended `Log` interface for OS.
+pub trait LogExt {
+    /// Check if the logger impl is locked. For example, if a logging operation
+    /// itself caused a panic, it can be left in a locked (and invalid) state. A
+    /// panic handler may check this and use a backup method if so.
+    fn is_locked(&self) -> bool;
+}
+
 /// Writes formatted log messages to any `core::fmt::Write` impl. Locks
 /// internally.
 pub struct LogSink<W> {
@@ -17,10 +25,6 @@ impl<W: Write + Send> LogSink<W> {
         LogSink {
             writer: Mutex::new(writer),
         }
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.writer.is_locked()
     }
 }
 
@@ -45,6 +49,12 @@ impl<W: Write + Send> Log for LogSink<W> {
     }
 }
 
+impl<W: Write + Send> LogExt for LogSink<W> {
+    fn is_locked(&self) -> bool {
+        self.writer.is_locked()
+    }
+}
+
 fn level_as_string(level: Level) -> &'static str {
     use Level::*;
 
@@ -59,9 +69,9 @@ fn level_as_string(level: Level) -> &'static str {
 
 /// Forwards the same message to two loggers. The loggers are called in order
 /// every time.
-pub struct LogPipe<L1, L2>(pub L1, pub L2);
+pub struct LogTee<L1, L2>(pub L1, pub L2);
 
-impl<L1: Log, L2: Log> Log for LogPipe<L1, L2> {
+impl<L1: Log, L2: Log> Log for LogTee<L1, L2> {
     fn enabled(&self, metadata: &Metadata) -> bool {
         self.0.enabled(metadata) || self.1.enabled(metadata)
     }
@@ -74,6 +84,12 @@ impl<L1: Log, L2: Log> Log for LogPipe<L1, L2> {
     fn flush(&self) {
         self.0.flush();
         self.1.flush();
+    }
+}
+
+impl<L1: LogExt, L2: LogExt> LogExt for LogTee<L1, L2> {
+    fn is_locked(&self) -> bool {
+        self.0.is_locked() || self.1.is_locked()
     }
 }
 

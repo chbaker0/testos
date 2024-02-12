@@ -127,34 +127,33 @@ lazy_static! {
             MB2_HEADER_SIZE as *const _ as usize,
         )
     };
-    static ref LOGGER: shared::vga::VgaLog =
-        shared::vga::VgaLog::new(unsafe { shared::vga::VgaWriter::new(VMEM) });
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "qemu_debugcon")] {
+        use shared::log::{LogTee, LogSink, QemuDebugWriter};
+        use shared::vga::VgaWriter;
+        lazy_static! {
+            static ref LOGGER: LogTee<LogSink<QemuDebugWriter>, LogSink<VgaWriter>> = unsafe { LogTee(LogSink::new(QemuDebugWriter::new()), LogSink::new(VgaWriter::new(VMEM))) };
+        }
+    } else {
+        use shared::log::LogSink;
+        use shared::vga::VgaWriter;
+        lazy_static! {
+            static ref LOGGER: LogSink<VgaWriter> = unsafe { LogSink::new(VgaWriter::new(VMEM)) };
+        }
+    }
 }
 
 fn init_logger() {
-    use shared::log::LogSink;
-    use shared::vga::VgaWriter;
-
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "qemu_debugcon")] {
-            use shared::log::{LogPipe, QemuDebugWriter};
-
-            lazy_static! {
-                static ref LOGGER: LogPipe<LogSink<QemuDebugWriter>, LogSink<VgaWriter>> = unsafe { LogPipe(LogSink::new(QemuDebugWriter::new()), LogSink::new(VgaWriter::new(VMEM))) };
-            }
-        } else {
-            lazy_static! {
-                static ref LOGGER: LogSink<VgaWriter> = unsafe { LogSink::new(VgaWriter::new(VMEM)) };
-            }
-        }
-    }
-
     log::set_logger(&*LOGGER).unwrap();
     log::set_max_level(log::LevelFilter::Info);
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
+    use shared::log::LogExt;
+
     // It is unlikely that we panicked while our LOGGER instance was locked, and
     // if we were, we'll likely triple fault anyway. Try to use the existing
     // LOGGER, and otherwise try to use a new VgaWriter.

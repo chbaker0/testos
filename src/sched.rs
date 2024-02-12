@@ -151,9 +151,9 @@ pub fn yield_current() {
 fn pop_next_ready_task() -> TaskPtr {
     interrupts::without_interrupts(|| {
         let mut scheduler_guard = SCHEDULER.lock();
-        let mut scheduler = scheduler_guard.as_mut().unwrap();
+        let scheduler = scheduler_guard.as_mut().unwrap();
         if let Some(mut list_head) = scheduler.ready_list_head {
-            let mut head_task = unsafe { list_head.0.as_mut() };
+            let head_task = unsafe { list_head.0.as_mut() };
             scheduler.ready_list_head = head_task.next_in_list;
             head_task.next_in_list = None;
             head_task.prev_in_list = None;
@@ -167,7 +167,7 @@ fn pop_next_ready_task() -> TaskPtr {
 unsafe fn add_task_to_ready_list(mut task: TaskPtr) {
     interrupts::without_interrupts(|| {
         let mut scheduler_guard = SCHEDULER.lock();
-        let mut scheduler = scheduler_guard.as_mut().unwrap();
+        let scheduler = scheduler_guard.as_mut().unwrap();
         if let Some(mut list_tail) = scheduler.ready_list_head {
             while let Some(next) = unsafe { list_tail.0.as_mut().next_in_list } {
                 list_tail = next;

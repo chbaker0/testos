@@ -18,6 +18,7 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 /// purposes.
 pub struct VirtualMap;
 
+#[allow(unused)]
 impl VirtualMap {
     /// The first MiB is identity mapped and not available for other mappings.
     ///
@@ -208,6 +209,7 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
 }
 
 #[inline(never)]
+#[allow(unused)]
 pub fn allocate_frame() -> Option<Frame> {
     Some(allocate_frames(0)?.first())
 }

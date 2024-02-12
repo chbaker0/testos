@@ -8,7 +8,6 @@
 #![feature(const_option)]
 #![feature(int_roundings)]
 #![feature(maybe_uninit_slice)]
-#![feature(pointer_byte_offsets)]
 #![feature(pointer_is_aligned)]
 #![feature(ptr_metadata)]
 #![feature(slice_ptr_len)]

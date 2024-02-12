@@ -145,7 +145,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 3.2.25",
- "multiboot2-header 0.1.1",
+ "multiboot2-header",
 ]
 
 [[package]]
@@ -453,15 +453,13 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arrayvec",
  "bitflags 1.3.2",
  "buildutil",
  "cfg-if",
- "intrusive-collections",
  "lazy_static",
  "log",
  "multiboot2 0.14.2",
- "multiboot2-header 0.2.0",
+ "multiboot2-header",
  "once_cell",
  "shared",
  "spin 0.9.8",
@@ -564,15 +562,6 @@ checksum = "496330c4d09f5b0c4347b092b29582863d1f0ba340c0676a2e69b18b7effe914"
 dependencies = [
  "bitflags 1.3.2",
  "derive_more",
-]
-
-[[package]]
-name = "multiboot2-header"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d9bc0a721d917b66fdbbcccbfaf375a0e0d7af2c2f3e75ba54ff85425c15443"
-dependencies = [
- "multiboot2 0.13.3",
 ]
 
 [[package]]

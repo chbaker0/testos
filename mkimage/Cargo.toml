@@ -8,7 +8,8 @@ edition = "2021"
 grub-mkrescue = []
 
 [dependencies]
-anyhow = "1.0"
 buildutil = { path = "../buildutil" }
-cargo_metadata = "0.15.3"
+
+anyhow = { workspace = true }
+cargo_metadata = { workspace = true }
 clap = { version = "4", features = ["derive"] }

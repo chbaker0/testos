@@ -15,36 +15,57 @@ members = [
 default-members = ["."]
 resolver = "2"
 
+[workspace.dependencies]
+aligned = "0.4.1"
+anyhow = "1.0"
+arrayvec = { version = "0.7.2", default-features = false }
+bitflags = "1.3"
+cargo_metadata = "0.15.3"
+cfg-if = "1.0"
+clap = "3.1"
+env_logger = "*"
+intrusive-collections = { version = "0.9.5", default-features = false, features = ["nightly"] }
+itertools = { version = "0.10.5", default-features = false }
+memoffset = "0.8.0"
+lazy_static = { version = "1.4.0", default-features = false }
+log = "0.4.14"
+multiboot2 = "0.14.1"
+multiboot2-header = "0.2.0"
+num-derive = "0.3"
+num-traits = { version = "0.2", default-features = false }
+once_cell = { version = "1.17.1", default-features = false }
+pretty_assertions = "1.3.0"
+proptest = "1.1.0"
+shared = { path = "shared"  }
+spin = "0.9.5"
+static_assertions = "1.1.0"
+test-log = "0.2.11"
+xmas-elf = "0.8.0"
+x86_64 = "0.14.10"
+
 [features]
 default = ["qemu_debugcon"]
 qemu_debugcon = []
 
 [dependencies]
-bitflags = "1.3"
-cfg-if = "1.0"
-lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
-log = "0.4.14"
-multiboot2 = "0.14.1"
-once_cell = { version = "1.17.1", default-features = false }
-shared = { path = "shared"  }
-spin = "0.9.5"
-static_assertions = "1.1.0"
-xmas-elf = "0.8.0"
-x86_64 = "0.14.10"
+shared = { path = "shared" }
 
-[dependencies.arrayvec]
-version = "0.7.2"
-default-features = false
-
-[dependencies.intrusive-collections] 
-version = "0.9.5"
-default-features = false
-features = ["nightly"]
+bitflags = { workspace = true }
+cfg-if = { workspace = true }
+lazy_static = { workspace = true, features = ["spin_no_std"] }
+log = { workspace = true }
+multiboot2 = { workspace = true }
+once_cell = { workspace = true }
+spin = { workspace = true }
+static_assertions = { workspace = true }
+xmas-elf = { workspace = true }
+x86_64 = { workspace = true }
 
 [build-dependencies]
-anyhow = "1.0"
 buildutil = { path = "buildutil" }
-multiboot2-header = "0.2.0"
+
+anyhow = { workspace = true }
+multiboot2-header = { workspace = true }
 
 # Build most dependencies with optimizations in debug mode. Most debuggable
 # issues are unlikely to come from most crates.io deps. This doesn't affect

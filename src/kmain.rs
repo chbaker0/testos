@@ -1,5 +1,3 @@
-use crate::mm::phys_extent_to_virt;
-
 use super::*;
 
 use core::fmt::Write;
@@ -7,23 +5,15 @@ use core::panic::PanicInfo;
 
 use lazy_static::lazy_static;
 use log::{error, info};
-use multiboot2 as mb2;
+use uefi::prelude::*;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
-#[no_mangle]
-pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
+#[entry]
+fn main(_image_handle: Handle, system_table: SystemTable<Boot>) -> Status {
     init_logger();
-
-    info!("Multiboot info: {mbinfo_addr:X}");
-    info!("{:X?}", *MB2_HEADER);
-
-    let mbinfo =
-        unsafe { mb2::BootInformation::load(mbinfo_addr as *const mb2::BootInformationHeader) }
-            .unwrap();
-    info!("{:?}", mbinfo);
 
     interrupts::disable();
 
@@ -35,27 +25,27 @@ pub extern "C" fn kernel_entry(mbinfo_addr: u64) -> ! {
     idt::init();
     info!("Set up IDT");
 
-    let init_module = mbinfo.module_tags().next().unwrap();
-    let init_extent = mm::PhysExtent::from_raw_range_exclusive(
-        init_module.start_address().into(),
-        init_module.end_address().into(),
-    );
+    // let init_module = mbinfo.module_tags().next().unwrap();
+    // let init_extent = mm::PhysExtent::from_raw_range_exclusive(
+    //     init_module.start_address().into(),
+    //     init_module.end_address().into(),
+    // );
 
-    info!("init_extent = {init_extent:?}");
+    // info!("init_extent = {init_extent:?}");
 
-    mm::init(&mbinfo, core::iter::once(init_extent));
+    mm::init(&system_table);
     info!("Initialized frame allocator");
 
-    let init_extent = phys_extent_to_virt(init_extent);
-    let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
+    // let init_extent = phys_extent_to_virt(init_extent);
+    // let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
 
-    info!("init sections:");
-    for section in init_elf
-        .section_iter()
-        .flat_map(|s| s.get_name(&init_elf).ok())
-    {
-        info!("  {}", section);
-    }
+    // info!("init sections:");
+    // for section in init_elf
+    //     .section_iter()
+    //     .flat_map(|s| s.get_name(&init_elf).ok())
+    // {
+    //     info!("  {}", section);
+    // }
 
     unsafe {
         sched::init_kernel_main_thread(kernel_main);
@@ -104,29 +94,6 @@ pub extern "C" fn test_thread(_context: usize) -> ! {
 
 fn keyboard_handler(_: InterruptStackFrame) {
     panic!("keyboard interrupt received");
-}
-
-extern "C" {
-    // These point to valid memory, but they must not be dereferenced as is.
-    static _binary_mb2_header_start: core::ffi::c_void;
-    static _binary_mb2_header_end: core::ffi::c_void;
-    static _binary_mb2_header_size: core::ffi::c_void;
-}
-
-#[used]
-static MB2_HEADER_START: &core::ffi::c_void = unsafe { &_binary_mb2_header_start };
-#[used]
-static MB2_HEADER_END: &core::ffi::c_void = unsafe { &_binary_mb2_header_end };
-#[used]
-static MB2_HEADER_SIZE: &core::ffi::c_void = unsafe { &_binary_mb2_header_size };
-
-lazy_static! {
-    static ref MB2_HEADER: &'static [u8] = unsafe {
-        core::slice::from_raw_parts(
-            MB2_HEADER_START as *const _ as *const u8,
-            MB2_HEADER_SIZE as *const _ as usize,
-        )
-    };
 }
 
 cfg_if::cfg_if! {

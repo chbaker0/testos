@@ -11,7 +11,6 @@ use shared::memory::*;
 use paging::*;
 
 use log::info;
-use multiboot2 as mb2;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
 /// The map of virtual address space. Assigns different ranges to various
@@ -71,7 +70,7 @@ const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.
 
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
-pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<Item = PhysExtent>) {
+pub fn init(system_table: &uefi::table::SystemTable<uefi::table::Boot>) {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
@@ -80,13 +79,12 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     let kernel_extent = get_kernel_phys_extent();
     info!("Kernel extent: {kernel_extent:x?}");
 
-    let orig_memory_map = translate_memory_map(boot_info);
-
-    // Rewrite the memory map to exclude kernel areas.
-    let mut memory_map = Map::from_entries(mark_kernel_areas(
-        mark_kernel_areas(orig_memory_map.entries().iter().copied(), reserved.clone()),
-        core::iter::once(kernel_extent),
-    ));
+    let mut uefi_map_buf = [0; 8192];
+    let uefi_map = system_table
+        .boot_services()
+        .memory_map(&mut uefi_map_buf)
+        .unwrap();
+    let mut memory_map = translate_memory_map(&uefi_map);
 
     for e in memory_map.entries().iter() {
         info!("{e:x?}");
@@ -154,8 +152,8 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
 
     let page_table_template = unsafe {
         create_page_table_template(
-            boot_info,
-            &orig_memory_map,
+            &uefi_map,
+            &memory_map,
             || init_allocator.allocate(),
             first_gb_translator,
         )
@@ -178,28 +176,28 @@ pub fn init(boot_info: &mb2::BootInformation, reserved: impl Clone + Iterator<It
     // Now `frame_allocator` has exclusive access to the frame bitmap.
     let frame_bitmap_ref = spin::MutexGuard::leak(frame_bitmap);
 
-    let mut frame_allocator = unsafe { BitmapFrameAllocator::new(frame_bitmap_ref) };
+    let frame_allocator = unsafe { BitmapFrameAllocator::new(frame_bitmap_ref) };
 
     // Mark all reserved areas. Important so we don't hand out memory containing
     // kernel code or data structures.
-    for reserved_extent in reserved.chain([
-        // Exclude the kernel image itself.
-        get_kernel_phys_extent(),
-        // Exclude the boot_info structure.
-        PhysExtent::from_raw(
-            boot_info.start_address() as u64,
-            boot_info.total_size() as u64,
-        ),
-        // Exclude the first MB.
-        PhysExtent::from_raw(0, 1024 * 1024),
-    ]) {
-        info!("reserving extent {reserved_extent:?}");
-        for frame in FrameRange::containing_extent(reserved_extent).iter() {
-            // Ignore if the frame isn't available. TODO: investigate why
-            // unwrapping fails.
-            let _ = frame_allocator.reserve(frame);
-        }
-    }
+    // for reserved_extent in reserved.chain([
+    //     // Exclude the kernel image itself.
+    //     get_kernel_phys_extent(),
+    //     // Exclude the boot_info structure.
+    //     PhysExtent::from_raw(
+    //         boot_info.start_address() as u64,
+    //         boot_info.total_size() as u64,
+    //     ),
+    //     // Exclude the first MB.
+    //     PhysExtent::from_raw(0, 1024 * 1024),
+    // ]) {
+    //     info!("reserving extent {reserved_extent:?}");
+    //     for frame in FrameRange::containing_extent(reserved_extent).iter() {
+    //         // Ignore if the frame isn't available. TODO: investigate why
+    //         // unwrapping fails.
+    //         let _ = frame_allocator.reserve(frame);
+    //     }
+    // }
 
     FRAME_ALLOCATOR.lock().set(frame_allocator).unwrap();
 
@@ -254,18 +252,19 @@ impl Drop for OwnedFrameRange {
     }
 }
 
-pub fn translate_memory_map(mb2_info: &mb2::BootInformation) -> Map {
-    let mem_map_tag = mb2_info.memory_map_tag().unwrap();
-    Map::from_entries(mem_map_tag.memory_areas().iter().map(|area| MapEntry {
-        extent: PhysExtent::from_raw(area.start_address(), area.size()),
-        mem_type: match area.typ().into() {
-            mb2::MemoryAreaType::Available => MemoryType::Available,
-            mb2::MemoryAreaType::Reserved => MemoryType::Reserved,
-            mb2::MemoryAreaType::AcpiAvailable => MemoryType::Acpi,
-            mb2::MemoryAreaType::ReservedHibernate => MemoryType::ReservedPreserveOnHibernation,
-            mb2::MemoryAreaType::Defective => MemoryType::Defective,
-            t => panic!("unknown mb2 memory type {t:?}"),
-        },
+pub fn translate_memory_map(uefi_map: &uefi::table::boot::MemoryMap) -> Map {
+    Map::from_entries(uefi_map.entries().map(|area| {
+        use uefi::table::boot::MemoryType as UefiType;
+        MapEntry {
+            extent: PhysExtent::from_raw(area.phys_start, area.page_count * PAGE_SIZE.as_raw()),
+            mem_type: match area.ty {
+                UefiType::CONVENTIONAL => MemoryType::Available,
+                UefiType::ACPI_RECLAIM => MemoryType::Acpi,
+                UefiType::LOADER_CODE | UefiType::LOADER_DATA => MemoryType::KernelLoad,
+                UefiType::UNUSABLE => MemoryType::Defective,
+                _ => MemoryType::Reserved,
+            },
+        }
     }))
 }
 
@@ -273,7 +272,7 @@ unsafe fn create_page_table_template<
     F: FnMut() -> Option<Frame>,
     T: Fn(PhysAddress) -> Option<VirtAddress>,
 >(
-    boot_info: &mb2::BootInformation,
+    uefi_map: &uefi::table::boot::MemoryMap,
     memory_map: &Map,
     get_frame: F,
     translator: T,
@@ -322,48 +321,41 @@ unsafe fn create_page_table_template<
 
     // Map the kernel image. Leaf flags are determined per-section.
     let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
-    for section in boot_info.elf_sections().unwrap() {
-        let section_type = section.section_type();
-        let section_flags = section.flags();
-        let section_extent = VirtExtent::from_raw(section.start_address(), section.size());
+    for section in uefi_map.entries() {
+        let is_data = match section.ty {
+            uefi::table::boot::MemoryType::LOADER_CODE => false,
+            uefi::table::boot::MemoryType::LOADER_DATA => true,
+            _ => continue,
+        };
 
-        // Filter sections that don't occupy address space.
-        if !section_flags.contains(mb2::ElfSectionFlags::ALLOCATED) {
-            continue;
-        }
-
-        // Filter lower-half sections, used for bootstrap.
-        if section.name().unwrap().starts_with(".bootstrap") {
-            continue;
-        }
+        let section_extent =
+            VirtExtent::from_raw(section.virt_start, section.page_count * PAGE_SIZE.as_raw());
 
         // Confirm the section is in the area we expect.
         assert!(
             VirtualMap::kernel_image().contains(section_extent),
-            "{}: {:x?} does not contain {:x?}",
-            section.name().unwrap_or("<invalid utf8>"),
+            "{:x?} does not contain {:x?}",
             VirtualMap::kernel_image(),
             section_extent
         );
 
-        match section_type {
-            mb2::ElfSectionType::ProgramSection | mb2::ElfSectionType::Uninitialized => (),
-            _ => continue,
-        }
-
         let mut leaf_flags = PageTableFlags::PRESENT;
-        if !section_flags.contains(mb2::ElfSectionFlags::EXECUTABLE) {
+        if is_data {
             leaf_flags |= PageTableFlags::EXECUTE_DISABLE;
-        }
-        if section_flags.contains(mb2::ElfSectionFlags::WRITABLE) {
-            assert!(!section_flags.contains(mb2::ElfSectionFlags::EXECUTABLE));
             leaf_flags |= PageTableFlags::WRITABLE;
         }
 
-        for page in PageRange::containing_extent(section_extent).iter() {
-            let frame = Frame::new(PhysAddress::from_zero(
-                page.start() - get_kernel_virt_base(),
-            ));
+        for (ndx, page) in PageRange::new(
+            Page::new(VirtAddress::from_raw(section.virt_start)),
+            section.page_count,
+        )
+        .unwrap()
+        .iter()
+        .enumerate()
+        {
+            let frame = Frame::new(PhysAddress::from_raw(section.phys_start))
+                .next(ndx as u64)
+                .unwrap();
             unsafe {
                 mapper
                     .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
@@ -429,6 +421,7 @@ pub fn phys_to_virt(phys: PhysAddress) -> VirtAddress {
 ///
 /// The same safety considerations as for `phys_to_virt` apply.
 #[inline]
+#[allow(unused)]
 pub fn phys_extent_to_virt(phys: PhysExtent) -> VirtExtent {
     VirtExtent::new(phys_to_virt(phys.address()), phys.length())
 }

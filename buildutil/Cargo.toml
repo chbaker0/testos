@@ -6,4 +6,3 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-multiboot2-header = { workspace = true }

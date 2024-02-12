@@ -30,7 +30,6 @@ memoffset = "0.9.0"
 lazy_static = { version = "1.4.0", default-features = false }
 log = "0.4.14"
 multiboot2 = "0.19.0"
-multiboot2-header = "0.2.0"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 once_cell = { version = "1.19.0", default-features = false }
@@ -39,6 +38,7 @@ proptest = "1.4.0"
 spin = "0.9.8"
 static_assertions = "1.1.0"
 test-log = "0.2.11"
+uefi = "0.26.0"
 xmas-elf = "0.9.1"
 x86_64 = "0.14.10"
 
@@ -57,14 +57,9 @@ multiboot2 = { workspace = true }
 once_cell = { workspace = true }
 spin = { workspace = true }
 static_assertions = { workspace = true }
+uefi = { workspace = true }
 xmas-elf = { workspace = true }
 x86_64 = { workspace = true }
-
-[build-dependencies]
-buildutil = { path = "buildutil" }
-
-anyhow = { workspace = true }
-multiboot2-header = { workspace = true }
 
 # Build most dependencies with optimizations in debug mode. Most debuggable
 # issues are unlikely to come from most crates.io deps. This doesn't affect

@@ -1,6 +1,6 @@
 use std::process::{self, Command};
 
-use anyhow::Error;
+use eyre::WrapErr;
 
 fn display_output(output: process::Output) -> String {
     format!(
@@ -10,10 +10,8 @@ fn display_output(output: process::Output) -> String {
     )
 }
 
-pub fn run_and_check(cmd: &mut Command) -> anyhow::Result<()> {
-    let output = cmd
-        .output()
-        .map_err(|e| Error::new(e).context(format!("{:?}", cmd)))?;
-    anyhow::ensure!(output.status.success(), "{}", display_output(output));
+pub fn run_and_check(cmd: &mut Command) -> eyre::Result<()> {
+    let output = cmd.output().wrap_err_with(|| format!("{:?}", cmd))?;
+    eyre::ensure!(output.status.success(), "{}", display_output(output));
     Ok(())
 }

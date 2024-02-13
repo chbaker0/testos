@@ -10,6 +10,7 @@ grub-mkrescue = []
 [dependencies]
 buildutil = { path = "../buildutil" }
 
-anyhow = { workspace = true }
 cargo_metadata = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+color-eyre = { workspace = true }
+eyre = { workspace = true }

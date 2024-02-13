@@ -23,7 +23,9 @@ pub fn generate_mb2_header() -> Vec<u8> {
     builder.build()
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+
     let out_dir = PathBuf::from_str(&env::var("OUT_DIR")?)?;
 
     let mb2_header_bin = "mb2_header";

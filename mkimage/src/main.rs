@@ -13,7 +13,9 @@ struct Args {
     kernel_image: PathBuf,
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+
     let args = Args::parse();
 
     // Build init binary:

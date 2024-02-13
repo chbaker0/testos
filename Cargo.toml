@@ -17,13 +17,14 @@ resolver = "2"
 
 [workspace.dependencies]
 aligned = "0.4.1"
-anyhow = "1.0"
 arrayvec = { version = "0.7.2", default-features = false }
 bitflags = "2.4.2"
 cargo_metadata = "0.18.1"
 cfg-if = "1.0"
 clap = "4"
+color-eyre = { version = "0.6", default-features = false }
 env_logger = "0.11.1"
+eyre = "0.6"
 intrusive-collections = { version = "0.9.6", default-features = false, features = ["nightly"] }
 itertools = { version = "0.12.1", default-features = false }
 memoffset = "0.9.0"
@@ -63,7 +64,8 @@ x86_64 = { workspace = true }
 [build-dependencies]
 buildutil = { path = "buildutil" }
 
-anyhow = { workspace = true }
+color-eyre = { workspace = true }
+eyre = { workspace = true }
 multiboot2-header = { workspace = true }
 
 # Build most dependencies with optimizations in debug mode. Most debuggable

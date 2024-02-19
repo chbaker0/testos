@@ -142,6 +142,11 @@ impl Length {
     pub const fn align_up(self, alignment: u64) -> Length {
         Length::from_raw(align_u64_up(self.as_raw(), alignment))
     }
+
+    /// The minimum number of pages of length at least `self`.
+    pub const fn num_pages(self) -> u64 {
+        (self.0 - 1 + super::PAGE_SIZE.0) / super::PAGE_SIZE.0
+    }
 }
 
 impl Add for Length {

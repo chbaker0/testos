@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+shared = { path = "../shared" }
+
+elf = { workspace = true }
 log = { workspace = true }
 uefi = { workspace = true }
 uefi-services = { workspace = true }

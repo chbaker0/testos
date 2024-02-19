@@ -24,6 +24,7 @@ cargo_metadata = "0.18.1"
 cfg-if = "1.0"
 clap = "4"
 color-eyre = { version = "0.6", default-features = false }
+elf = { version = "0.7.4", default-features = false }
 env_logger = "0.11.1"
 eyre = "0.6"
 intrusive-collections = { version = "0.9.6", default-features = false, features = ["nightly"] }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 source .env
-set -xu
+set -eux
 
 qemu-system-x86_64 -enable-kvm \
     -drive if=pflash,format=raw,readonly=on,file=${TESTOS_QEMU_EFI_CODE} \

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 source .env
-set -xu
+set -eux
 
 cargo +nightly build -p loader --target x86_64-unknown-uefi
 cargo +nightly kbuild

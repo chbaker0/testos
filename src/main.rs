@@ -13,6 +13,8 @@ mod mm;
 mod pic;
 mod sched;
 
+pub use kmain::kernel_entry;
+
 fn halt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();

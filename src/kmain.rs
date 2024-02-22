@@ -11,7 +11,7 @@ use x86_64::structures::idt::InterruptStackFrame;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
-#[export_name = "kernel_entry"]
+#[export_name = "_start"]
 pub extern "C" fn kernel_entry(_image_handle: Handle, system_table: SystemTable<Boot>) -> Status {
     init_logger();
 

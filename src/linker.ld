@@ -12,7 +12,7 @@ SECTIONS
 
     .text ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
     {
-        ENTRY(kernel_entry)
+        ENTRY(_start)
         *(.text .text.*)
     } :text
 

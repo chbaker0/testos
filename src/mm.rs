@@ -1,9 +1,8 @@
 //! Kernel memory management
 
-pub mod paging;
-
 pub use shared::memory::addr::*;
 pub use shared::memory::page::*;
+pub use shared::memory::paging;
 
 use shared::memory::alloc::*;
 use shared::memory::*;

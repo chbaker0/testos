@@ -869,6 +869,7 @@ version = "0.1.0"
 dependencies = [
  "aligned",
  "arrayvec",
+ "bitflags 2.4.2",
  "env_logger",
  "intrusive-collections",
  "itertools",

@@ -10,6 +10,7 @@ alloc = []
 
 [dependencies]
 arrayvec = { workspace = true }
+bitflags = { workspace = true }
 intrusive-collections = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }

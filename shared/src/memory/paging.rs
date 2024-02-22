@@ -1,4 +1,4 @@
-use shared::memory::{addr::*, page::*};
+use crate::memory::{addr::*, page::*};
 
 use core::ptr;
 use core::sync::atomic::{compiler_fence, Ordering};

@@ -1,6 +1,7 @@
 pub mod addr;
 pub mod alloc;
 pub mod page;
+pub mod paging;
 
 use page::{FrameRange, PAGE_SIZE};
 

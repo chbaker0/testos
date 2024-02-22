@@ -40,6 +40,9 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let page_table_root_ptr = bs
         .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
         .unwrap() as *mut shared::memory::paging::PageTable;
+    unsafe {
+        page_table_root_ptr.write(shared::memory::paging::PageTable::zero());
+    }
     let mut page_mapper = unsafe {
         shared::memory::paging::Mapper::new(
             &mut *page_table_root_ptr,
@@ -114,7 +117,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             .iter()
             .enumerate()
         {
-            info!("...");
             let page = first_page.next(n as u64).unwrap();
             unsafe {
                 page_mapper

@@ -3,6 +3,10 @@
 
 extern crate alloc;
 
+use shared::memory::page::{Frame, FrameRange, Page};
+use shared::memory::paging::{Mapper, PageTable, PageTableFlags};
+use shared::memory::{Length, PhysAddress, VirtAddress};
+
 use log::info;
 use uefi::prelude::*;
 use uefi::table::boot::{AllocateType, MemoryType};
@@ -10,9 +14,9 @@ use uefi::table::boot::{AllocateType, MemoryType};
 #[entry]
 fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table).unwrap();
-    let bs = system_table.boot_services();
 
-    let mut fs = bs
+    let mut fs = system_table
+        .boot_services()
         .get_image_file_system(image_handle)
         .expect("load fs protocol");
     let mut dir = fs.open_volume().expect("open fs");
@@ -34,26 +38,29 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .read(&mut kernel_image)
         .expect("reading testos binary");
 
+    core::mem::drop(fs);
+
     let kernel_elf = elf::ElfBytes::<'_, elf::endian::LittleEndian>::minimal_parse(&kernel_image)
         .expect("parsing elf");
 
-    let page_table_root_ptr = bs
+    let page_table_root_ptr = system_table
+        .boot_services()
         .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
-        .unwrap() as *mut shared::memory::paging::PageTable;
+        .unwrap() as *mut PageTable;
     unsafe {
-        page_table_root_ptr.write(shared::memory::paging::PageTable::zero());
+        page_table_root_ptr.write(PageTable::zero());
     }
     let mut page_mapper = unsafe {
-        shared::memory::paging::Mapper::new(
+        Mapper::new(
             &mut *page_table_root_ptr,
-            |phys| Some(shared::memory::VirtAddress::from_raw(phys.as_raw())),
+            |phys| Some(VirtAddress::from_raw(phys.as_raw())),
             || {
-                Some(shared::memory::page::Frame::new(
-                    shared::memory::PhysAddress::from_raw(
-                        bs.allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
-                            .ok()?,
-                    ),
-                ))
+                Some(Frame::new(PhysAddress::from_raw(
+                    system_table
+                        .boot_services()
+                        .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+                        .ok()?,
+                )))
             },
         )
     };
@@ -69,21 +76,23 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             _ => continue,
         }
 
-        let is_code = seg.p_flags | elf::abi::PF_X > 0;
-        let is_writable = seg.p_flags | elf::abi::PF_W > 0;
+        let is_code = seg.p_flags & elf::abi::PF_X > 0;
+        let is_writable = seg.p_flags & elf::abi::PF_W > 0;
 
-        let page_count = shared::memory::Length::from_raw(seg.p_memsz).num_pages() as usize;
+        let page_count = Length::from_raw(seg.p_memsz).num_pages() as usize;
         let addr = PhysAddress::from_raw(
-            bs.allocate_pages(
-                AllocateType::AnyPages,
-                if is_code {
-                    MemoryType::LOADER_CODE
-                } else {
-                    MemoryType::LOADER_DATA
-                },
-                page_count,
-            )
-            .expect("allocating pages for kernel segment"),
+            system_table
+                .boot_services()
+                .allocate_pages(
+                    AllocateType::AnyPages,
+                    if is_code {
+                        MemoryType::LOADER_CODE
+                    } else {
+                        MemoryType::LOADER_DATA
+                    },
+                    page_count,
+                )
+                .expect("allocating pages for kernel segment"),
         );
 
         // During UEFI boot, all memory is identity mapped.
@@ -98,9 +107,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             to_ptr.copy_from_nonoverlapping(image_data.as_ptr(), image_data.len());
         }
 
-        use shared::memory::page::{Frame, FrameRange, Page};
-        use shared::memory::paging::PageTableFlags;
-        use shared::memory::VirtAddress;
         let parent_set_flags = PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS;
         let parent_mask_flags = PageTableFlags::empty();
         let mut leaf_flags = PageTableFlags::PRESENT;
@@ -127,6 +133,56 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     }
 
     info!("kernel loaded and mapped");
+
+    let mut mem_map_buf = [0; 4096 * 16];
+    let mem_map = system_table
+        .boot_services()
+        .memory_map(&mut mem_map_buf)
+        .expect("get mem map");
+
+    for e in mem_map.entries() {
+        let frames = FrameRange::new(
+            Frame::new(PhysAddress::from_raw(e.phys_start)),
+            e.page_count as u64,
+        )
+        .unwrap();
+        let first_page = Page::new(VirtAddress::from_raw(e.virt_start));
+
+        let parent_set_flags = PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS;
+        let parent_mask_flags = PageTableFlags::empty();
+        let leaf_flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | match e.ty {
+                MemoryType::LOADER_CODE
+                | MemoryType::BOOT_SERVICES_CODE
+                | MemoryType::RUNTIME_SERVICES_CODE => PageTableFlags::empty(),
+                _ => PageTableFlags::EXECUTE_DISABLE,
+            };
+
+        for (n, frame) in frames.iter().enumerate() {
+            let page = first_page.next(n as u64).unwrap();
+            unsafe {
+                page_mapper
+                    .map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)
+                    .unwrap();
+            }
+        }
+    }
+
+    let entry_addr: u64 = kernel_elf.ehdr.e_entry;
+    info!("identity mapped existing memory. exiting boot services. kernel entry: {entry_addr:x}");
+
+    let (_system_table, _mem_map) = system_table.exit_boot_services(MemoryType::LOADER_DATA);
+
+    unsafe {
+        x86_64::registers::control::Cr3::write(
+            x86_64::structures::paging::PhysFrame::from_start_address(x86_64::addr::PhysAddr::new(
+                page_table_root_ptr as u64,
+            ))
+            .unwrap(),
+            x86_64::registers::control::Cr3Flags::empty(),
+        )
+    }
 
     loop {
         x86_64::instructions::hlt()

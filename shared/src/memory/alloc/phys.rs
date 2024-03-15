@@ -1,8 +1,6 @@
 use crate::memory::addr::*;
 use crate::memory::page::*;
 
-use core::convert::TryInto;
-
 /// `FrameAllocator` clients may attempt to reserve a specific frame of memory.
 /// This can fail for one of the reasons listed below.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

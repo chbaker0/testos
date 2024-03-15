@@ -10,25 +10,25 @@ SECTIONS
 {
     . += KERNEL_VIRT_BASE;
 
-    .text ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
+    .text ALIGN(4K) :
     {
         ENTRY(_start)
         *(.text .text.*)
     } :text
 
-    .rodata ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
+    .rodata ALIGN(4K) :
     {
         *(.rodata .rodata.*)
         KERNEL_PHYS_BEGIN_SYM = LOADADDR(.text);
         KERNEL_PHYS_END_SYM = LOADADDR(.bss) + SIZEOF(.bss);
     } :data
 
-    .data ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
+    .data ALIGN(4K) :
     {
         *(.data .data.*)
     } :data
 
-    .bss ALIGN(4K) : AT(. - KERNEL_VIRT_BASE) ALIGN(4K)
+    .bss ALIGN(4K) :
     {
         *(.bss .bss.*)
         *(COMMON)

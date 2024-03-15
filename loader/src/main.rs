@@ -171,6 +171,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let entry_addr: u64 = kernel_elf.ehdr.e_entry;
     info!("identity mapped existing memory. exiting boot services. kernel entry: {entry_addr:x}");
+    system_table.boot_services().stall(5 * 1000 * 1000);
 
     let (_system_table, _mem_map) = system_table.exit_boot_services(MemoryType::LOADER_DATA);
 
@@ -181,10 +182,13 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             ))
             .unwrap(),
             x86_64::registers::control::Cr3Flags::empty(),
-        )
+        );
+
+        core::arch::asm!(
+            "jmp {entry_addr}",
+            entry_addr = in(reg) entry_addr,
+        );
     }
 
-    loop {
-        x86_64::instructions::hlt()
-    }
+    unreachable!()
 }

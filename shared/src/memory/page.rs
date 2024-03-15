@@ -2,7 +2,7 @@
 
 use super::addr::{Length, PhysAddress, PhysExtent, VirtAddress, VirtExtent};
 
-use core::iter::{self, Iterator};
+use core::iter;
 use core::num::NonZeroU64;
 
 pub const PAGE_SIZE: Length = Length::from_raw(4096);

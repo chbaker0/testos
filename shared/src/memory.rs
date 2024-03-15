@@ -5,8 +5,6 @@ pub mod paging;
 
 use page::{FrameRange, PAGE_SIZE};
 
-use core::iter::IntoIterator;
-
 use arrayvec::ArrayVec;
 use itertools::put_back;
 use itertools::structs::PutBack;

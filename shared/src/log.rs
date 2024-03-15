@@ -1,7 +1,6 @@
 //! Basic logging facilities used with the `log` crate.
 
 use core::fmt::Write;
-use core::marker::Send;
 
 use log::{Level, Log, Metadata, Record};
 use spin::Mutex;

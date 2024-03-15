@@ -1,5 +1,4 @@
 use core::cmp::{max, min};
-use core::convert::Into;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;

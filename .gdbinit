@@ -1,2 +1,2 @@
-file out/iso/boot/kernel
+file out/esp/testos
 target remote localhost:1234

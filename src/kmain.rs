@@ -12,18 +12,20 @@ use x86_64::structures::idt::InterruptStackFrame;
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
 #[export_name = "_start"]
-pub extern "C" fn kernel_entry(_image_handle: Handle, system_table: SystemTable<Boot>) -> Status {
-    init_logger();
+pub extern "C" fn kernel_entry() -> ! {
+    halt_loop();
 
-    interrupts::disable();
+    // init_logger();
 
-    info!("In kernel");
+    // interrupts::disable();
 
-    gdt::init();
-    info!("Set up GDT");
+    // info!("In kernel");
 
-    idt::init();
-    info!("Set up IDT");
+    // gdt::init();
+    // info!("Set up GDT");
+
+    // idt::init();
+    // info!("Set up IDT");
 
     // let init_module = mbinfo.module_tags().next().unwrap();
     // let init_extent = mm::PhysExtent::from_raw_range_exclusive(
@@ -33,8 +35,8 @@ pub extern "C" fn kernel_entry(_image_handle: Handle, system_table: SystemTable<
 
     // info!("init_extent = {init_extent:?}");
 
-    mm::init(&system_table);
-    info!("Initialized frame allocator");
+    // mm::init(&system_table);
+    // info!("Initialized frame allocator");
 
     // let init_extent = phys_extent_to_virt(init_extent);
     // let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
@@ -47,9 +49,9 @@ pub extern "C" fn kernel_entry(_image_handle: Handle, system_table: SystemTable<
     //     info!("  {}", section);
     // }
 
-    unsafe {
-        sched::init_kernel_main_thread(kernel_main);
-    }
+    // unsafe {
+    //     sched::init_kernel_main_thread(kernel_main);
+    // }
 }
 
 pub fn kernel_main() -> ! {

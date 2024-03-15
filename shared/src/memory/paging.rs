@@ -22,6 +22,10 @@ impl PageTable {
             entries: [PageTableEntry::zero(); 512],
         }
     }
+
+    pub const fn entries(&self) -> &[PageTableEntry] {
+        &self.entries
+    }
 }
 
 // Assert that `PageTable` is 4 KiB.
@@ -80,6 +84,10 @@ impl PageTableEntry {
         // PageTableFlags. Bitwise-and with any other value will yield only
         // valid bits.
         PageTableFlags::from_bits(self.raw & PageTableFlags::all().bits()).unwrap()
+    }
+
+    pub const fn as_raw(&self) -> u64 {
+        self.raw
     }
 }
 

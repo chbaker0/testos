@@ -7,6 +7,9 @@ use shared::memory::page::{Frame, FrameRange, Page};
 use shared::memory::paging::{Mapper, PageTable, PageTableFlags};
 use shared::memory::{Length, PhysAddress, VirtAddress};
 
+use core::fmt::Write;
+use core::writeln;
+
 use log::info;
 use uefi::prelude::*;
 use uefi::table::boot::{AllocateType, MemoryType};
@@ -108,7 +111,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         }
 
         let parent_set_flags = PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS;
-        let parent_mask_flags = PageTableFlags::empty();
+        let parent_mask_flags = parent_set_flags;
         let mut leaf_flags = PageTableFlags::PRESENT;
         if !is_code {
             leaf_flags |= PageTableFlags::EXECUTE_DISABLE;
@@ -135,10 +138,13 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     info!("kernel loaded and mapped");
 
     let mut mem_map_buf = [0; 4096 * 16];
-    let mem_map = system_table
+    let mut mem_map = system_table
         .boot_services()
         .memory_map(&mut mem_map_buf)
         .expect("get mem map");
+    mem_map.sort();
+
+    let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
 
     for e in mem_map.entries() {
         let frames = FrameRange::new(
@@ -146,21 +152,13 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             e.page_count as u64,
         )
         .unwrap();
-        let first_page = Page::new(VirtAddress::from_raw(e.virt_start));
 
         let parent_set_flags = PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS;
-        let parent_mask_flags = PageTableFlags::empty();
-        let leaf_flags = PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | match e.ty {
-                MemoryType::LOADER_CODE
-                | MemoryType::BOOT_SERVICES_CODE
-                | MemoryType::RUNTIME_SERVICES_CODE => PageTableFlags::empty(),
-                _ => PageTableFlags::EXECUTE_DISABLE,
-            };
+        let parent_mask_flags = parent_set_flags;
+        let leaf_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
-        for (n, frame) in frames.iter().enumerate() {
-            let page = first_page.next(n as u64).unwrap();
+        for frame in frames.iter() {
+            let page = Page::new(VirtAddress::from_raw(frame.start().as_raw()));
             unsafe {
                 page_mapper
                     .map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)
@@ -171,9 +169,10 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let entry_addr: u64 = kernel_elf.ehdr.e_entry;
     info!("identity mapped existing memory. exiting boot services. kernel entry: {entry_addr:x}");
-    system_table.boot_services().stall(5 * 1000 * 1000);
 
     let (_system_table, _mem_map) = system_table.exit_boot_services(MemoryType::LOADER_DATA);
+
+    writeln!(debugcon, "Exited boot services").unwrap();
 
     unsafe {
         x86_64::registers::control::Cr3::write(
@@ -183,7 +182,11 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             .unwrap(),
             x86_64::registers::control::Cr3Flags::empty(),
         );
+    }
 
+    writeln!(debugcon, "Installed page table").unwrap();
+
+    unsafe {
         core::arch::asm!(
             "jmp {entry_addr}",
             entry_addr = in(reg) entry_addr,

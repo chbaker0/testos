@@ -21,9 +21,9 @@ pub fn init() {
     assert!(!IS_INITIALIZED.swap(true, core::sync::atomic::Ordering::SeqCst));
 
     let gdt = SpinMutexGuard::leak(GDT.lock());
-    gdt.add_entry(Descriptor::kernel_code_segment());
+    gdt.append(Descriptor::kernel_code_segment());
     // Not sure if this one is necessary?
-    gdt.add_entry(Descriptor::kernel_data_segment());
+    gdt.append(Descriptor::kernel_data_segment());
     gdt.load();
 
     unsafe {

@@ -1,6 +1,6 @@
 use crate::mm;
 
-use core::arch::asm;
+use core::arch::{asm, naked_asm};
 use core::mem;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
@@ -183,14 +183,14 @@ unsafe fn add_task_to_ready_list(mut task: TaskPtr) {
     });
 }
 
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn switch_to(
     next_rsp: usize,                    /* rdi */
     prev_rsp: *mut usize,               /* rsi */
     restore_fn: unsafe extern "C" fn(), /* rdx */
 ) {
     unsafe {
-        asm!(
+        naked_asm!(
             "pushfq",
             "push rbp",
             "push rbx",
@@ -205,24 +205,15 @@ unsafe extern "C" fn switch_to(
             "2:",
             "mov rsp, rdi",
             "ret",
-            options(noreturn),
         )
     }
 }
 
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn restore_task_state() {
     unsafe {
-        asm!(
-            "pop r15",
-            "pop r14",
-            "pop r13",
-            "pop r12",
-            "pop rbx",
-            "pop rbp",
-            "popfq",
-            "ret",
-            options(noreturn),
+        naked_asm!(
+            "pop r15", "pop r14", "pop r13", "pop r12", "pop rbx", "pop rbp", "popfq", "ret",
         )
     }
 }
@@ -287,15 +278,13 @@ fn create_task(task_fn: extern "C" fn(usize) -> !, context: usize) -> TaskPtr {
 /// not follow any normal calling convention. The task entry point and task
 /// context must be pushed on the stack in order, then this function must be
 /// jumped to, not called.
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn task_init_trampoline() -> ! {
     unsafe {
-        asm!(
+        naked_asm!(
             // Get the context and place it in rdi, the first and only arg.
-            "pop rdi",
-            // "Return" to the task_fn, the next argument on the stack.
+            "pop rdi", // "Return" to the task_fn, the next argument on the stack.
             "ret",
-            options(noreturn),
         )
     }
 }

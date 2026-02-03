@@ -11,17 +11,19 @@ use core::fmt::Write;
 use core::writeln;
 
 use log::info;
+
+use uefi::mem::memory_map::{MemoryMap, MemoryMapMut};
 use uefi::prelude::*;
-use uefi::table::boot::{AllocateType, MemoryType};
+
+use boot::{AllocateType, MemoryType};
 
 #[entry]
-fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
-    uefi_services::init(&mut system_table).unwrap();
+fn main() -> Status {
+    let image_handle = boot::image_handle();
 
-    let mut fs = system_table
-        .boot_services()
-        .get_image_file_system(image_handle)
-        .expect("load fs protocol");
+    uefi::helpers::init().unwrap();
+
+    let mut fs = boot::get_image_file_system(image_handle).expect("load fs protocol");
     let mut dir = fs.open_volume().expect("open fs");
 
     use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
@@ -46,10 +48,10 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let kernel_elf = elf::ElfBytes::<'_, elf::endian::LittleEndian>::minimal_parse(&kernel_image)
         .expect("parsing elf");
 
-    let page_table_root_ptr = system_table
-        .boot_services()
-        .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
-        .unwrap() as *mut PageTable;
+    let page_table_root_ptr =
+        boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+            .unwrap()
+            .as_ptr() as *mut PageTable;
     unsafe {
         page_table_root_ptr.write(PageTable::zero());
     }
@@ -59,10 +61,9 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             |phys| Some(VirtAddress::from_raw(phys.as_raw())),
             || {
                 Some(Frame::new(PhysAddress::from_raw(
-                    system_table
-                        .boot_services()
-                        .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
-                        .ok()?,
+                    boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+                        .ok()?
+                        .as_ptr() as u64,
                 )))
             },
         )
@@ -84,18 +85,17 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
         let page_count = Length::from_raw(seg.p_memsz).num_pages() as usize;
         let addr = PhysAddress::from_raw(
-            system_table
-                .boot_services()
-                .allocate_pages(
-                    AllocateType::AnyPages,
-                    if is_code {
-                        MemoryType::LOADER_CODE
-                    } else {
-                        MemoryType::LOADER_DATA
-                    },
-                    page_count,
-                )
-                .expect("allocating pages for kernel segment"),
+            boot::allocate_pages(
+                AllocateType::AnyPages,
+                if is_code {
+                    MemoryType::LOADER_CODE
+                } else {
+                    MemoryType::LOADER_DATA
+                },
+                page_count,
+            )
+            .expect("allocating pages for kernel segment")
+            .as_ptr() as u64,
         );
 
         // During UEFI boot, all memory is identity mapped.
@@ -137,11 +137,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("kernel loaded and mapped");
 
-    let mut mem_map_buf = [0; 4096 * 16];
-    let mut mem_map = system_table
-        .boot_services()
-        .memory_map(&mut mem_map_buf)
-        .expect("get mem map");
+    let mut mem_map = boot::memory_map(MemoryType::LOADER_DATA).expect("get mem map");
     mem_map.sort();
 
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
@@ -170,7 +166,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let entry_addr: u64 = kernel_elf.ehdr.e_entry;
     info!("identity mapped existing memory. exiting boot services. kernel entry: {entry_addr:x}");
 
-    let (_system_table, _mem_map) = system_table.exit_boot_services(MemoryType::LOADER_DATA);
+    let _mem_map = unsafe { boot::exit_boot_services(None) };
 
     writeln!(debugcon, "Exited boot services").unwrap();
 

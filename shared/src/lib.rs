@@ -5,12 +5,9 @@
 //! this crate.
 //!
 #![feature(allocator_api)]
-#![feature(const_option)]
 #![feature(int_roundings)]
-#![feature(maybe_uninit_slice)]
-#![feature(pointer_is_aligned)]
+#![feature(pointer_is_aligned_to)]
 #![feature(ptr_metadata)]
-#![feature(slice_ptr_len)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(not(test), no_std)]
 

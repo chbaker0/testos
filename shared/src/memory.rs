@@ -137,7 +137,7 @@ impl<T: Iterator<Item = MapEntry>, U: Iterator<Item = PhysExtent>> Iterator
             self.regions.put_back(MapEntry {
                 extent: right,
                 mem_type: cur.mem_type,
-            })
+            });
         }
 
         let mut parts = ArrayVec::new();

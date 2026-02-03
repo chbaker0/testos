@@ -10,6 +10,7 @@ use shared::memory::*;
 use paging::*;
 
 use log::info;
+use uefi::mem::memory_map::MemoryMap;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 
 /// The map of virtual address space. Assigns different ranges to various
@@ -69,7 +70,7 @@ const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.
 
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
-pub fn init(system_table: &uefi::table::SystemTable<uefi::table::Boot>) {
+pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
@@ -79,11 +80,7 @@ pub fn init(system_table: &uefi::table::SystemTable<uefi::table::Boot>) {
     info!("Kernel extent: {kernel_extent:x?}");
 
     let mut uefi_map_buf = [0; 8192];
-    let uefi_map = system_table
-        .boot_services()
-        .memory_map(&mut uefi_map_buf)
-        .unwrap();
-    let mut memory_map = translate_memory_map(&uefi_map);
+    let mut memory_map = translate_memory_map(uefi_map);
 
     for e in memory_map.entries().iter() {
         info!("{e:x?}");
@@ -251,9 +248,9 @@ impl Drop for OwnedFrameRange {
     }
 }
 
-pub fn translate_memory_map(uefi_map: &uefi::table::boot::MemoryMap) -> Map {
+pub fn translate_memory_map(uefi_map: &uefi::mem::memory_map::MemoryMapRef) -> Map {
     Map::from_entries(uefi_map.entries().map(|area| {
-        use uefi::table::boot::MemoryType as UefiType;
+        use uefi::mem::memory_map::MemoryType as UefiType;
         MapEntry {
             extent: PhysExtent::from_raw(area.phys_start, area.page_count * PAGE_SIZE.as_raw()),
             mem_type: match area.ty {
@@ -271,7 +268,7 @@ unsafe fn create_page_table_template<
     F: FnMut() -> Option<Frame>,
     T: Fn(PhysAddress) -> Option<VirtAddress>,
 >(
-    uefi_map: &uefi::table::boot::MemoryMap,
+    uefi_map: &uefi::mem::memory_map::MemoryMapRef,
     memory_map: &Map,
     get_frame: F,
     translator: T,
@@ -322,8 +319,8 @@ unsafe fn create_page_table_template<
     let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
     for section in uefi_map.entries() {
         let is_data = match section.ty {
-            uefi::table::boot::MemoryType::LOADER_CODE => false,
-            uefi::table::boot::MemoryType::LOADER_DATA => true,
+            uefi::mem::memory_map::MemoryType::LOADER_CODE => false,
+            uefi::mem::memory_map::MemoryType::LOADER_DATA => true,
             _ => continue,
         };
 

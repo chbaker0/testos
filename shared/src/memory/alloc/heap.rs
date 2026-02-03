@@ -204,7 +204,7 @@ impl<Provider, const CHUNK_SIZE: usize> CheckedHeap<Provider, CHUNK_SIZE> {
         CheckedHeap(Mutex::new(heap))
     }
 
-    pub fn get(&self) -> spin::MutexGuard<Heap<Provider, CHUNK_SIZE>> {
+    pub fn get(&self) -> spin::MutexGuard<'_, Heap<Provider, CHUNK_SIZE>> {
         self.0.try_lock().unwrap()
     }
 }

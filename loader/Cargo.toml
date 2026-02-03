@@ -8,6 +8,15 @@ shared = { path = "../shared" }
 
 elf = { workspace = true }
 log = { workspace = true }
-uefi = { workspace = true }
-uefi-services = { workspace = true }
 x86_64 = { workspace = true }
+
+[dependencies.uefi]
+workspace = true
+features = [
+    "alloc",
+    "global_allocator",
+    "log-debugcon",
+    "logger",
+    "panic_handler",
+    "qemu",
+]

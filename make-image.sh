@@ -3,6 +3,7 @@
 source .env
 set -eux
 
+cargo +nightly run -p fetch-prebuilts
 cargo +nightly build -p loader --target x86_64-unknown-uefi
 cargo +nightly kbuild
 

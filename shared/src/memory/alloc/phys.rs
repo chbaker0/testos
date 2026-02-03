@@ -111,7 +111,7 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// All frames that must be preserved or which refer to invalid memory must
     /// be marked used. All frames marked free must be available for use and not used
     /// by other code.
-    pub unsafe fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator {
+    pub unsafe fn new(bitmap: &'a mut [u8]) -> BitmapFrameAllocator<'a> {
         BitmapFrameAllocator { bitmap }
     }
 

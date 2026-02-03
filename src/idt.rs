@@ -56,7 +56,7 @@ fn init_impl() {
         .set_handler_fn(security_exception_handler);
     // Entry 31 is reserved
 
-    for i in 32..256 {
+    for i in 32..=255 {
         idt[i] = Entry::missing();
     }
 
@@ -70,9 +70,9 @@ pub unsafe fn install_interrupt_handler(num: u8, maybe_handler: Option<HandlerFu
     without_interrupts(|| {
         let mut idt = IDT.lock();
         if let Some(handler) = maybe_handler {
-            idt[num as usize].set_handler_fn(handler);
+            idt[num].set_handler_fn(handler);
         } else {
-            idt[num as usize] = Entry::missing();
+            idt[num] = Entry::missing();
         }
     });
 }

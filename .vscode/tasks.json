@@ -4,8 +4,8 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "type": "cargo",
-            "command": "kimage",
+            "type": "shell",
+            "command": "./make-image.sh",
             "problemMatcher": [
                 "$rustc"
             ],
@@ -13,17 +13,7 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "label": "Build bootable ISO"
-        },
-        {
-            "type": "cargo",
-            "command": "kimage",
-            "args": ["--release"],
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build",
-            "label": "Build bootable ISO (release)"
+            "label": "Build UEFI image"
         },
         {
             "type": "cargo",
@@ -46,23 +36,16 @@
         {
             "label": "Debug in QEMU",
             "type": "shell",
-            "command": "qemu-system-x86_64 out/kernel.iso -s -S",
+            "command": "./run-qemu.sh -s -S",
             "problemMatcher": [],
-            "dependsOn": ["Build bootable ISO"]
+            "dependsOn": ["Build UEFI image"]
         },
         {
             "label": "Run in QEMU",
             "type": "shell",
-            "command": "qemu-system-x86_64 out/kernel.iso -s",
+            "command": "./run-qemu.sh -s",
             "problemMatcher": [],
-            "dependsOn": ["Build bootable ISO"]
-        },
-        {
-            "label": "Run in QEMU (release)",
-            "type": "shell",
-            "command": "qemu-system-x86_64 out/kernel.iso",
-            "problemMatcher": [],
-            "dependsOn": ["Build bootable ISO (release)"]
+            "dependsOn": ["Build UEFI image"]
         }
     ]
 }

@@ -6,5 +6,5 @@ fn main() {
     let prebuilt = Prebuilt::fetch(TAG.clone(), "target/ovmf").expect("failed to update prebuilt");
 
     prebuilt.get_file(Arch::X64, FileType::Code);
-    prebuilt.get_file(Arch::X64, FileType::Code);
+    prebuilt.get_file(Arch::X64, FileType::Vars);
 }

@@ -14,5 +14,5 @@
     "disable-redzone": true,
     "features": "-mmx,-sse,+soft-float",
     "frame-pointer": "always",
-    "rustc-abi": "x86-softfloat"
+    "rustc-abi": "softfloat"
 }

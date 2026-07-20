@@ -30,6 +30,12 @@ exercised at boot even though the code for it still exists in `src/`.
   which only need `rust-src` + `-Zbuild-std`). Missing the target add gives
   a `can't find crate for `core`` error that's easy to misread as something
   else.
+* Because of this, `rustup show` / `rustup target list --installed` will
+  only ever list `x86_64-unknown-uefi` (and the host triple) — it will
+  never show `x86_64-unknown-none` or `x86_64-unknown-testos`, since those
+  are custom `targets/*.json` specs built via `-Zbuild-std`, not
+  rustup-managed targets. Their absence from that output is expected, not
+  a sign of a broken or incomplete toolchain install.
 * `./make-image.sh` builds everything and assembles `out/esp` (a UEFI ESP
   directory, **not** an ISO). `./run-qemu.sh` boots it in QEMU.
 * Both scripts `source .env` and will hard-fail (`set -e`) if it doesn't
@@ -71,6 +77,13 @@ loader, init — can only really be checked by booting it. Prefer, in order:
 * `mkimage/` (builds a GRUB/xorriso ISO) is a leftover from the pre-UEFI boot
   flow and isn't invoked by `make-image.sh` anymore. Don't assume it's part
   of the live build path.
+* `cargo`/`rustc`/`rustup`/`rust-analyzer` live in `~/.cargo/bin`, which is
+  not always on `PATH` in a fresh shell session (depends on whether
+  `~/.cargo/env` got sourced). If these commands report "not found," that's
+  almost always a stale/non-interactive shell rather than a broken or
+  missing toolchain install — check `ls ~/.cargo/bin` before concluding
+  anything is actually missing, and ask the user to confirm/restart the
+  shell rather than adding PATH exports or wrapper scripts.
 * `targets/x86_64-unknown-none.json` (kernel) and
   `targets/x86_64-unknown-testos.json` (init) differ in more than name —
   e.g. soft-float/no-SSE + `code-model: kernel` vs. SSE enabled +

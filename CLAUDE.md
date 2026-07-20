@@ -24,6 +24,12 @@ exercised at boot even though the code for it still exists in `src/`.
 * Nightly Rust only, with `-Zbuild-std`; see `.cargo/config.toml` for the
   real cargo aliases (`kbuild`, `kcheck`, `scheck`, `icheck`, `lcheck`, etc.)
   — each targets a different crate/target triple, see README for the map.
+* A fresh toolchain needs both `rustup component add rust-src` **and**
+  `rustup target add x86_64-unknown-uefi` — the loader targets that
+  built-in triple directly (not one of the custom `targets/*.json` files,
+  which only need `rust-src` + `-Zbuild-std`). Missing the target add gives
+  a `can't find crate for `core`` error that's easy to misread as something
+  else.
 * `./make-image.sh` builds everything and assembles `out/esp` (a UEFI ESP
   directory, **not** an ISO). `./run-qemu.sh` boots it in QEMU.
 * Both scripts `source .env` and will hard-fail (`set -e`) if it doesn't
@@ -53,6 +59,15 @@ loader, init — can only really be checked by booting it. Prefer, in order:
 
 ## Known rough edges
 
+* `rust-toolchain` pins bare `nightly` with no date, so a fresh install can
+  land on a nightly with breaking changes to *unstable* APIs this project
+  relies on (`-Zbuild-std`, custom target-spec fields, unstable trait impls
+  in dependencies, etc.). If a fresh checkout fails to compile with an
+  error that doesn't look related to anything recently changed here — a
+  trait-impl mismatch in a dependency, a target-spec field rejected as
+  invalid — suspect nightly drift before suspecting the code. Check for a
+  newer version of the offending crate or a renamed target-spec value
+  first; don't assume it's a regression in this repo.
 * `mkimage/` (builds a GRUB/xorriso ISO) is a leftover from the pre-UEFI boot
   flow and isn't invoked by `make-image.sh` anymore. Don't assume it's part
   of the live build path.

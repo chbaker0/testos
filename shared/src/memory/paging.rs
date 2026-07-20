@@ -6,7 +6,7 @@ use core::sync::atomic::{compiler_fence, Ordering};
 use static_assertions as sa;
 
 pub const MAX_PHYS_ADDR_BITS: u32 = 52;
-pub const MAX_PHYS_ADDR: PhysAddress = PhysAddress::from_raw(2 << MAX_PHYS_ADDR_BITS);
+pub const MAX_PHYS_ADDR: PhysAddress = PhysAddress::from_raw(1 << MAX_PHYS_ADDR_BITS);
 
 #[derive(Clone, Debug)]
 #[repr(C, align(4096))]
@@ -71,10 +71,13 @@ impl PageTableEntry {
         PhysAddress::from_raw(self.raw & PAGE_TABLE_ENTRY_ADDR_BITS)
     }
 
-    /// Set flags (as documented in `PageTableFlags`).
+    /// Set flags (as documented in `PageTableFlags`). Flag bits not present in
+    /// `flags` are cleared; the address bits are left untouched. This assigns
+    /// rather than OR-accumulates, so callers can rely on it to actually clear
+    /// previously-set flags.
     #[inline]
     pub fn set_flags(&mut self, flags: PageTableFlags) {
-        self.raw |= flags.bits();
+        self.raw = (self.raw & !PageTableFlags::all().bits()) | flags.bits();
     }
 
     /// Get flags (as documented in `PageTableFlags`).
@@ -91,7 +94,10 @@ impl PageTableEntry {
     }
 }
 
-pub const PAGE_TABLE_ENTRY_ADDR_BITS: u64 = ((1 << 36) - 1) << 12;
+// The frame address occupies bits 12..=51 of an entry (up to the 52-bit
+// physical address maximum). Bits 0..=11 are zero by 4 KiB alignment; bits
+// 52..=63 are reserved or hold flags.
+pub const PAGE_TABLE_ENTRY_ADDR_BITS: u64 = ((1 << 40) - 1) << 12;
 
 bitflags::bitflags! {
     /// Control bits for a page table entry. Documented in architecture manual.
@@ -286,5 +292,88 @@ where
         // ... this is sound. (1) and (3) rely on the client upholding their
         // contract. (2) relies on us upholding our invariants.
         unsafe { Ok(&mut *next_table_ptr) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The address field and the flag field must never overlap; otherwise
+    /// `set_addr`/`set_flags` would clobber each other.
+    #[test]
+    fn flag_bits_and_addr_bits_are_disjoint() {
+        assert_eq!(PAGE_TABLE_ENTRY_ADDR_BITS & PageTableFlags::all().bits(), 0);
+    }
+
+    /// Regression: `set_flags` must assign, not OR-accumulate. Narrowing the
+    /// flag set has to actually clear the flags that are no longer present.
+    #[test]
+    fn set_flags_replaces_rather_than_accumulates() {
+        let mut e = PageTableEntry::zero();
+        e.set_flags(PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+        assert_eq!(
+            e.get_flags().bits(),
+            (PageTableFlags::PRESENT | PageTableFlags::WRITABLE).bits()
+        );
+
+        e.set_flags(PageTableFlags::PRESENT);
+        assert_eq!(e.get_flags().bits(), PageTableFlags::PRESENT.bits());
+    }
+
+    /// Setting flags must never disturb the stored address.
+    #[test]
+    fn set_flags_preserves_addr() {
+        let addr = PhysAddress::from_raw(0x1234_5000);
+        let mut e = PageTableEntry::zero();
+        e.set_addr(addr);
+        e.set_flags(PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+        assert_eq!(e.get_addr(), addr);
+
+        e.set_flags(PageTableFlags::PRESENT);
+        assert_eq!(e.get_addr(), addr);
+        assert_eq!(e.get_flags().bits(), PageTableFlags::PRESENT.bits());
+    }
+
+    /// Regression: the address field spans the full 52-bit physical range, so
+    /// an address with bits set above bit 47 must round-trip (the old 36-bit
+    /// mask silently truncated it).
+    #[test]
+    fn set_addr_round_trips_above_2_pow_48() {
+        let addr = PhysAddress::from_raw(1 << 48);
+        let mut e = PageTableEntry::zero();
+        e.set_addr(addr);
+        assert_eq!(e.get_addr(), addr);
+    }
+
+    /// `MAX_PHYS_ADDR` is exclusive: setting it (2^52) must panic.
+    #[test]
+    #[should_panic]
+    fn set_addr_panics_at_max() {
+        let mut e = PageTableEntry::zero();
+        e.set_addr(MAX_PHYS_ADDR);
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Address and flags are stored in disjoint bit ranges: any aligned
+        /// address below the max and any flag combination must both round-trip,
+        /// regardless of the order they were set.
+        #[test]
+        fn addr_and_flags_round_trip(
+            frame_number in 0u64..(1 << 40),
+            raw_flags in any::<u64>(),
+        ) {
+            let addr = PhysAddress::from_raw(frame_number << 12);
+            let flags = PageTableFlags::from_bits_truncate(raw_flags);
+
+            let mut e = PageTableEntry::zero();
+            e.set_addr(addr);
+            e.set_flags(flags);
+
+            prop_assert_eq!(e.get_addr(), addr);
+            prop_assert_eq!(e.get_flags().bits(), flags.bits());
+        }
     }
 }

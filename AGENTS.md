@@ -61,7 +61,20 @@ loader, init — can only really be checked by booting it. Prefer, in order:
      -debugcon stdio -display none
    ```
    Run this with a timeout (QEMU won't exit on its own after the kernel
-   halts) and read stdout for panics/log output.
+   halts) and read stdout for panics/log output. **Bound it externally:**
+   there's no `timeout`/`gtimeout` on macOS, and a `perl -e 'alarm N; exec
+   ...'` wrapper does *not* work — QEMU installs its own `SIGALRM` handler
+   and ignores it. Background QEMU and kill it from outside:
+   ```
+   ... -debugcon stdio -display none >log 2>/dev/null &
+   pid=$!; ( sleep 45; pkill -KILL -f qemu-system-x86_64 ) & wait $pid; cat log
+   ```
+   **Budget > 40s for a full boot.** A run currently spends ~30-40s (under
+   QEMU TCG on Apple Silicon) between the `kernel loaded and mapped` and
+   `identity mapped existing memory` debugcon lines — that's the known
+   inefficiency tracked in **issue #5** (the loader identity-maps the entire
+   UEFI memory map, including a multi-GiB reserved region, at 4 KiB
+   granularity), *not* a hang. Don't mistake it for a regression.
 
 ## Known rough edges
 
@@ -84,6 +97,14 @@ loader, init — can only really be checked by booting it. Prefer, in order:
   missing toolchain install — check `ls ~/.cargo/bin` before concluding
   anything is actually missing, and ask the user to confirm/restart the
   shell rather than adding PATH exports or wrapper scripts.
+* `cargo stest` builds `shared` for the **host** target, which on this repo's
+  dev machine is aarch64 (Apple Silicon) — not x86. So `shared` must stay
+  host-buildable: any x86-only code (e.g. the QEMU debugcon port write in
+  [shared/src/log.rs](shared/src/log.rs), which uses `x86_64::instructions`,
+  gated to `target_arch = "x86_64"`) must be `#[cfg(target_arch = "x86_64")]`-
+  gated and a no-op elsewhere, or the whole test suite fails to compile. Fix
+  such breakage at the source rather than working around it on the host (e.g.
+  don't add a Rosetta `x86_64-apple-darwin` target just to run the tests).
 * `targets/x86_64-unknown-none.json` (kernel) and
   `targets/x86_64-unknown-testos.json` (init) differ in more than name —
   e.g. soft-float/no-SSE + `code-model: kernel` vs. SSE enabled +

@@ -112,8 +112,16 @@ impl QemuDebugWriter {
 
 impl Write for QemuDebugWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let mut port = x86_64::instructions::port::PortWriteOnly::new(0xe9);
-        s.bytes().for_each(|b| unsafe { port.write(b) });
+        // The debug port only exists on x86. On other architectures (e.g. an
+        // aarch64 host running `cargo stest`) this is a no-op so the crate
+        // still builds and its unit tests run.
+        #[cfg(target_arch = "x86_64")]
+        {
+            let mut port = x86_64::instructions::port::PortWriteOnly::new(0xe9);
+            s.bytes().for_each(|b| unsafe { port.write(b) });
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = s;
         Ok(())
     }
 }

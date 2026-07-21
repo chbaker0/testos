@@ -15,7 +15,15 @@ pub struct VirtAddressType;
 impl AddressType for PhysAddressType {}
 impl AddressType for VirtAddressType {}
 
+// `repr(transparent)`: `Address`/`Length`/`Extent` cross the loader/kernel
+// boot-info handoff (see `shared::boot_info::BootInfo`) as raw bytes written
+// by one independently-compiled binary and read by another, built for
+// different targets (`x86_64-unknown-uefi` vs. the custom
+// `x86_64-unknown-none.json`). Rust's default repr gives no cross-compilation
+// layout guarantee at all, so these need an explicit repr to be sound to
+// reinterpret across that boundary.
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Hash)]
+#[repr(transparent)]
 pub struct Address<Type: AddressType>(u64, PhantomData<Type>);
 
 pub type PhysAddress = Address<PhysAddressType>;
@@ -114,7 +122,10 @@ impl Address<VirtAddressType> {
     }
 }
 
+// See the `repr(transparent)` note on `Address` above; same cross-boundary
+// reasoning applies here.
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Hash)]
+#[repr(transparent)]
 pub struct Length(u64);
 
 impl Length {
@@ -193,7 +204,11 @@ where
     }
 }
 
+// See the `repr(transparent)` note on `Address` above. `Extent` has two
+// non-ZST fields, so it needs `repr(C)` (fixed field order/padding) rather
+// than `repr(transparent)`.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+#[repr(C)]
 pub struct Extent<Type: AddressType> {
     pub address: Address<Type>,
     pub length: Length,

@@ -10,8 +10,6 @@ use shared::memory::*;
 use paging::*;
 
 use log::info;
-use uefi::mem::memory_map::MemoryMap;
-use x86_64::registers::control::{Cr3, Cr3Flags};
 
 /// The map of virtual address space. Assigns different ranges to various
 /// purposes.
@@ -70,7 +68,7 @@ const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.
 
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
-pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
+pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // Make sure we are only called once.
     static IS_INITIALIZED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
@@ -79,8 +77,7 @@ pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
     let kernel_extent = get_kernel_phys_extent();
     info!("Kernel extent: {kernel_extent:x?}");
 
-    let mut uefi_map_buf = [0; 8192];
-    let mut memory_map = translate_memory_map(uefi_map);
+    let mut memory_map = boot_info.memory_map.clone();
 
     for e in memory_map.entries().iter() {
         info!("{e:x?}");
@@ -93,6 +90,18 @@ pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
     // can reserve 1 frame for every 256 frames we're mapping. Most of what we
     // map here will be the entirety of physical memory, so use that for the
     // estimate.
+    // KNOWN ISSUE (see issue #5): on real UEFI/QEMU memory maps this sum
+    // includes huge non-RAM reserved regions (observed: a ~12 GiB reserved
+    // block, likely a PCI/MMIO window), since `extend_page_table_with_physical_map`
+    // identity/phys-maps every entry regardless of type, at 4 KiB granularity.
+    // That inflates `init_alloc_frames` (below) well past the size of any
+    // single `Available` region, and the `.unwrap()` a few lines down panics.
+    // Issue #5 already tracks the loader-side symptom (slow boot from mapping
+    // that same region at 4 KiB granularity); this is the same root cause
+    // surfacing as a hard failure on the kernel side. Fixing it needs either
+    // skipping huge non-RAM regions here, or making the bootstrap allocator
+    // draw from multiple `Available` regions instead of requiring one
+    // contiguous chunk.
     let total_phys_frames: u64 = memory_map
         .entries()
         .iter()
@@ -129,8 +138,9 @@ pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
         entry_for_init_alloc.extent.end_address(),
     );
 
-    // In our bootstrap phase, we are limited to our identity mapping of the
-    // first 1 GiB. Ensure we are within that.
+    // Conservatively restrict bootstrap allocations to the first 1 GiB, even
+    // though the loader identity-maps more than that. Ensure we are within
+    // that.
     assert!(
         init_alloc_frames.end().unwrap().extent().address() - PhysAddress::zero()
             <= Length::from_raw(1024 * 1024 * 1024)
@@ -140,23 +150,27 @@ pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
 
     let mut init_allocator = BumpFrameAllocator::new(init_alloc_frames);
 
-    // Our bootstrap page table identity maps the first GB of memory.
-    let first_gb_translator = |phys: PhysAddress| {
-        assert!(phys.as_raw() < 1024 * 1024 * 1024, "{phys:?}");
-        Some(VirtAddress::from_raw(phys.as_raw()))
-    };
+    // The loader identity-mapped all physical memory it knew about before
+    // handing off, so we can treat physical addresses as identity-mapped
+    // virtual addresses during this bootstrap phase.
+    let identity_translator = |phys: PhysAddress| Some(VirtAddress::from_raw(phys.as_raw()));
 
-    let page_table_template = unsafe {
-        create_page_table_template(
-            &uefi_map,
+    // Extend the page table the loader built (and already installed as the
+    // active CR3) with the physical-memory mapping, in place. It already
+    // maps the kernel image and identity-maps physical memory, so there's no
+    // need to build a fresh table and install it.
+    let page_table_ptr = boot_info.page_table_root.as_raw() as *mut paging::PageTable;
+    unsafe {
+        extend_page_table_with_physical_map(
+            &mut *page_table_ptr,
             &memory_map,
             || init_allocator.allocate(),
-            first_gb_translator,
-        )
-    };
+            identity_translator,
+        );
+    }
 
-    // The frames used for the page-table template are perma-reserved. Maybe we
-    // will add to them later, but the current ones are leaked: they are not
+    // The frames used for the page-table extension are perma-reserved. Maybe
+    // we will add to them later, but the current ones are leaked: they are not
     // known to either `memory_map` or the future allocator.
     //
     // Restore the remaining frames to the map entry.
@@ -196,10 +210,6 @@ pub fn init(uefi_map: &uefi::mem::memory_map::MemoryMapRef) {
     // }
 
     FRAME_ALLOCATOR.lock().set(frame_allocator).unwrap();
-
-    unsafe {
-        set_up_initial_page_table(&page_table_template);
-    }
 }
 
 #[inline(never)]
@@ -248,41 +258,31 @@ impl Drop for OwnedFrameRange {
     }
 }
 
-pub fn translate_memory_map(uefi_map: &uefi::mem::memory_map::MemoryMapRef) -> Map {
-    Map::from_entries(uefi_map.entries().map(|area| {
-        use uefi::mem::memory_map::MemoryType as UefiType;
-        MapEntry {
-            extent: PhysExtent::from_raw(area.phys_start, area.page_count * PAGE_SIZE.as_raw()),
-            mem_type: match area.ty {
-                UefiType::CONVENTIONAL => MemoryType::Available,
-                UefiType::ACPI_RECLAIM => MemoryType::Acpi,
-                UefiType::LOADER_CODE | UefiType::LOADER_DATA => MemoryType::KernelLoad,
-                UefiType::UNUSABLE => MemoryType::Defective,
-                _ => MemoryType::Reserved,
-            },
-        }
-    }))
-}
-
-unsafe fn create_page_table_template<
+/// Extends `table` in place with a mapping of all physical memory described
+/// by `memory_map` into kernel space (see `VirtualMap::phys_map`).
+///
+/// `table` is expected to already be a valid, active root page table (built
+/// by the loader) that maps the kernel image and identity-maps physical
+/// memory; this only adds the physical-memory window, so no existing
+/// mapping is disturbed and no TLB flush is required.
+unsafe fn extend_page_table_with_physical_map<
     F: FnMut() -> Option<Frame>,
     T: Fn(PhysAddress) -> Option<VirtAddress>,
 >(
-    uefi_map: &uefi::mem::memory_map::MemoryMapRef,
+    table: &mut PageTable,
     memory_map: &Map,
     get_frame: F,
     translator: T,
-) -> PageTable {
-    let mut table = PageTable::zero();
-    let mut mapper = unsafe { paging::Mapper::new(&mut table, translator, get_frame) };
+) {
+    let mut mapper = unsafe { paging::Mapper::new(table, translator, get_frame) };
 
     // All mappings here will have the global and frozen flags. This table is
     // shared for all address spaces.
     let shared_parent_flags =
         PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::APP_PARENT_FROZEN;
 
-    // First, set up the physical memory mapping. It must be read/write. For
-    // safety make it non-executable.
+    // Set up the physical memory mapping. It must be read/write. For safety
+    // make it non-executable.
     let leaf_flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
     let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
@@ -300,98 +300,7 @@ unsafe fn create_page_table_template<
         }
     }
 
-    // We still identity map the first 1 MiB. We still hold a couple absolute
-    // pointers (e.g. VGA memory) here. TODO: fix this and get rid of this
-    // mapping.
-    let leaf_flags =
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
-    let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
-    for page in PageRange::containing_extent(VirtualMap::first_mib()).iter() {
-        let frame = Frame::new(PhysAddress::from_raw(page.start().as_raw()));
-        unsafe {
-            mapper
-                .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
-                .unwrap();
-        }
-    }
-
-    // Map the kernel image. Leaf flags are determined per-section.
-    let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
-    for section in uefi_map.entries() {
-        let is_data = match section.ty {
-            uefi::mem::memory_map::MemoryType::LOADER_CODE => false,
-            uefi::mem::memory_map::MemoryType::LOADER_DATA => true,
-            _ => continue,
-        };
-
-        let section_extent =
-            VirtExtent::from_raw(section.virt_start, section.page_count * PAGE_SIZE.as_raw());
-
-        // Confirm the section is in the area we expect.
-        assert!(
-            VirtualMap::kernel_image().contains(section_extent),
-            "{:x?} does not contain {:x?}",
-            VirtualMap::kernel_image(),
-            section_extent
-        );
-
-        let mut leaf_flags = PageTableFlags::PRESENT;
-        if is_data {
-            leaf_flags |= PageTableFlags::EXECUTE_DISABLE;
-            leaf_flags |= PageTableFlags::WRITABLE;
-        }
-
-        for (ndx, page) in PageRange::new(
-            Page::new(VirtAddress::from_raw(section.virt_start)),
-            section.page_count,
-        )
-        .unwrap()
-        .iter()
-        .enumerate()
-        {
-            let frame = Frame::new(PhysAddress::from_raw(section.phys_start))
-                .next(ndx as u64)
-                .unwrap();
-            unsafe {
-                mapper
-                    .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
-                    .unwrap();
-            }
-        }
-    }
-
     core::mem::drop(mapper);
-    table
-}
-
-unsafe fn set_up_initial_page_table(template: &PageTable) {
-    let mut root_table = INIT_PAGE_TABLE.lock();
-    *root_table = template.clone();
-
-    unsafe {
-        install_page_table(&mut root_table);
-    }
-}
-
-static INIT_PAGE_TABLE: spin::Mutex<paging::PageTable> =
-    spin::Mutex::new(paging::PageTable::zero());
-
-/// Install `root_table` as the active page table.
-///
-/// # Safety
-/// * Must be a root PML4 table.
-/// * Must correctly map the kernel's address space.
-unsafe fn install_page_table(root_table: &mut paging::PageTable) {
-    let phys_addr = kernel_ptr_to_phys_addr(root_table as *const _);
-    unsafe {
-        Cr3::write(
-            x86_64::structures::paging::PhysFrame::from_start_address(x86_64::addr::PhysAddr::new(
-                phys_addr.as_raw(),
-            ))
-            .unwrap(),
-            Cr3Flags::empty(),
-        );
-    }
 }
 
 /// Get a kernel space virtual address corresponding to a physical memory
@@ -426,6 +335,7 @@ pub fn phys_extent_to_virt(phys: PhysExtent) -> VirtExtent {
 /// address referenced. `p` *must* point within the kernel's address space above
 /// `get_kernel_virt_base()`.
 #[inline]
+#[allow(unused)]
 pub fn kernel_ptr_to_phys_addr<T>(p: *const T) -> PhysAddress {
     let virt_addr = VirtAddress::from_ptr(p);
     assert!(virt_addr >= get_kernel_virt_base(), "{virt_addr:?}");

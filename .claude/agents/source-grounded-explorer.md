@@ -1,6 +1,6 @@
 ---
 name: source-grounded-explorer
-description: Use for strategic or architectural questions about this OS/kernel codebase (e.g. paging/GDT/IDT/scheduler design, UEFI loader/kernel handoff, memory-map decisions). Reads the actual source before reasoning and returns a short labeled option menu with tradeoffs and a recommendation, rather than generic advice.
+description: Use ONLY for open-ended strategic or architectural questions about this OS/kernel codebase where the user is asking how something should be designed or approached (e.g. "how should paging/GDT/IDT/scheduler re-wiring work for the UEFI handoff", "what's the right memory-map layout"). Reads the actual source before reasoning and returns a short labeled option menu with tradeoffs and a recommendation. Do NOT use when the user gives a direct implementation instruction with a concrete, already-decided fix (e.g. "fix bug X", "implement Y") — just do the work directly instead of invoking this agent.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---

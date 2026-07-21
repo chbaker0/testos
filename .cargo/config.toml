@@ -1,7 +1,16 @@
 [env]
-# Ideally we wouldn't disable stacked borrow checking, but unfortunately some
-# intrusive collection code isn't compatible with the rules.
-MIRIFLAGS = "-Zmiri-strict-provenance -Zmiri-disable-stacked-borrows"
+# Miri config for `cargo smiri` (the `shared` crate's unit tests).
+#
+# - Permissive (not strict) provenance: the paging harness models physical
+#   addresses as plain integers and round-trips them through pointers
+#   (`VirtAddress` is a bare `u64` -> `as_mut_ptr`), which strict provenance
+#   forbids outright. Permissive mode resolves the round-trip via exposed
+#   provenance, which is exactly what real phys<->virt address translation is.
+# - Stacked borrows disabled: some intrusive-collection code isn't compatible
+#   with the rules. Ideally we wouldn't need this.
+# - Isolation disabled: proptest calls `getcwd` (to locate its regression file),
+#   which Miri's isolation blocks; we don't test filesystem behavior here.
+MIRIFLAGS = "-Zmiri-permissive-provenance -Zmiri-disable-stacked-borrows -Zmiri-disable-isolation"
 
 [unstable]
 json-target-spec = true
@@ -23,6 +32,7 @@ sclippy = "clippy --package shared"
 iclippy = "clippy --package init --target targets/x86_64-unknown-testos.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 lclippy = "clippy -p loader --target x86_64-unknown-uefi"
 stest = "test --package shared"
+smiri = "miri test --package shared"
 kdoc = "doc --target targets/x86_64-unknown-none.json --document-private-items -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 sdoc = "doc --package shared --document-private-items"
 idoc = "doc --document-private-items --package init --target targets/x86_64-unknown-testos.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"

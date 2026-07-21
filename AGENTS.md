@@ -76,6 +76,31 @@ loader, init — can only really be checked by booting it. Prefer, in order:
    UEFI memory map, including a multi-GiB reserved region, at 4 KiB
    granularity), *not* a hang. Don't mistake it for a regression.
 
+### Testing `shared` (unit tests + Miri)
+
+`cargo stest` runs the `shared` crate's host unit tests. Beyond the
+`PageTableEntry` bit-twiddling tests, [shared/src/memory/paging.rs](shared/src/memory/paging.rs)
+has an end-to-end harness (`harness_tests`) that drives the real `Mapper`
+against a fake physical-memory arena and checks each mapping with an
+independent `translate` oracle — so the multi-level page-table walk,
+parent-table allocation/reuse, and flag masking are all exercised on the host
+without booting.
+
+`cargo smiri` runs those same tests under Miri (install once with `rustup
+component add miri`). That's the payoff: Miri interprets the harness's unsafe
+page-table pointer walks and flags out-of-bounds / use-after-free / uninit /
+provenance errors. Two gotchas, both handled in `.cargo/config.toml`'s
+`MIRIFLAGS` (which only `cargo miri` reads, so none of this touches a normal
+`cargo stest`):
+
+* **Permissive** (not strict) provenance is required. The paging code models
+  physical addresses as integers and round-trips them through pointers
+  (`VirtAddress` is a bare `u64` → `as_mut_ptr`), which is inherent to
+  phys↔virt translation and which strict provenance rejects outright. Don't
+  switch it back to strict without reworking that model.
+* Isolation is disabled so `proptest` can call `getcwd`; stacked borrows stay
+  disabled for the intrusive-collection code (as before).
+
 ## Known rough edges
 
 * `rust-toolchain` pins bare `nightly` with no date, so a fresh install can

@@ -5,7 +5,6 @@
 //! this crate.
 //!
 #![feature(allocator_api)]
-#![feature(int_roundings)]
 #![feature(pointer_is_aligned_to)]
 #![feature(ptr_metadata)]
 #![deny(unsafe_op_in_unsafe_fn)]

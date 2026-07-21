@@ -28,21 +28,21 @@ elf = { version = "0.8.0", default-features = false }
 env_logger = "0.11.8"
 eyre = "0.6"
 intrusive-collections = { version = "0.10.0", default-features = false, features = ["nightly"] }
-itertools = { version = "0.14.0", default-features = false }
+itertools = { version = "0.15.0", default-features = false }
 memoffset = "0.9.1"
 lazy_static = { version = "1.5.0", default-features = false }
 log = "0.4.29"
-multiboot2 = "0.24.1"
+multiboot2 = "0.25.0"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 once_cell = { version = "1.21.3", default-features = false }
 ovmf-prebuilt = "0.2.7"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
-spin = "0.10.0"
+spin = "0.12.2"
 static_assertions = "1.1.0"
 test-log = "0.2.19"
-uefi = "0.36.1"
+uefi = "0.39.0"
 xmas-elf = "0.10.0"
 x86_64 = "0.15.4"
 

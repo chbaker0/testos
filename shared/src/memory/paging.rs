@@ -31,12 +31,28 @@ impl PageTable {
 // Assert that `PageTable` is 4 KiB.
 sa::assert_eq_size!(PageTable, [u8; 4096]);
 
-// TODO: the hand-rolled address/flag packing below is a candidate for a
-// declarative bitfield crate (e.g. `bitfield-struct`, which generates a
-// `repr(transparent)` u64 wrapper with correct shifts/masks), making these
-// get/set operations sound by construction. Deferred: it would want to own the
-// whole u64, which collides with the widely-used `bitflags`-based
-// `PageTableFlags` (see `mm.rs`, `loader/`), so it's a larger refactor.
+// The address field's bit position is declared once here and the shift/mask
+// arithmetic is generated, rather than hand-written (see PR #10, PR #11,
+// both hand-packing bugs in this exact field). `_low`/`_high` are padding
+// that gives `pfn` its correct position; they alias `PageTableFlags`' bits
+// and are never read/written through `AddrField` itself — `PageTableEntry`
+// composes this with `PageTableFlags` to cover the full `u64`.
+//
+// `PageTableFlags` (below) is left as a `bitflags` type rather than folded
+// into this bitfield: it's already sound (no shift/mask arithmetic to get
+// wrong) and used at ~19 call sites across `mm.rs`/`loader` via bitwise
+// combination (`PRESENT | WRITABLE`), which `bitflags` supports directly and
+// a generated bitfield struct would not.
+#[bitfield_struct::bitfield(u64)]
+struct AddrField {
+    #[bits(12)]
+    _low: u64,
+    #[bits(40)]
+    pfn: u64,
+    #[bits(12)]
+    _high: u64,
+}
+
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct PageTableEntry {
@@ -65,18 +81,19 @@ impl PageTableEntry {
     pub fn set_addr(&mut self, addr: PhysAddress) {
         assert!(addr.is_aligned_to_length(PAGE_SIZE), "{addr:?}");
         assert!(addr < MAX_PHYS_ADDR);
-        // The address occupies bits 12..=51 (`PAGE_TABLE_ENTRY_ADDR_BITS`); bits
-        // 0..=11 are zero by the 4 KiB alignment and bits 52..=63 are zero by
-        // the max-address check (those hold flags). Assign the address field
-        // rather than OR-accumulating so that setting an address a second time
-        // (or over stale bits) replaces it instead of merging the two. This
-        // mirrors `set_flags` and keeps the address and flag fields independent.
-        self.raw = (self.raw & !PAGE_TABLE_ENTRY_ADDR_BITS) | addr.as_raw();
+        // Re-derive `AddrField` from the current raw bits, overwrite only the
+        // `pfn` field (the generated setter handles the shift/mask), and write
+        // back. `_low`/`_high` — i.e. the flag bits — round-trip untouched, so
+        // this replaces the address without disturbing flags and without
+        // OR-accumulating across repeated calls.
+        let mut fields = AddrField::from(self.raw);
+        fields.set_pfn(addr.as_raw() >> 12);
+        self.raw = fields.into();
     }
 
     #[inline]
     pub fn get_addr(&self) -> PhysAddress {
-        PhysAddress::from_raw(self.raw & PAGE_TABLE_ENTRY_ADDR_BITS)
+        PhysAddress::from_raw(AddrField::from(self.raw).pfn() << 12)
     }
 
     /// Set flags (as documented in `PageTableFlags`). Flag bits not present in

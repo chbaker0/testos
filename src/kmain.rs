@@ -5,56 +5,51 @@ use core::panic::PanicInfo;
 
 use lazy_static::lazy_static;
 use log::{error, info};
-use uefi::prelude::*;
 use x86_64::instructions::interrupts;
 use x86_64::structures::idt::InterruptStackFrame;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
 #[export_name = "_start"]
-pub extern "C" fn kernel_entry() -> ! {
+pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) -> ! {
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
     let _ = writeln!(debugcon, "In kernel_entry");
 
-    halt_loop();
+    init_logger();
 
-    // init_logger();
+    interrupts::disable();
 
-    // interrupts::disable();
+    info!("In kernel");
 
-    // info!("In kernel");
+    gdt::init();
+    info!("Set up GDT");
 
-    // gdt::init();
-    // info!("Set up GDT");
+    idt::init();
+    info!("Set up IDT");
 
-    // idt::init();
-    // info!("Set up IDT");
+    // SAFETY: the loader places this in identity-mapped physical memory and
+    // gives us its address in rdi, per shared::boot_info::BootInfo's contract.
+    let boot_info = unsafe { &*boot_info };
 
-    // let init_module = mbinfo.module_tags().next().unwrap();
-    // let init_extent = mm::PhysExtent::from_raw_range_exclusive(
-    //     init_module.start_address().into(),
-    //     init_module.end_address().into(),
-    // );
+    info!("init_extent = {:?}", boot_info.init_module);
 
-    // info!("init_extent = {init_extent:?}");
+    mm::init(boot_info);
+    info!("Initialized frame allocator");
 
-    // mm::init(&system_table);
-    // info!("Initialized frame allocator");
+    let init_extent = mm::phys_extent_to_virt(boot_info.init_module);
+    let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
 
-    // let init_extent = phys_extent_to_virt(init_extent);
-    // let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
+    info!("init sections:");
+    for section in init_elf
+        .section_iter()
+        .flat_map(|s| s.get_name(&init_elf).ok())
+    {
+        info!("  {}", section);
+    }
 
-    // info!("init sections:");
-    // for section in init_elf
-    //     .section_iter()
-    //     .flat_map(|s| s.get_name(&init_elf).ok())
-    // {
-    //     info!("  {}", section);
-    // }
-
-    // unsafe {
-    //     sched::init_kernel_main_thread(kernel_main);
-    // }
+    unsafe {
+        sched::init_kernel_main_thread(kernel_main);
+    }
 }
 
 pub fn kernel_main() -> ! {

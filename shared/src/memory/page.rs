@@ -163,8 +163,7 @@ impl FrameRange {
     /// The maximal range fully contained in `extent`.
     pub fn contained_by_extent(extent: PhysExtent) -> Option<FrameRange> {
         let first = extent.address().align_up(PAGE_SIZE.as_raw());
-        let last = (extent.last_address() - PAGE_SIZE + Length::from_raw(1))
-            .align_down(PAGE_SIZE.as_raw());
+        let last = extent.end_address().align_down(PAGE_SIZE.as_raw());
         if first >= last {
             return None;
         }

@@ -191,7 +191,7 @@ impl FrameRange {
         self.first.next(self.count.get())
     }
 
-    pub fn iter(&self) -> impl Clone + Iterator<Item = Frame> {
+    pub fn iter(&self) -> impl Clone + Iterator<Item = Frame> + use<> {
         let last = self.last();
         iter::successors(Some(self.first), move |frame| {
             if frame < &last {
@@ -267,7 +267,7 @@ impl PageRange {
         self.first.next(self.count)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Page> {
+    pub fn iter(&self) -> impl Iterator<Item = Page> + use<> {
         let last = self.last();
         iter::successors(Some(self.first), move |page| {
             if page < &last {

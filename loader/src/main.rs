@@ -176,6 +176,16 @@ fn main() -> Status {
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
 
     for e in mem_map.entries() {
+        // Skip address-space holes (MMIO and other reserved ranges) and
+        // unusable RAM. On real firmware these span multi-GiB regions; mapping
+        // them at 4 KiB granularity dominates boot time (issue #5) and the
+        // kernel never touches them during early boot. Boot-services memory is
+        // deliberately kept — the kernel keeps running on the stack it
+        // inherited from the loader (which lives there) after the CR3 switch.
+        if !should_identity_map(e.ty) {
+            continue;
+        }
+
         let frames = FrameRange::new(
             Frame::new(PhysAddress::from_raw(e.phys_start)),
             e.page_count as u64,
@@ -255,6 +265,21 @@ fn main() -> Status {
     }
 
     unreachable!()
+}
+
+/// Whether the loader should identity-map a UEFI memory range into the
+/// kernel's transitional address space. Skips address-space holes (MMIO and
+/// other reserved ranges) and unusable/unaccepted RAM; keeps everything else,
+/// including boot-services memory (see the call site for why the stack lives
+/// there). See issue #5.
+fn should_identity_map(ty: uefi::mem::memory_map::MemoryType) -> bool {
+    use uefi::mem::memory_map::MemoryType as UefiType;
+    ty != UefiType::RESERVED
+        && ty != UefiType::UNUSABLE
+        && ty != UefiType::MMIO
+        && ty != UefiType::MMIO_PORT_SPACE
+        && ty != UefiType::PAL_CODE
+        && ty != UefiType::UNACCEPTED
 }
 
 fn translate_memory_map(uefi_map: &impl MemoryMap) -> Map {

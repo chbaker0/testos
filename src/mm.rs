@@ -87,24 +87,17 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // forever, especially the kernel page tables.
     //
     // Each full leaf page table maps 512 pages. As a generous overestimate, we
-    // can reserve 1 frame for every 256 frames we're mapping. Most of what we
-    // map here will be the entirety of physical memory, so use that for the
-    // estimate.
-    // KNOWN ISSUE (see issue #5): on real UEFI/QEMU memory maps this sum
-    // includes huge non-RAM reserved regions (observed: a ~12 GiB reserved
-    // block, likely a PCI/MMIO window), since `extend_page_table_with_physical_map`
-    // identity/phys-maps every entry regardless of type, at 4 KiB granularity.
-    // That inflates `init_alloc_frames` (below) well past the size of any
-    // single `Available` region, and the `.unwrap()` a few lines down panics.
-    // Issue #5 already tracks the loader-side symptom (slow boot from mapping
-    // that same region at 4 KiB granularity); this is the same root cause
-    // surfacing as a hard failure on the kernel side. Fixing it needs either
-    // skipping huge non-RAM regions here, or making the bootstrap allocator
-    // draw from multiple `Available` regions instead of requiring one
-    // contiguous chunk.
+    // can reserve 1 frame for every 256 frames we're mapping. We only map
+    // RAM-backed regions into `phys_map` (see
+    // `extend_page_table_with_physical_map`), so estimate from those. This
+    // deliberately excludes the multi-GiB non-RAM reserved/MMIO holes that
+    // appear on real UEFI/QEMU maps (issue #5); counting them here would
+    // inflate `init_alloc_frames` past any single `Available` region and panic
+    // the `.unwrap()` below.
     let total_phys_frames: u64 = memory_map
         .entries()
         .iter()
+        .filter(|e| e.mem_type.is_ram_backed())
         .map(|e| FrameRange::containing_extent(e.extent).count())
         .sum();
     let init_alloc_frames = total_phys_frames / 256;
@@ -172,6 +165,12 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // The frames used for the page-table extension are perma-reserved. Maybe
     // we will add to them later, but the current ones are leaked: they are not
     // known to either `memory_map` or the future allocator.
+    //
+    // DEFERRED (issue #17): because these frames are carved out of `memory_map`
+    // *before* the phys_map window is built above, the kernel's own live page
+    // tables aren't reachable via `phys_to_virt` — only via the loader's
+    // identity map, which we currently never tear down. Fixing that ownership
+    // model belongs to the broader bootstrap-stages rework, not this pass.
     //
     // Restore the remaining frames to the map entry.
     if let Some(remain) = init_allocator.unwrap() {
@@ -286,9 +285,15 @@ unsafe fn extend_page_table_with_physical_map<
     let leaf_flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::EXECUTE_DISABLE;
     let parent_flags = shared_parent_flags | PageTableFlags::WRITABLE;
+    // Only RAM-backed regions get a phys_map window. Mapping the multi-GiB
+    // non-RAM reserved/MMIO holes here would be enormously slow at 4 KiB
+    // granularity and serves no purpose — the frame allocator only ever hands
+    // out `Available` frames, and the kernel doesn't touch those holes yet
+    // (issue #5).
     for frame in memory_map
         .entries()
         .iter()
+        .filter(|e| e.mem_type.is_ram_backed())
         .flat_map(|e| FrameRange::containing_extent(e.extent).iter())
     {
         let phys = frame.start();

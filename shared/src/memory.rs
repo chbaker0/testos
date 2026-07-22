@@ -205,9 +205,39 @@ pub enum MemoryType {
     KernelLoad,
 }
 
+impl MemoryType {
+    /// Whether this region is real RAM that the kernel should include in its
+    /// identity map and physical-memory window (`phys_map`). Excludes
+    /// address-space holes (MMIO and other `Reserved` ranges, which on real
+    /// UEFI maps span multi-GiB regions) and unusable RAM.
+    ///
+    /// Used by both the loader's identity map and the kernel's `phys_map`
+    /// extension so the two agree on which regions get mapped.
+    pub const fn is_ram_backed(self) -> bool {
+        match self {
+            MemoryType::Available
+            | MemoryType::Acpi
+            | MemoryType::ReservedPreserveOnHibernation
+            | MemoryType::KernelLoad => true,
+            MemoryType::Reserved | MemoryType::Defective => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ram_backed_excludes_only_reserved_and_defective() {
+        assert!(MemoryType::Available.is_ram_backed());
+        assert!(MemoryType::Acpi.is_ram_backed());
+        assert!(MemoryType::ReservedPreserveOnHibernation.is_ram_backed());
+        assert!(MemoryType::KernelLoad.is_ram_backed());
+
+        assert!(!MemoryType::Reserved.is_ram_backed());
+        assert!(!MemoryType::Defective.is_ram_backed());
+    }
 
     #[test]
     fn test_mark_kernel_areas() {

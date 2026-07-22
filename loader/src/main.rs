@@ -72,6 +72,12 @@ fn main() -> Status {
 
     info!("Allocating pages for segments");
 
+    // Track the physical span the loader places the kernel's segments into, so
+    // the kernel learns where it actually lives (its linker symbols only
+    // describe virtual addresses). See `BootInfo::kernel_image`.
+    let mut kernel_phys_begin: Option<u64> = None;
+    let mut kernel_phys_end: u64 = 0;
+
     for seg in kernel_elf.segments().expect("segment table").iter() {
         match seg.p_type {
             elf::abi::PT_LOAD => (),
@@ -96,6 +102,11 @@ fn main() -> Status {
             .expect("allocating pages for kernel segment")
             .as_ptr() as u64,
         );
+
+        let seg_begin = addr.as_raw();
+        let seg_end = seg_begin + page_count as u64 * PAGE_SIZE.as_raw();
+        kernel_phys_begin = Some(kernel_phys_begin.map_or(seg_begin, |b| b.min(seg_begin)));
+        kernel_phys_end = kernel_phys_end.max(seg_end);
 
         // During UEFI boot, all memory is identity mapped.
         let to_ptr = addr.as_raw() as *mut u8;
@@ -239,6 +250,10 @@ fn main() -> Status {
         memory_map: translate_memory_map(&final_mem_map),
         page_table_root: PhysAddress::from_raw(page_table_root_ptr as u64),
         init_module: init_extent,
+        kernel_image: {
+            let begin = kernel_phys_begin.expect("kernel has at least one PT_LOAD segment");
+            PhysExtent::from_raw(begin, kernel_phys_end - begin)
+        },
     };
     unsafe {
         boot_info_ptr.write(boot_info);

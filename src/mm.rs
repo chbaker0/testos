@@ -299,17 +299,16 @@ unsafe fn extend_page_table_with_physical_map<
     // granularity and serves no purpose — the frame allocator only ever hands
     // out `Available` frames, and the kernel doesn't touch those holes yet
     // (issue #5).
-    for frame in memory_map
-        .entries()
-        .iter()
-        .filter(|e| e.mem_type.is_ram_backed())
-        .flat_map(|e| FrameRange::containing_extent(e.extent).iter())
-    {
-        let phys = frame.start();
-        let page = Page::new(phys_to_virt(phys));
+    //
+    // `map_range` greedily uses 1 GiB/2 MiB pages for the aligned bulk of
+    // each entry instead of one 4 KiB `map` call per frame — same fix as the
+    // loader's identity map, applied to the kernel's own phys_map extension
+    // (issue #5's other, kernel-side symptom).
+    for entry in memory_map.entries().iter().filter(|e| e.mem_type.is_ram_backed()) {
+        let virt_base = phys_to_virt(entry.extent.address());
         unsafe {
             mapper
-                .map(page, frame, leaf_flags, parent_flags, PageTableFlags::all())
+                .map_range(entry.extent, virt_base, leaf_flags, parent_flags, PageTableFlags::all())
                 .unwrap();
         }
     }

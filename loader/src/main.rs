@@ -197,23 +197,27 @@ fn main() -> Status {
             continue;
         }
 
-        let frames = FrameRange::new(
-            Frame::new(PhysAddress::from_raw(e.phys_start)),
-            e.page_count as u64,
-        )
-        .unwrap();
+        let extent = PhysExtent::from_raw(e.phys_start, e.page_count * PAGE_SIZE.as_raw());
 
         let parent_set_flags = PageTableFlags::DEFAULT_PARENT_TABLE_FLAGS;
         let parent_mask_flags = parent_set_flags;
         let leaf_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
-        for frame in frames.iter() {
-            let page = Page::new(VirtAddress::from_raw(frame.start().as_raw()));
-            unsafe {
-                page_mapper
-                    .map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)
-                    .unwrap();
-            }
+        // Identity map: the virtual base numerically equals the entry's
+        // physical start. Greedily uses 1 GiB/2 MiB pages where the extent
+        // is large and aligned enough, instead of one 4 KiB `map` call per
+        // frame — the fix for issue #5's boot-time symptom for whichever
+        // entries still need mapping after the type filter above.
+        unsafe {
+            page_mapper
+                .map_range(
+                    extent,
+                    VirtAddress::from_raw(e.phys_start),
+                    leaf_flags,
+                    parent_set_flags,
+                    parent_mask_flags,
+                )
+                .unwrap();
         }
     }
 

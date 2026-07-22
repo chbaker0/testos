@@ -71,9 +71,10 @@ impl PageTableEntry {
     /// table.
     ///
     /// # Panics
-    /// Panics if `addr` is not aligned to a 4KiB boundary. Note that this
-    /// doesn't guarantee safety: if using 2 MiB or 1 GiB pages, the address
-    /// must be aligned likewise.
+    /// Panics if `addr` is not aligned to a 4KiB boundary. Note that a 4 KiB
+    /// alignment check alone is *not* sufficient for a 2 MiB/1 GiB `PAGE_SIZE`
+    /// leaf entry: `Mapper::map_large` enforces the stronger alignment those
+    /// require before calling this.
     ///
     /// Panics if `addr` exceeds 2^52, which is the upper bound on supported
     /// physical addresses. Does not check the CPU-specific maximum.
@@ -160,6 +161,41 @@ bitflags::bitflags! {
 pub enum MapError {
     FrameAllocationFailed,
     TranslationFailed,
+}
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Identifies a large ("huge") page size and where `Mapper::map_large` stops
+/// descending to place its leaf entry. This is an implementation detail, not
+/// a general-purpose extension point: it's sealed so only `Size2M`/`Size1G`
+/// (below) can ever implement it. Callers just write `map_large::<Size2M>`.
+///
+/// Deliberately not folded into `Frame`/`Page`: those stay plain 4 KiB-
+/// aligned address wrappers, and page size is threaded through `Mapper`'s
+/// methods as a type parameter instead, so `map`'s existing 4 KiB call sites
+/// are untouched.
+pub trait LargePageSize: sealed::Sealed {
+    const SIZE: Length;
+}
+
+/// A 2 MiB page, mapped via a `PAGE_SIZE`-flagged L2 (PD) entry.
+pub struct Size2M;
+
+impl sealed::Sealed for Size2M {}
+
+impl LargePageSize for Size2M {
+    const SIZE: Length = Length::from_raw(2 * 1024 * 1024);
+}
+
+/// A 1 GiB page, mapped via a `PAGE_SIZE`-flagged L3 (PDPT) entry.
+pub struct Size1G;
+
+impl sealed::Sealed for Size1G {}
+
+impl LargePageSize for Size1G {
+    const SIZE: Length = Length::from_raw(1024 * 1024 * 1024);
 }
 
 /// Abstracts access to the page tables `Mapper` traverses, keyed by a table's
@@ -393,6 +429,200 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
         Ok(())
     }
 
+    /// Map `page` to `frame` using a large (`S`) page instead of a 4 KiB one:
+    /// `Size2M` places a `PAGE_SIZE`-flagged leaf at L2, `Size1G` at L3. This
+    /// mirrors `map` above but stops descending one or two levels earlier.
+    ///
+    /// Unlike `map`'s 4 KiB frames/pages (whose alignment is already
+    /// enforced by `Frame::new`/`Page::new`), `frame`/`page` here still only
+    /// carry 4 KiB-alignment guarantees, so this asserts the stronger
+    /// alignment `S::SIZE` requires. That alignment is also what makes
+    /// `set_addr` safe to reuse unmodified for a huge leaf: the low 9 (2 MiB)
+    /// or 18 (1 GiB) bits of the packed PFN, which must be reserved-zero in a
+    /// real `PAGE_SIZE` entry, fall out of the address shift as zero purely
+    /// because the address is aligned to `S::SIZE`.
+    ///
+    /// Like `map`, this assumes the target region is currently unmapped —
+    /// promoting/demoting an existing mapping to a different page size is
+    /// not handled (same caveat as the `// TODO: handle existing mapping`
+    /// above).
+    ///
+    /// # Panics
+    /// Panics if `frame`/`page` are not aligned to `S::SIZE`.
+    pub unsafe fn map_large<S: LargePageSize>(
+        &mut self,
+        page: Page,
+        frame: Frame,
+        leaf_flags: PageTableFlags,
+        parent_set_flags: PageTableFlags,
+        parent_mask_flags: PageTableFlags,
+    ) -> Result<(), MapError> {
+        assert!(
+            frame.start().is_aligned_to_length(S::SIZE),
+            "{:?} not aligned to {:?}",
+            frame,
+            S::SIZE
+        );
+        assert!(
+            page.start().is_aligned_to_length(S::SIZE),
+            "{:?} not aligned to {:?}",
+            page,
+            S::SIZE
+        );
+
+        let l4_index = page.l4_index();
+        let mut l4e = self.level_4.entries[l4_index];
+        let l3_frame =
+            Self::next_level(&mut l4e, &mut self.store, parent_set_flags, parent_mask_flags)?;
+        self.level_4.entries[l4_index] = l4e;
+
+        // 1 GiB leaves land directly in the L3 entry; 2 MiB leaves need one
+        // more step down to L2. `S::SIZE` is a compile-time constant, so this
+        // branch is resolved at monomorphization time, not at runtime.
+        let (leaf_table_frame, leaf_index) = if S::SIZE == Size1G::SIZE {
+            (l3_frame, page.l3_index())
+        } else {
+            let l3_index = page.l3_index();
+            let mut l3e = self.store.read_entry(l3_frame, l3_index)?;
+            let l2_frame = Self::next_level(
+                &mut l3e,
+                &mut self.store,
+                parent_set_flags,
+                parent_mask_flags,
+            )?;
+            self.store.write_entry(l3_frame, l3_index, l3e)?;
+            (l2_frame, page.l2_index())
+        };
+
+        let mut leaf = PageTableEntry::zero();
+        leaf.set_addr(frame.start());
+        leaf.set_flags(leaf_flags | PageTableFlags::PAGE_SIZE);
+        self.store.write_entry(leaf_table_frame, leaf_index, leaf)?;
+
+        Ok(())
+    }
+
+    /// Map the physical extent `[phys.address(), phys.end_address())` to a
+    /// virtual window starting at `virt_base`, greedily choosing the largest
+    /// legal page size at each point instead of mapping one 4 KiB frame at a
+    /// time. This is what makes mapping a large, mostly-contiguous region
+    /// (e.g. all of a machine's RAM) cheap: a multi-GiB extent costs a
+    /// handful of `map_large::<Size1G>` calls plus small 4 KiB/2 MiB head and
+    /// tail pieces, instead of one `map` call per 4 KiB frame.
+    ///
+    /// Assumes `virt_base`'s offset from `phys.address()` is itself aligned
+    /// to whatever page size ends up used for a given chunk — true for both
+    /// current callers (an identity map, offset 0; and the kernel's physical
+    /// memory window, whose base is far more aligned than 1 GiB).
+    ///
+    /// Same unmapped-target-region assumption as `map`/`map_large`: call this
+    /// once per already-disjoint region (e.g. once per memory-map entry) so
+    /// two calls never contend over the same page-table slot.
+    pub unsafe fn map_range(
+        &mut self,
+        phys: PhysExtent,
+        virt_base: VirtAddress,
+        leaf_flags: PageTableFlags,
+        parent_set_flags: PageTableFlags,
+        parent_mask_flags: PageTableFlags,
+    ) -> Result<(), MapError> {
+        // Mirrors `mm::phys_to_virt`'s pattern: express the phys->virt offset
+        // as a `Length` (via same-type `Address` subtraction) so it can be
+        // added onto a `VirtAddress`, rather than mixing raw `u64`s across
+        // the phys/virt type distinction `Address<Type>` exists to prevent.
+        let virt_at = |p: PhysAddress| virt_base + (p - phys.address());
+
+        let end = phys.end_address();
+
+        // Phase 1: 4 KiB up to the next 2 MiB boundary (or to `end`, if the
+        // whole extent is smaller than that).
+        let mut cursor = phys.address();
+        let phase1_end = cursor.align_up(Size2M::SIZE.as_raw()).min(end);
+        while cursor < phase1_end {
+            let frame = Frame::new(cursor);
+            let page = Page::new(virt_at(cursor));
+            // SAFETY: forwarded from this fn's contract (see doc comment
+            // above): `phys`/`virt_base` describe a currently-unmapped
+            // region, so writing a fresh leaf here is sound under the same
+            // conditions `map`'s own contract requires.
+            unsafe {
+                self.map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)?;
+            }
+            cursor += PAGE_SIZE;
+        }
+
+        // Phase 2: 2 MiB until 1 GiB-aligned.
+        // The `end - cursor >= Size2M::SIZE` guard matters in addition to
+        // `cursor < phase2_end`: if `end` falls less than one 2 MiB chunk
+        // past the 1 GiB-alignment target, `phase2_end == end` and a chunk
+        // sized purely off the alignment target would map past `end` —
+        // memory outside this extent that this call was never asked to map.
+        let phase2_end = cursor.align_up(Size1G::SIZE.as_raw()).min(end);
+        while cursor < phase2_end && end - cursor >= Size2M::SIZE {
+            let frame = Frame::new(cursor);
+            let page = Page::new(virt_at(cursor));
+            // SAFETY: as above.
+            unsafe {
+                self.map_large::<Size2M>(
+                    page,
+                    frame,
+                    leaf_flags,
+                    parent_set_flags,
+                    parent_mask_flags,
+                )?;
+            }
+            cursor += Size2M::SIZE;
+        }
+
+        // Phase 3: 1 GiB while at least one full 1 GiB chunk remains.
+        while end - cursor >= Size1G::SIZE {
+            let frame = Frame::new(cursor);
+            let page = Page::new(virt_at(cursor));
+            // SAFETY: as above.
+            unsafe {
+                self.map_large::<Size1G>(
+                    page,
+                    frame,
+                    leaf_flags,
+                    parent_set_flags,
+                    parent_mask_flags,
+                )?;
+            }
+            cursor += Size1G::SIZE;
+        }
+
+        // Phase 4: 2 MiB while at least one full 2 MiB chunk remains (the
+        // leftover below any 1 GiB middle).
+        while end - cursor >= Size2M::SIZE {
+            let frame = Frame::new(cursor);
+            let page = Page::new(virt_at(cursor));
+            // SAFETY: as above.
+            unsafe {
+                self.map_large::<Size2M>(
+                    page,
+                    frame,
+                    leaf_flags,
+                    parent_set_flags,
+                    parent_mask_flags,
+                )?;
+            }
+            cursor += Size2M::SIZE;
+        }
+
+        // Phase 5: 4 KiB for the final tail (< 2 MiB).
+        while cursor < end {
+            let frame = Frame::new(cursor);
+            let page = Page::new(virt_at(cursor));
+            // SAFETY: as above.
+            unsafe {
+                self.map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)?;
+            }
+            cursor += PAGE_SIZE;
+        }
+
+        Ok(())
+    }
+
     /// Given the entry in a parent table that should point at the next-level
     /// table, return that table's frame — allocating and zeroing a fresh one
     /// if `entry` isn't `PRESENT`. If it is, masks `entry`'s flags with
@@ -410,6 +640,10 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
         // entry does not "own" a valid frame. If this were not the case we'd
         // leak a frame. This is not unsafe, but it is a case to watch out for.
         if entry.get_flags().contains(PageTableFlags::PRESENT) {
+            debug_assert!(
+                !entry.get_flags().contains(PageTableFlags::PAGE_SIZE),
+                "next_level tried to descend through what is actually a huge-page leaf"
+            );
             let new_flags = entry.get_flags() & mask_flags | set_flags;
             entry.set_flags(new_flags);
             Ok(Frame::new(entry.get_addr()))
@@ -649,10 +883,31 @@ mod harness_tests {
         /// `root` and resolve `page`, returning its leaf entry. Returns `None`
         /// if any level along the way is not present. This deliberately does
         /// not share code with `map`; it is the check, not the thing checked.
+        ///
+        /// Stops early at L3 or L2 if the entry there has `PAGE_SIZE` set —
+        /// a real 1 GiB or 2 MiB leaf — instead of assuming every mapping
+        /// bottoms out at L1, mirroring what real hardware does.
         fn walk(&self, root: &PageTable, page: Page) -> Option<PageTableEntry> {
             let l3 = self.descend(root.entries()[page.l4_index()])?;
-            let l2 = self.descend(l3.entries()[page.l3_index()])?;
-            let l1 = self.descend(l2.entries()[page.l2_index()])?;
+
+            let l3e = l3.entries()[page.l3_index()];
+            if !l3e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l3e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l3e);
+            }
+
+            let l2 = self.descend(l3e)?;
+            let l2e = l2.entries()[page.l2_index()];
+            if !l2e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l2e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l2e);
+            }
+
+            let l1 = self.descend(l2e)?;
             let leaf = l1.entries()[page.l1_index()];
             leaf.get_flags()
                 .contains(PageTableFlags::PRESENT)
@@ -895,6 +1150,146 @@ mod harness_tests {
         assert_eq!(leaf.get_addr(), fb.start());
         assert_eq!(leaf.get_flags().bits(), flags_b.bits());
     }
+
+    #[test]
+    fn map_2m_sets_ps_bit_and_allocates_two_parent_tables() {
+        let mem = FakePhysMem::new(64);
+        let mut root = PageTable::zero();
+
+        // l1 = 0 makes this page 2 MiB-aligned (bits 12..20 all zero).
+        let p = page(1, 2, 3, 0);
+        let f = Frame::new(PhysAddress::from_raw(0x40_0000)); // 4 MiB: 2 MiB-aligned.
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper =
+                unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            unsafe {
+                mapper
+                    .map_large::<Size2M>(p, f, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        // A 2 MiB leaf lives at L2, so only L3 and L2 parent tables are
+        // allocated — no L1, unlike a 4 KiB mapping's 3.
+        assert_eq!(mem.allocated(), 2);
+
+        let leaf = mem.walk(&root, p).expect("page should be mapped");
+        assert_eq!(leaf.get_addr(), f.start());
+        assert!(leaf.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert!(leaf.get_flags().contains(PageTableFlags::PRESENT));
+        assert!(leaf.get_flags().contains(PageTableFlags::WRITABLE));
+    }
+
+    #[test]
+    fn map_1g_sets_ps_bit_and_allocates_one_parent_table() {
+        let mem = FakePhysMem::new(64);
+        let mut root = PageTable::zero();
+
+        // l2 = l1 = 0 makes this page 1 GiB-aligned (bits 12..29 all zero).
+        let p = page(1, 2, 0, 0);
+        let f = Frame::new(PhysAddress::from_raw(0x4000_0000)); // 1 GiB-aligned.
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper =
+                unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            unsafe {
+                mapper
+                    .map_large::<Size1G>(p, f, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        // A 1 GiB leaf lives directly at L3 — only one parent table (L3
+        // itself) is ever allocated.
+        assert_eq!(mem.allocated(), 1);
+
+        let leaf = mem.walk(&root, p).expect("page should be mapped");
+        assert_eq!(leaf.get_addr(), f.start());
+        assert!(leaf.get_flags().contains(PageTableFlags::PAGE_SIZE));
+    }
+
+    #[test]
+    #[should_panic]
+    fn map_large_panics_on_misaligned_frame() {
+        let mem = FakePhysMem::new(64);
+        let mut root = PageTable::zero();
+
+        // l1 = 1, so this frame is 4 KiB-aligned but not 2 MiB-aligned.
+        let f = Frame::new(PhysAddress::from_raw(0x1000));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        let mut mapper = unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+        unsafe {
+            mapper
+                .map_large::<Size2M>(page(1, 2, 3, 0), f, flags, flags, PageTableFlags::all())
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn map_range_uses_largest_legal_pages() {
+        let mem = FakePhysMem::new(64);
+        let mut root = PageTable::zero();
+
+        // A 2 GiB + 3 MiB extent, identity-mapped (virt_base numerically
+        // equals the physical start, both zero). Chosen so `map_range`
+        // exercises all five of its phases: none needed here for phases 1/2
+        // (already 1 GiB-aligned at the start), two 1 GiB chunks (phase 3),
+        // one 2 MiB chunk (phase 4), then a 1 MiB / 256-frame 4 KiB tail
+        // (phase 5).
+        let phys = PhysExtent::from_raw(0, 0x8030_0000);
+        let virt_base = VirtAddress::from_raw(0);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper =
+                unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            unsafe {
+                mapper.map_range(phys, virt_base, flags, flags, PageTableFlags::all()).unwrap();
+            }
+        }
+
+        // Naively mapping this same 2 GiB + 3 MiB extent one 4 KiB frame at
+        // a time would still need ~1030 parent tables (one L1 per 2 MiB
+        // touched, plus a handful of L2/L3s) purely from address-space
+        // coverage. `map_range`'s greedy huge-page selection needs exactly
+        // 3: one L3 table (holding both 1 GiB leaves directly), one L2
+        // table (holding the 2 MiB leaf), and one L1 table (holding the
+        // 256 4 KiB leaves in the tail, which all share a single L1 since
+        // they fit within one 2 MiB region).
+        assert_eq!(mem.allocated(), 3);
+
+        // Spot-check a leaf from each phase via the independent oracle.
+        let one_gib = mem
+            .walk(&root, Page::new(VirtAddress::from_raw(0)))
+            .expect("first 1 GiB chunk should be mapped");
+        assert!(one_gib.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert_eq!(one_gib.get_addr(), PhysAddress::from_raw(0));
+
+        let second_gib = mem
+            .walk(&root, Page::new(VirtAddress::from_raw(0x4000_0000)))
+            .expect("second 1 GiB chunk should be mapped");
+        assert!(second_gib.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert_eq!(second_gib.get_addr(), PhysAddress::from_raw(0x4000_0000));
+
+        let two_mib_chunk = mem
+            .walk(&root, Page::new(VirtAddress::from_raw(0x8000_0000)))
+            .expect("2 MiB chunk should be mapped");
+        assert!(two_mib_chunk.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert_eq!(two_mib_chunk.get_addr(), PhysAddress::from_raw(0x8000_0000));
+
+        let tail_frame = mem
+            .walk(&root, Page::new(VirtAddress::from_raw(0x8020_0000)))
+            .expect("4 KiB tail should be mapped");
+        assert!(!tail_frame.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert_eq!(tail_frame.get_addr(), PhysAddress::from_raw(0x8020_0000));
+
+        // Just past the mapped extent: must not have been touched.
+        assert!(mem.walk(&root, Page::new(VirtAddress::from_raw(0x8030_0000))).is_none());
+    }
 }
 
 /// Exercises `Mapper::map`'s tree-traversal logic through `MapTableStore`, a
@@ -952,10 +1347,31 @@ mod safe_tests {
         /// returning `None` if any level isn't present. Deliberately doesn't
         /// share code with `Mapper::map` — this is the check, not the thing
         /// checked. Mirrors `FakePhysMem::walk` in `harness_tests`.
+        ///
+        /// Stops early at L3 or L2 if the entry there has `PAGE_SIZE` set —
+        /// a real 1 GiB or 2 MiB leaf — instead of assuming every mapping
+        /// bottoms out at L1. Mirrors `FakePhysMem::walk` in `harness_tests`.
         fn walk(&self, root: &PageTable, page: Page) -> Option<PageTableEntry> {
             let l3 = self.descend(root.entries()[page.l4_index()])?;
-            let l2 = self.descend(l3.entries()[page.l3_index()])?;
-            let l1 = self.descend(l2.entries()[page.l2_index()])?;
+
+            let l3e = l3.entries()[page.l3_index()];
+            if !l3e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l3e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l3e);
+            }
+
+            let l2 = self.descend(l3e)?;
+            let l2e = l2.entries()[page.l2_index()];
+            if !l2e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l2e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l2e);
+            }
+
+            let l1 = self.descend(l2e)?;
             let leaf = l1.entries()[page.l1_index()];
             leaf.get_flags().contains(PageTableFlags::PRESENT).then_some(leaf)
         }
@@ -1117,5 +1533,115 @@ mod safe_tests {
         let leaf = store.walk(&root, p).unwrap();
         assert_eq!(leaf.get_addr(), fb.start());
         assert_eq!(leaf.get_flags().bits(), flags_b.bits());
+    }
+
+    #[test]
+    fn map_2m_sets_ps_bit_and_allocates_two_parent_tables() {
+        let mut store = MapTableStore::default();
+        let mut root = PageTable::zero();
+
+        let p = page(1, 2, 3, 0);
+        let f = Frame::new(PhysAddress::from_raw(0x40_0000));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            unsafe {
+                mapper
+                    .map_large::<Size2M>(p, f, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(store.tables.len(), 2);
+
+        let leaf = store.walk(&root, p).expect("page should be mapped");
+        assert_eq!(leaf.get_addr(), f.start());
+        assert!(leaf.get_flags().contains(PageTableFlags::PAGE_SIZE));
+    }
+
+    #[test]
+    fn map_1g_sets_ps_bit_and_allocates_one_parent_table() {
+        let mut store = MapTableStore::default();
+        let mut root = PageTable::zero();
+
+        let p = page(1, 2, 0, 0);
+        let f = Frame::new(PhysAddress::from_raw(0x4000_0000));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            unsafe {
+                mapper
+                    .map_large::<Size1G>(p, f, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(store.tables.len(), 1);
+
+        let leaf = store.walk(&root, p).expect("page should be mapped");
+        assert_eq!(leaf.get_addr(), f.start());
+        assert!(leaf.get_flags().contains(PageTableFlags::PAGE_SIZE));
+    }
+
+    #[test]
+    #[should_panic]
+    fn map_large_panics_on_misaligned_frame() {
+        let mut store = MapTableStore::default();
+        let mut root = PageTable::zero();
+
+        let f = Frame::new(PhysAddress::from_raw(0x1000));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+        unsafe {
+            mapper
+                .map_large::<Size2M>(page(1, 2, 3, 0), f, flags, flags, PageTableFlags::all())
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn map_range_uses_largest_legal_pages() {
+        let mut store = MapTableStore::default();
+        let mut root = PageTable::zero();
+
+        let phys = PhysExtent::from_raw(0, 0x8030_0000);
+        let virt_base = VirtAddress::from_raw(0);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            unsafe {
+                mapper.map_range(phys, virt_base, flags, flags, PageTableFlags::all()).unwrap();
+            }
+        }
+
+        // See the identical assertion in `harness_tests::map_range_uses_largest_legal_pages`
+        // for the parent-table accounting this expects.
+        assert_eq!(store.tables.len(), 3);
+
+        let one_gib = store
+            .walk(&root, Page::new(VirtAddress::from_raw(0)))
+            .expect("first 1 GiB chunk should be mapped");
+        assert!(one_gib.get_flags().contains(PageTableFlags::PAGE_SIZE));
+
+        let second_gib = store
+            .walk(&root, Page::new(VirtAddress::from_raw(0x4000_0000)))
+            .expect("second 1 GiB chunk should be mapped");
+        assert!(second_gib.get_flags().contains(PageTableFlags::PAGE_SIZE));
+
+        let two_mib_chunk = store
+            .walk(&root, Page::new(VirtAddress::from_raw(0x8000_0000)))
+            .expect("2 MiB chunk should be mapped");
+        assert!(two_mib_chunk.get_flags().contains(PageTableFlags::PAGE_SIZE));
+
+        let tail_frame = store
+            .walk(&root, Page::new(VirtAddress::from_raw(0x8020_0000)))
+            .expect("4 KiB tail should be mapped");
+        assert!(!tail_frame.get_flags().contains(PageTableFlags::PAGE_SIZE));
+
+        assert!(store.walk(&root, Page::new(VirtAddress::from_raw(0x8030_0000))).is_none());
     }
 }

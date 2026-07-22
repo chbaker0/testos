@@ -19,8 +19,6 @@ SECTIONS
     .rodata ALIGN(4K) :
     {
         *(.rodata .rodata.*)
-        KERNEL_PHYS_BEGIN_SYM = LOADADDR(.text);
-        KERNEL_PHYS_END_SYM = LOADADDR(.bss) + SIZEOF(.bss);
     } :data
 
     .data ALIGN(4K) :

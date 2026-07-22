@@ -20,4 +20,9 @@ pub struct BootInfo {
     /// Physical extent of the raw `init` ELF, loaded but not parsed or
     /// mapped by the loader.
     pub init_module: PhysExtent,
+    /// Physical extent spanning the kernel's loaded segments, as placed by
+    /// the loader via `allocate_pages`. The kernel can't derive this from its
+    /// own linker symbols — those describe virtual addresses, and the loader
+    /// chooses the physical placement dynamically at boot.
+    pub kernel_image: PhysExtent,
 }

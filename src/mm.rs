@@ -74,7 +74,7 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
         core::sync::atomic::AtomicBool::new(false);
     assert!(!IS_INITIALIZED.swap(true, core::sync::atomic::Ordering::SeqCst));
 
-    let kernel_extent = get_kernel_phys_extent();
+    let kernel_extent = boot_info.kernel_image;
     info!("Kernel extent: {kernel_extent:x?}");
 
     let mut memory_map = boot_info.memory_map.clone();
@@ -139,7 +139,16 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
             <= Length::from_raw(1024 * 1024 * 1024)
     );
 
-    assert!(init_alloc_frames.first().start() >= get_kernel_phys_extent().end_address());
+    // The bootstrap allocator draws from an `Available` region, which is a
+    // distinct map entry from the kernel image (`KernelLoad`), so the two never
+    // overlap — assert it defensively. Note we can't assume any ordering
+    // between them: under UEFI the loader may place the kernel above or below
+    // the chosen bootstrap region.
+    let init_alloc_extent = PhysExtent::from_range_exclusive(
+        init_alloc_frames.first().start(),
+        init_alloc_frames.end().unwrap().start(),
+    );
+    assert!(init_alloc_extent.overlap(boot_info.kernel_image).is_none());
 
     let mut init_allocator = BumpFrameAllocator::new(init_alloc_frames);
 
@@ -191,7 +200,7 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // kernel code or data structures.
     // for reserved_extent in reserved.chain([
     //     // Exclude the kernel image itself.
-    //     get_kernel_phys_extent(),
+    //     boot_info.kernel_image,
     //     // Exclude the boot_info structure.
     //     PhysExtent::from_raw(
     //         boot_info.start_address() as u64,
@@ -355,20 +364,6 @@ pub fn get_kernel_virt_base() -> VirtAddress {
     unsafe { VirtAddress::from_raw(&internal::KERNEL_VIRT_BASE as *const _ as usize as u64) }
 }
 
-#[inline]
-pub fn get_kernel_phys_extent() -> PhysExtent {
-    // SAFETY: `KERNEL_PHYS_BEGIN_SYM` and `KERNEL_PHYS_END_SYM` do not have
-    // values, but they zero-sized. The addresses are set appropriately by the
-    // linker so we may get raw pointers to them, as long as we never
-    // dereference them.
-    unsafe {
-        PhysExtent::from_raw_range_exclusive(
-            &internal::KERNEL_PHYS_BEGIN_SYM as *const _ as usize as u64,
-            &internal::KERNEL_PHYS_END_SYM as *const _ as usize as u64,
-        )
-    }
-}
-
 /// Provides "chunks" or pages to the heap implementation. This is very basic:
 /// it simply grabs frames, calculates the offset into our mapping of phys mem,
 /// and hands that pointer down.
@@ -400,8 +395,6 @@ mod internal {
     extern "C" {
         #![allow(improper_ctypes)]
         // These may not be dereferenced. Only their address is meaningful.
-        pub static KERNEL_PHYS_BEGIN_SYM: ();
-        pub static KERNEL_PHYS_END_SYM: ();
         pub static KERNEL_VIRT_BASE: ();
     }
 }

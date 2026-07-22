@@ -259,9 +259,11 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
 
 /// Initializes `bitmap` from `memory_map` in the format that
 /// [`BitmapFrameAllocator`](self::BitmapFrameAllocator) expects. `bitmap` must
-/// be large enough. Specifically, if the last entry in `memory_map` ends just
-/// before address x, `bitmap` must have length at least x / 32768 (which is the
-/// frame size, 4096, times the number of bits in a u8, 8).
+/// be large enough. Specifically, if the highest `Available` entry in
+/// `memory_map` ends just before address x, `bitmap` must have length at least
+/// x / 32768 (the frame size, 4096, times the number of bits in a u8, 8). Only
+/// `Available` frames are recorded, so non-RAM regions above the last usable
+/// RAM (e.g. high MMIO/reserved holes) need not be covered.
 pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) {
     use crate::memory::MemoryType;
 
@@ -270,19 +272,16 @@ pub fn fill_bitmap_from_map(bitmap: &mut [u8], memory_map: &crate::memory::Map) 
     // The number of memory bytes per byte of `bitmap`.
     const BYTES_PER_ENTRY: u64 = PAGE_SIZE.as_raw() * FRAMES_PER_ENTRY;
 
-    assert!(
-        bitmap.len() as u64
-            >= ceil_divide(
-                memory_map
-                    .entries()
-                    .last()
-                    .unwrap()
-                    .extent
-                    .end_address()
-                    .as_raw(),
-                BYTES_PER_ENTRY
-            )
-    );
+    // Only `Available` frames are recorded below, so the bitmap only needs to
+    // reach the highest usable-RAM address — not the end of the last map entry,
+    // which on real UEFI maps is a high MMIO/reserved hole near the top of the
+    // address space.
+    let highest_available_end = memory_map
+        .iter_type(MemoryType::Available)
+        .map(|e| e.extent.end_address().as_raw())
+        .max()
+        .unwrap_or(0);
+    assert!(bitmap.len() as u64 >= ceil_divide(highest_available_end, BYTES_PER_ENTRY));
 
     for x in bitmap.iter_mut() {
         *x = 0;

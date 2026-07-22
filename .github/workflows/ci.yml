@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fail fast on network flakiness fetching crates rather than hanging.
+  CARGO_NET_RETRY: "3"
+
+jobs:
+  # Cheap, fast feedback: host unit tests + compile-check every crate on its
+  # real target. This is the gate that should almost always be green.
+  #
+  # Clippy is intentionally NOT run here yet: `cargo kclippy` currently fails on
+  # pre-existing code (clippy::not_unsafe_ptr_arg_deref on kernel_entry) and
+  # `shared` has lint warnings, so it can't be a hard gate without code changes
+  # unrelated to CI setup. Add a clippy job once those are addressed.
+  cheap:
+    name: Cheap (tests + checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        run: |
+          # The `rust-toolchain` file pins bare `nightly`; make sure it is
+          # installed with the components the build-std targets need.
+          rustup toolchain install nightly --profile minimal
+          rustup component add --toolchain nightly rust-src
+          rustup target add --toolchain nightly x86_64-unknown-uefi
+          rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Host unit tests (the `shared` crate: paging harness, address types, ...).
+      - name: Unit tests (shared)
+        run: cargo stest
+
+      # Compile-check each crate on the target it actually ships on.
+      - name: Check kernel
+        run: cargo kcheck
+      - name: Check loader
+        run: cargo lcheck
+      - name: Check init
+        run: cargo icheck
+
+  # Expensive correctness checks that are too slow for every-push ergonomics on
+  # a laptop but are worth it in CI: Miri over the `shared` unsafe page-table
+  # walks. MIRIFLAGS live in .cargo/config.toml.
+  expensive:
+    name: Expensive (Miri)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain (with Miri)
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add --toolchain nightly miri rust-src
+          rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Miri (shared)
+        run: cargo smiri
+
+  # Build the full UEFI image and boot it in QEMU. Success is signalled by the
+  # kernel writing to the `isa-debug-exit` device at the end of kernel_main,
+  # which makes QEMU exit with code 33; a panic exits with 35; a hang is caught
+  # by the `timeout` wrapper.
+  smoke:
+    name: Smoke (build image + boot in QEMU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add --toolchain nightly rust-src
+          rustup target add --toolchain nightly x86_64-unknown-uefi
+          rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
+
+      - name: Create .env
+        # make-image.sh / run-qemu.sh source .env and hard-fail without it.
+        # It's gitignored, so it won't exist on a fresh checkout.
+        run: cp .env.example .env
+
+      - name: Build image
+        run: ./make-image.sh
+
+      - name: Boot smoke test
+        run: |
+          set +e
+          # -no-reboot so a triple fault exits QEMU (non-33) instead of looping.
+          # isa-debug-exit is how the kernel reports pass/fail; timeout is the
+          # backstop for a true hang that never reaches either exit.
+          timeout 120 ./run-qemu.sh \
+            -debugcon stdio -display none -no-reboot \
+            -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+            > qemu-output.log 2>&1
+          code=$?
+          echo "----- QEMU debugcon output -----"
+          cat qemu-output.log
+          echo "--------------------------------"
+          echo "QEMU exit code: $code"
+          # isa-debug-exit Success (0x10) => (0x10 << 1) | 1 == 33.
+          if [ "$code" -eq 33 ]; then
+            echo "PASS: kernel reached end of kernel_main."
+            exit 0
+          elif [ "$code" -eq 35 ]; then
+            echo "FAIL: kernel panicked (isa-debug-exit Failed)."
+            exit 1
+          elif [ "$code" -eq 124 ]; then
+            echo "FAIL: boot timed out (hang or never reached kernel_main)."
+            exit 1
+          else
+            echo "FAIL: unexpected QEMU exit code $code (triple fault / QEMU error?)."
+            exit 1
+          fi
+
+      - name: Upload boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-output
+          path: qemu-output.log
+          if-no-files-found: ignore

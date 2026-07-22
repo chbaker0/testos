@@ -47,18 +47,17 @@ Eventually, a C toolchain necessary. However, it is helpful much sooner:
 
 ## Project status
 
-Last updated 2026-07-19. The project just finished migrating its boot
+Last updated 2026-07-21. The project just finished migrating its boot
 process from Multiboot2/GRUB to a custom UEFI loader. The loader
 (`loader/`) now successfully parses the kernel ELF, maps its segments, sets
 up paging, and jumps into `kernel_entry` in [src/kmain.rs](src/kmain.rs).
 
-**`kernel_entry` itself is almost entirely commented out right now** — it
-prints one line to the debugcon and halts. GDT/IDT setup, the frame
-allocator, and the scheduler init that used to run here (visible as
-commented-out code) have not yet been re-wired for the new UEFI handoff.
-This is the active work-in-progress; don't assume any of that subsystem is
-currently exercised at boot even though the code for it still exists in
-`src/`.
+**`kernel_entry` has been re-wired for the new UEFI handoff.** It sets up
+the GDT and IDT, initializes the frame allocator, and hands off into
+`kernel_main`, which brings up the PIC, enables interrupts, spawns a test
+kthread through the scheduler, and exercises the heap allocator, before
+halting. A clean boot now exercises all of that — don't assume it's still
+inert the way it was right after the UEFI migration.
 
 A dedicated testing/verification strategy (beyond ad hoc debugcon-reading
 and manual QEMU boots) is wanted before more kernel feature work lands —
@@ -203,19 +202,19 @@ SPID=$!
 wait $SPID 2>/dev/null; cat log
 ```
 
-**Budget > 40s for a full boot.** A run currently spends ~30-40s (under
-QEMU TCG on Apple Silicon — no HVF/KVM since this is an x86_64 guest on an
-arm64 host) between the `kernel loaded and mapped` and `identity mapped
-existing memory` debugcon lines. That's **known issue #5** (the loader
-identity-maps the entire UEFI memory map, including a multi-GiB reserved
-region, at 4 KiB granularity) — not a hang or a regression. Don't mistake
-it for one; only dig in if the boot never progresses past that point
-within ~60s. A successful boot's debugcon currently progresses roughly:
-`kernel loaded and mapped` → `identity mapped existing memory, exiting
-boot services` → `Exited boot services` → `Installed page table` → the
-`kernel_entry` line (which may change — verify against current
-[src/kmain.rs](src/kmain.rs), since `kernel_entry` is WIP per "Project
-status" above).
+**Budget ~45-60s, but a healthy boot is fast.** Issue #5 (the loader
+identity-mapping the entire UEFI memory map, including a multi-GiB
+reserved region, at 4 KiB granularity, stalling for ~30-40s between the
+`kernel loaded and mapped` and `identity mapped existing memory` debugcon
+lines) was fixed in `58fdf00`. A full boot now reaches `kernel_main` in
+well under 10s. Keep an external time budget anyway as a hang backstop,
+but don't expect the old multi-second pause. A successful boot's debugcon
+currently progresses roughly: `kernel loaded and mapped` → `identity
+mapped existing memory, exiting boot services` → `Exited boot services` →
+`Installed page table` → `In kernel_entry` → GDT/IDT/frame-allocator setup
+→ `In kernel_main` (verify against current
+[src/kmain.rs](src/kmain.rs) — "Project status" above has the summary, but
+that file is the source of truth).
 
 Prefer watching live over blindly blocking on the full budget: start QEMU
 in the background (log redirected to a file as above), then poll the log

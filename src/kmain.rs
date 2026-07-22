@@ -82,6 +82,10 @@ pub fn kernel_main() -> ! {
 
     info!("{string}");
 
+    // A clean boot has reached the end of kernel_main. Signal the CI smoke
+    // test that we passed (no-op outside CI), then halt as before.
+    crate::qemu::exit_qemu(crate::qemu::QemuExitCode::Success);
+
     halt_loop();
 }
 
@@ -136,6 +140,8 @@ fn panic(info: &PanicInfo<'_>) -> ! {
         let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
         let _ = write!(&mut writer, "{info}");
     }
+    // Fail the CI smoke test on any panic (no-op outside CI).
+    crate::qemu::exit_qemu(crate::qemu::QemuExitCode::Failed);
     interrupts::disable();
     halt_loop();
 }

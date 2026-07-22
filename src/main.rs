@@ -11,6 +11,7 @@ mod idt;
 mod kmain;
 mod mm;
 mod pic;
+mod qemu;
 mod sched;
 
 pub use kmain::kernel_entry;

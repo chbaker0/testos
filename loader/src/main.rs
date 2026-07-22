@@ -176,6 +176,10 @@ fn main() -> Status {
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
 
     for e in mem_map.entries() {
+        if !needs_identity_map(e.ty) {
+            continue;
+        }
+
         let frames = FrameRange::new(
             Frame::new(PhysAddress::from_raw(e.phys_start)),
             e.page_count as u64,
@@ -255,6 +259,24 @@ fn main() -> Status {
     }
 
     unreachable!()
+}
+
+/// Whether a UEFI memory-map entry needs to be identity-mapped by the
+/// loader. Skips types that are never RAM (`RESERVED`, `UNUSABLE`,
+/// `MMIO_PORT_SPACE`, `PAL_CODE`) plus `MMIO`, which is only needed if the
+/// OS calls UEFI runtime services after exiting boot services — this
+/// kernel does not (grepped: no `runtime_services`/`SetVirtualAddressMap`
+/// calls anywhere), so it's safe to skip too. Revisit if runtime services
+/// support is ever added.
+fn needs_identity_map(ty: MemoryType) -> bool {
+    !matches!(
+        ty,
+        MemoryType::RESERVED
+            | MemoryType::UNUSABLE
+            | MemoryType::MMIO
+            | MemoryType::MMIO_PORT_SPACE
+            | MemoryType::PAL_CODE
+    )
 }
 
 fn translate_memory_map(uefi_map: &impl MemoryMap) -> Map {

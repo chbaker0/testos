@@ -66,6 +66,12 @@ const MAX_MEMORY: Length = Length::from_raw(137438953472u64);
 // The maximum number of frames the physical memory allocator supports. TODO: remove this limit.
 const MAX_MEMORY_FRAMES: usize = MAX_MEMORY.as_raw() as usize / page::PAGE_SIZE.as_raw() as usize;
 
+/// Whether a memory-map entry should be counted/mapped by the physical
+/// memory allocator and physical-map window.
+fn needs_phys_map(ty: MemoryType) -> bool {
+    !matches!(ty, MemoryType::Reserved | MemoryType::Defective)
+}
+
 /// Initializes the memory management system. Must only be called once; panics
 /// otherwise.
 pub fn init(boot_info: &shared::boot_info::BootInfo) {
@@ -90,21 +96,13 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // can reserve 1 frame for every 256 frames we're mapping. Most of what we
     // map here will be the entirety of physical memory, so use that for the
     // estimate.
-    // KNOWN ISSUE (see issue #5): on real UEFI/QEMU memory maps this sum
-    // includes huge non-RAM reserved regions (observed: a ~12 GiB reserved
-    // block, likely a PCI/MMIO window), since `extend_page_table_with_physical_map`
-    // identity/phys-maps every entry regardless of type, at 4 KiB granularity.
-    // That inflates `init_alloc_frames` (below) well past the size of any
-    // single `Available` region, and the `.unwrap()` a few lines down panics.
-    // Issue #5 already tracks the loader-side symptom (slow boot from mapping
-    // that same region at 4 KiB granularity); this is the same root cause
-    // surfacing as a hard failure on the kernel side. Fixing it needs either
-    // skipping huge non-RAM regions here, or making the bootstrap allocator
-    // draw from multiple `Available` regions instead of requiring one
-    // contiguous chunk.
+    // Resolved (see issue #5): entries are now filtered by type before
+    // counting/mapping, so huge non-RAM reserved regions no longer inflate
+    // `init_alloc_frames` or get mapped at 4 KiB granularity.
     let total_phys_frames: u64 = memory_map
         .entries()
         .iter()
+        .filter(|e| needs_phys_map(e.mem_type))
         .map(|e| FrameRange::containing_extent(e.extent).count())
         .sum();
     let init_alloc_frames = total_phys_frames / 256;
@@ -289,6 +287,7 @@ unsafe fn extend_page_table_with_physical_map<
     for frame in memory_map
         .entries()
         .iter()
+        .filter(|e| needs_phys_map(e.mem_type))
         .flat_map(|e| FrameRange::containing_extent(e.extent).iter())
     {
         let phys = frame.start();

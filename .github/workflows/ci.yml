@@ -101,6 +101,15 @@ jobs:
         # It's gitignored, so it won't exist on a fresh checkout.
         run: cp .env.example .env
 
+      - name: Ensure OVMF firmware
+        # Firmware is vendored under third_party/ovmf so the build is hermetic
+        # and needs no network. If the blobs aren't committed, fetch them here
+        # (CI has network); once they are, this is a no-op.
+        run: |
+          if [ ! -f third_party/ovmf/x64/code.fd ] || [ ! -f third_party/ovmf/x64/vars.fd ]; then
+            cargo run -p fetch-prebuilts
+          fi
+
       - name: Build image
         run: ./make-image.sh
 

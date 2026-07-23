@@ -2,7 +2,6 @@
 name = "shared"
 version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
-edition = "2024"
 
 [features]
 default = ["alloc"]

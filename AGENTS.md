@@ -103,13 +103,23 @@ changes" below), which is part of the motivation.
 ## Build & run
 
 ```
-./make-image.sh   # fetches OVMF prebuilts, builds the loader + kernel, assembles out/esp
-./run-qemu.sh      # boots out/esp in QEMU using the fetched OVMF firmware
+./make-image.sh   # builds the loader + kernel + init, assembles out/esp
+./run-qemu.sh      # boots out/esp in QEMU using the vendored OVMF firmware
 ```
 
 `make-image.sh` produces a UEFI ESP directory at `out/esp` (not an ISO).
 `run-qemu.sh` forwards extra args to `qemu-system-x86_64`, e.g.
 `./run-qemu.sh -s -S` to wait for a debugger.
+
+OVMF UEFI firmware is **vendored** under `third_party/ovmf/x64/{code,vars}.fd`
+(see `third_party/ovmf/README.md`), so the build is hermetic and does no network
+I/O — this is what lets it build and boot in offline / network-restricted
+environments. To update the firmware, bump the `TAG` constant in
+`fetch-prebuilts/src/main.rs`, run `cargo run -p fetch-prebuilts` from a machine
+with network access, and commit the refreshed blobs. If the vendored files are
+missing, `make-image.sh` fails with a message pointing at that command (or set
+`TESTOS_QEMU_EFI_CODE`/`_VARS` to an existing firmware pair, e.g. a distro OVMF
+under `/usr/share/OVMF`).
 
 Cargo aliases (see `.cargo/config.toml` for the full definitions):
 
@@ -133,7 +143,9 @@ Cargo aliases (see `.cargo/config.toml` for the full definitions):
   flow — **not** invoked by `make-image.sh` anymore; don't assume it's part
   of the live build path.
 * **buildutil**: helpers shared between build scripts and mkimage.
-* **fetch-prebuilts**: downloads prebuilt OVMF firmware into `target/ovmf`.
+* **fetch-prebuilts**: manual updater that downloads prebuilt OVMF firmware and
+  refreshes the vendored copy in `third_party/ovmf` (not part of the normal
+  build; needs network).
 * **targets**: target specs passed to rustc. `x86_64-unknown-none.json`
   (kernel) and `x86_64-unknown-testos.json` (init) differ in more than
   name — e.g. soft-float/no-SSE + `code-model: kernel` vs. SSE enabled +

@@ -1,3 +1,4 @@
 # Third-party files
 
-None for now
+- [`ovmf/`](ovmf/README.md) — vendored OVMF UEFI firmware for booting in QEMU
+  (BSD-2-Clause-Patent).

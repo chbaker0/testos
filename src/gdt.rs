@@ -26,6 +26,11 @@ pub fn init() {
     gdt.append(Descriptor::kernel_data_segment());
     gdt.load();
 
+    // SAFETY: `gdt.load()` (just above) installed the two-descriptor GDT
+    // built by this function into GDTR, so selector index 1 (kernel code,
+    // appended first) and index 2 (kernel data, appended second) are both
+    // valid, present, ring-0 descriptors of the matching type for the
+    // segment register each is loaded into.
     unsafe {
         CS::set_reg(SegmentSelector::new(1, PrivilegeLevel::Ring0));
         DS::set_reg(SegmentSelector::new(2, PrivilegeLevel::Ring0));

@@ -23,6 +23,16 @@ resolver = "2"
 unsafe_op_in_unsafe_fn = "deny"
 never_type_fallback_flowing_into_unsafe = "deny"
 
+# `warn`, not `deny`: `cargo kclippy` already fails on a pre-existing
+# violation in src/kmain.rs (issue #23), and `shared` has pre-existing
+# warnings, so `deny` would red-CI the repo on unrelated existing debt.
+# Promote to `deny` once that debt is cleared.
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+missing_safety_doc = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+
 [workspace.dependencies]
 aligned = "0.4.3"
 arrayvec = { version = "0.7.6", default-features = false }

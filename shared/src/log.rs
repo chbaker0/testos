@@ -97,6 +97,13 @@ pub struct QemuDebugWriter {
     _phantom: core::marker::PhantomData<*mut u8>,
 }
 
+// SAFETY: `QemuDebugWriter` holds no real state — the `PhantomData<*mut u8>`
+// only exists to make it `!Send` by default (forcing construction through
+// the unsafe `new`, whose contract is the actual gate). Every `write_str`
+// call independently re-derives its own local `Port` handle to the fixed
+// port 0xe9 rather than holding one, so there's nothing thread-affine for
+// moving a `QemuDebugWriter` to another thread to invalidate; `LogSink`'s
+// `Mutex` is what serializes concurrent access to the port itself.
 unsafe impl Send for QemuDebugWriter {}
 
 impl QemuDebugWriter {
@@ -118,6 +125,8 @@ impl Write for QemuDebugWriter {
         #[cfg(target_arch = "x86_64")]
         {
             let mut port = x86_64::instructions::port::PortWriteOnly::new(0xe9);
+            // SAFETY: forwarded from `QemuDebugWriter::new`'s contract: the
+            // caller has already ensured port 0xe9 is safe to write to.
             s.bytes().for_each(|b| unsafe { port.write(b) });
         }
         #[cfg(not(target_arch = "x86_64"))]

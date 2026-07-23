@@ -29,15 +29,32 @@ static PIC_REGS: Mutex<PicRegs> = Mutex::new(PicRegs {
     data_2: Port::new(0xa1),
 });
 
-// Interrupts should be disabled before this is called. It is safe to enable
-// interrupts after init().
+/// # Safety
+///
+/// Interrupts should be disabled before this is called (so a spurious IRQ
+/// can't arrive mid-sequence, before the handlers below are installed). It is
+/// safe to enable interrupts after `init()` returns.
 pub unsafe fn init() {
+    // SAFETY: forwarded from this fn's contract; `without_interrupts` itself
+    // doesn't add any further requirement.
     without_interrupts(|| unsafe { init_impl() });
 }
 
+/// # Safety
+///
+/// Same contract as `init` (interrupts disabled on entry); this is only ever
+/// called from `init` via `without_interrupts`.
 unsafe fn init_impl() {
     let mut pic_regs = PIC_REGS.lock();
 
+    // SAFETY: `pic_regs`' ports are the standard, fixed PIC command/data
+    // ports (see `PIC_REGS`'s initializer), and this is the standard PIC
+    // initialization sequence (ICW1-4) run once with interrupts disabled per
+    // this fn's contract, so nothing else touches these ports concurrently.
+    // The `install_interrupt_handler` calls use vectors
+    // `IRQ_INTERRUPT_OFFSET..IRQ_INTERRUPT_OFFSET+15` (32..=47), which don't
+    // overlap the CPU-reserved 0..=31 range `idt::install_interrupt_handler`
+    // requires callers to avoid.
     unsafe {
         // Do the magic
         pic_regs.cmd_1.write(0x11);
@@ -92,10 +109,17 @@ pub fn install_irq_handler(irq_num: u8, maybe_handler: Option<IrqHandlerFunc>) {
 
         let mut pic_regs = PIC_REGS.lock();
         if irq_chip == 0 {
+            // SAFETY: `irq_line` is `irq_num - 8 * irq_chip` with
+            // `irq_num < IRQS_PER_PIC * 2` (asserted above) and `irq_chip == 0`
+            // here, so `irq_line < 8`, satisfying `set_mask`'s contract for
+            // `data_1` (PIC 1's 8-bit mask port).
             unsafe {
                 set_mask(&mut pic_regs.data_1, irq_line, should_mask_irq);
             }
         } else {
+            // SAFETY: as above, but `irq_chip == 1` here so `irq_line` is
+            // `irq_num - 8`, still `< 8`, satisfying the same contract for
+            // `data_2` (PIC 2's mask port).
             unsafe {
                 set_mask(&mut pic_regs.data_2, irq_line, should_mask_irq);
             }
@@ -103,7 +127,14 @@ pub fn install_irq_handler(irq_num: u8, maybe_handler: Option<IrqHandlerFunc>) {
     });
 }
 
+/// # Safety
+///
+/// `data_port` must be one of the two PIC data ports (`PIC_REGS.data_1` or
+/// `data_2`), and `irq_line` must be `< 8` (a bit index into that PIC's 8-bit
+/// mask register).
 unsafe fn set_mask(data_port: &mut Port<u8>, irq_line: u8, set: bool) {
+    // SAFETY: forwarded from this fn's contract: `data_port` is a PIC data
+    // port, which reads back the current IRQ mask when no command is active.
     let old_mask = unsafe { data_port.read() };
     let new_mask = if set {
         old_mask | (1 << irq_line)
@@ -111,6 +142,7 @@ unsafe fn set_mask(data_port: &mut Port<u8>, irq_line: u8, set: bool) {
         old_mask & !(1 << irq_line)
     };
 
+    // SAFETY: same port as the read above; writing it updates the mask.
     unsafe {
         data_port.write(new_mask);
     }
@@ -126,11 +158,15 @@ fn is_spurious(irq_num: u8) -> bool {
 
     let mut pic_regs = PIC_REGS.lock();
     let isr = if irq_num == 7 {
+        // SAFETY: `cmd_1`/`data_1` are PIC 1's fixed command/data ports;
+        // issuing the "read ISR" command then reading the data port back is
+        // the standard sequence for querying the in-service register.
         unsafe {
             pic_regs.cmd_1.write(PIC_COMMAND_READ_ISR);
             pic_regs.data_1.read()
         }
     } else {
+        // SAFETY: as above, but PIC 2's `cmd_2`/`data_2` ports.
         unsafe {
             pic_regs.cmd_2.write(PIC_COMMAND_READ_ISR);
             pic_regs.data_2.read()
@@ -143,6 +179,8 @@ fn is_spurious(irq_num: u8) -> bool {
     // However, if the secondary PIC sent the spurious IRQ (i.e. IRQ 15), we
     // must still send EOI to the primary PIC.
     if irq_num == 15 {
+        // SAFETY: `cmd_1` is PIC 1's fixed command port; writing the EOI
+        // command there is how the primary PIC is acknowledged.
         unsafe {
             pic_regs.cmd_1.write(PIC_COMMAND_ACKNOWLEDGE_IRQ);
         }
@@ -154,6 +192,10 @@ fn is_spurious(irq_num: u8) -> bool {
 fn acknowledge_irq(irq_num: u8) {
     let mut pic_regs = PIC_REGS.lock();
 
+    // SAFETY: `cmd_1`/`cmd_2` are the fixed PIC 1/2 command ports; writing
+    // the EOI command is the standard end-of-interrupt sequence (PIC 2 first
+    // when the IRQ came from it, then always PIC 1, since PIC 2 is cascaded
+    // through PIC 1).
     unsafe {
         if irq_num >= 8 {
             pic_regs.cmd_2.write(PIC_COMMAND_ACKNOWLEDGE_IRQ);

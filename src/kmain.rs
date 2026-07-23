@@ -12,6 +12,10 @@ const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
 #[unsafe(export_name = "_start")]
 pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) -> ! {
+    // SAFETY: this is the very first kernel code to run after the loader's
+    // `jmp` (see loader/src/main.rs), so port 0xe9 has not been touched by
+    // anything else yet and no other `QemuDebugWriter` can exist concurrently
+    // (single core, no other kernel code has run).
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
     let _ = writeln!(debugcon, "In kernel_entry");
 
@@ -37,6 +41,11 @@ pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) ->
     info!("Initialized frame allocator");
 
     let init_extent = mm::phys_extent_to_virt(boot_info.init_module);
+    // SAFETY: `boot_info.init_module` is `MemoryType::KernelLoad` in the
+    // loader's memory map (see loader/src/main.rs's `translate_memory_map`),
+    // which `is_ram_backed()`, so `mm::init` (just above) has already mapped
+    // it read/write into the phys_map window `phys_extent_to_virt` resolves
+    // against. No one else holds a reference into it at this point in boot.
     let init_elf = xmas_elf::ElfFile::new(unsafe { &*init_extent.as_slice() }).unwrap();
 
     info!("init sections:");
@@ -47,6 +56,11 @@ pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) ->
         info!("  {}", section);
     }
 
+    // SAFETY: this is the first and only call to
+    // `sched::init_kernel_main_thread`; the scheduler has not been
+    // initialized yet (see that function's own `# Safety` contract) and
+    // `kernel_entry` never returns, so there is no "old" stack state left
+    // dangling by the stack switch inside it.
     unsafe {
         sched::init_kernel_main_thread(kernel_main);
     }
@@ -58,6 +72,10 @@ pub fn kernel_main() -> ! {
     // This should do nothing.
     sched::yield_current();
 
+    // SAFETY: `pic::init`'s contract requires interrupts to be disabled
+    // before it runs and permits enabling them once it returns; `kernel_entry`
+    // disabled interrupts on entry and nothing has re-enabled them since, so
+    // both calls satisfy that ordering.
     unsafe {
         pic::init();
         interrupts::enable();
@@ -105,12 +123,23 @@ cfg_if::cfg_if! {
         use shared::log::{LogTee, LogSink, QemuDebugWriter};
         use shared::vga::VgaWriter;
         lazy_static! {
+            // SAFETY: port 0xe9 is the conventional QEMU debugcon port and
+            // isn't used elsewhere; `VMEM` points at the VGA text buffer, and
+            // this `lazy_static` is the only place a `VgaWriter` over `VMEM`
+            // is constructed outside the panic handler's fallback path (which
+            // only runs if this LOGGER is already locked, i.e. never
+            // concurrently with this initializer).
             static ref LOGGER: LogTee<LogSink<QemuDebugWriter>, LogSink<VgaWriter>> = unsafe { LogTee(LogSink::new(QemuDebugWriter::new()), LogSink::new(VgaWriter::new(VMEM))) };
         }
     } else {
         use shared::log::LogSink;
         use shared::vga::VgaWriter;
         lazy_static! {
+            // SAFETY: as above (the `qemu_debugcon` variant) but for `VMEM`
+            // alone: `VMEM` points at the VGA text buffer, and this is the
+            // only place a `VgaWriter` over it is constructed outside the
+            // panic handler's fallback (which only runs while this LOGGER is
+            // locked).
             static ref LOGGER: LogSink<VgaWriter> = unsafe { LogSink::new(VgaWriter::new(VMEM)) };
         }
     }
@@ -133,10 +162,18 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     } else {
         #[cfg(feature = "qemu_debugcon")]
         {
+            // SAFETY: port 0xe9 is the conventional QEMU debugcon port; we
+            // only reach this branch when LOGGER (which owns the only other
+            // writer to it) is locked, so there's no concurrent writer.
             let mut writer = unsafe { shared::log::QemuDebugWriter::new() };
             let _ = write!(&mut writer, "{info}");
         }
 
+        // SAFETY: `VMEM` points at the VGA text buffer; we only reach this
+        // branch when LOGGER (which owns the only other `VgaWriter` over
+        // `VMEM`) is locked, so there's no concurrent writer. A panic-path
+        // write racing the locked LOGGER's own in-progress write can still
+        // interleave garbled output, but not touch invalid memory.
         let mut writer = unsafe { shared::vga::VgaWriter::new(VMEM) };
         let _ = write!(&mut writer, "{info}");
     }

@@ -33,6 +33,10 @@ impl VgaWriter {
     fn clear_line(&mut self, line: usize) {
         assert!(line < ROWS);
         for i in 0..COLS {
+            // SAFETY: `self.vmem` points to valid VGA memory of at least
+            // `ROWS * COLS * 2` bytes per `VgaWriter::new`'s contract; `line
+            // < ROWS` (asserted above) and `i < COLS`, so
+            // `2 * (i + line * COLS)` stays within that range.
             unsafe {
                 *self.vmem.offset(2 * (i + line * COLS) as isize) = 0;
             }
@@ -50,6 +54,13 @@ impl VgaWriter {
             return;
         }
 
+        // SAFETY: `self.vmem` points to valid VGA memory of at least
+        // `ROWS * COLS * 2` bytes (per `VgaWriter::new`'s contract). `lines
+        // < ROWS` here (the `lines == ROWS` case returned above), so both
+        // `self.vmem.add(lines * COLS * 2)` and the `(ROWS - lines) * COLS *
+        // 2`-byte region starting at `self.vmem` stay within that range;
+        // `copy` (not `copy_nonoverlapping`) is used because the source and
+        // destination ranges do overlap when scrolling.
         unsafe {
             core::ptr::copy(
                 self.vmem.add(lines * COLS * 2),
@@ -66,6 +77,12 @@ impl VgaWriter {
     }
 }
 
+// SAFETY: `VgaWriter` only ever touches memory through its own `vmem`
+// pointer, never global/thread-local state, so moving one to another thread
+// has nothing thread-affine to invalidate. `VgaWriter::new`'s "only one
+// instance should exist" contract is what actually prevents concurrent
+// access to the underlying VGA memory; `Send` alone doesn't grant sharing
+// (there's no corresponding `Sync` impl).
 unsafe impl Send for VgaWriter {}
 
 impl Write for VgaWriter {
@@ -83,6 +100,11 @@ impl Write for VgaWriter {
 
             let b = if c.is_ascii() { c as u8 } else { b'?' };
 
+            // SAFETY: `self.vmem` points to valid VGA memory of at least
+            // `ROWS * COLS * 2` bytes (per `VgaWriter::new`'s contract); the
+            // scroll/bounds check just above guarantees
+            // `self.offset < ROWS * COLS` here, so `2 * self.offset` stays
+            // within that range.
             unsafe {
                 *self.vmem.offset(2 * self.offset as isize) = b;
             }

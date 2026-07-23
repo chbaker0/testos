@@ -940,7 +940,7 @@ mod harness_tests {
 
         /// Follow a parent-table entry to the table it points at, or `None` if
         /// it isn't present.
-        fn descend(&self, mut entry: PageTableEntry) -> Option<&PageTable> {
+        fn descend(&self, entry: PageTableEntry) -> Option<&PageTable> {
             if !entry.get_flags().contains(PageTableFlags::PRESENT) {
                 return None;
             }

@@ -10,8 +10,17 @@ use x86_64::structures::idt::InterruptStackFrame;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
+/// The kernel entry point. This is the `_start` symbol the loader `jmp`s to;
+/// it is never called as an ordinary Rust function.
+///
+/// # Safety
+///
+/// `boot_info` must point to a valid `BootInfo` living in identity-mapped
+/// physical memory, per the loader's handoff contract (see
+/// `loader/src/main.rs` and `shared::boot_info::BootInfo`). Must be entered
+/// exactly once, as the first kernel code to run.
 #[unsafe(export_name = "_start")]
-pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) -> ! {
+pub unsafe extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) -> ! {
     // SAFETY: this is the very first kernel code to run after the loader's
     // `jmp` (see loader/src/main.rs), so port 0xe9 has not been touched by
     // anything else yet and no other `QemuDebugWriter` can exist concurrently
@@ -31,8 +40,9 @@ pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) ->
     idt::init();
     info!("Set up IDT");
 
-    // SAFETY: the loader places this in identity-mapped physical memory and
-    // gives us its address in rdi, per shared::boot_info::BootInfo's contract.
+    // SAFETY: forwarded from this fn's contract — the loader places this in
+    // identity-mapped physical memory and gives us its address in rdi, per
+    // shared::boot_info::BootInfo's contract.
     let boot_info = unsafe { &*boot_info };
 
     info!("init_extent = {:?}", boot_info.init_module);

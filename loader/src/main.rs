@@ -291,6 +291,12 @@ fn main() -> Status {
         // (`map_range`'s phase 3 needs `>= 1 GiB` aligned remaining), so I'm
         // flagging it rather than asserting either that it's fine or that
         // it's a live bug.
+        //
+        // SAFETY: `page_mapper` was built over the loader's own page tables
+        // (see its construction above) and `page`/`frame` are the identity
+        // mapping of the first 1 MiB, which is not yet mapped by anything
+        // else here. The huge-page re-descent caveat described above is
+        // deliberately *not* asserted sound; it is tracked in issue #39.
         unsafe {
             page_mapper
                 .map(

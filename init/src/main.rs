@@ -3,7 +3,7 @@
 
 use core::panic::PanicInfo;
 
-#[export_name = "_start"]
+#[unsafe(export_name = "_start")]
 pub extern "C" fn start() -> ! {
     loop {}
 }

@@ -10,7 +10,7 @@ use x86_64::structures::idt::InterruptStackFrame;
 
 const VMEM: *mut u8 = 0xB8000 as *mut u8;
 
-#[export_name = "_start"]
+#[unsafe(export_name = "_start")]
 pub extern "C" fn kernel_entry(boot_info: *const shared::boot_info::BootInfo) -> ! {
     let mut debugcon = unsafe { shared::log::QemuDebugWriter::new() };
     let _ = writeln!(debugcon, "In kernel_entry");

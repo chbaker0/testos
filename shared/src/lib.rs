@@ -7,7 +7,6 @@
 #![feature(allocator_api)]
 #![feature(pointer_is_aligned_to)]
 #![feature(ptr_metadata)]
-#![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(not(test), no_std)]
 
 #[cfg(feature = "alloc")]

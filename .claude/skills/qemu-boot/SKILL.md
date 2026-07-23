@@ -15,10 +15,12 @@ macOS host, so you must bound the run externally.
    `source .env` and hard-fail if it's missing. If absent, copy
    `.env.example` to `.env` (empty is fine) before proceeding.
 
-2. **Rebuild.** Run `./make-image.sh` in the repo root. This fetches OVMF
-   prebuilts (first run only) and builds the loader + kernel into `out/esp`.
-   Treat a failure here as a build error, not a boot error — report it and
-   stop; don't proceed to boot a stale image.
+2. **Rebuild.** Run `./make-image.sh` in the repo root. It uses the
+   vendored OVMF firmware under `third_party/ovmf` (committed to the repo,
+   no network fetch — it errors out if the blobs are missing rather than
+   downloading them) and builds the loader + kernel into `out/esp`. Treat a
+   failure here as a build error, not a boot error — report it and stop;
+   don't proceed to boot a stale image.
 
 3. **Determine the expected success signature before booting.** Read the
    current [src/kmain.rs](../../../src/kmain.rs) to see what `kernel_entry`

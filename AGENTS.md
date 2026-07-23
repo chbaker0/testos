@@ -40,7 +40,7 @@ Eventually, a C toolchain necessary. However, it is helpful much sooner:
 
 ## Project status
 
-Last updated 2026-07-21. The project just finished migrating its boot
+Last updated 2026-07-23. The project just finished migrating its boot
 process from Multiboot2/GRUB to a custom UEFI loader. The loader
 (`loader/`) now successfully parses the kernel ELF, maps its segments, sets
 up paging, and jumps into `kernel_entry` in [src/kmain.rs](src/kmain.rs).
@@ -57,9 +57,16 @@ and manual QEMU boots) landed in `.github/workflows/ci.yml` (PR #25):
 three jobs — `cheap` (host unit tests + per-crate compile checks),
 `expensive` (Miri), and `smoke` (full image build + a headless QEMU boot,
 gated on a new `src/qemu.rs` isa-debug-exit pass/fail signal, see
-"Verifying changes" below). GDB-over-QEMU-stub debugging is still real but
-slow for interactive local work, so CI — not local runs — is what now
-exercises everything, including a full boot, on every push/PR. Clippy is
+"Verifying changes" below). The `expensive` job is now path-gated (PR #32):
+it runs Miri only when a Miri input changed (`shared/**`, `Cargo.lock`,
+`Cargo.toml`, `.cargo/config.toml`, `rust-toolchain`, or the workflow
+itself) and otherwise reports a fast green no-op, so it never blocks a
+docs-only or kernel-only PR; a daily `schedule:` run (cron `0 6 * * *`)
+forces the full Miri suite regardless of paths, catching nightly drift the
+path filter can't see. GDB-over-QEMU-stub debugging is still real but slow
+for interactive local work, so CI — not local runs — is what now exercises
+everything: a full boot on every push/PR, and Miri on every push/PR that
+touches a Miri input (plus the daily scheduled run). Clippy is
 deliberately **not** gated yet: `cargo kclippy` currently fails on a
 pre-existing lint violation in `src/kmain.rs` (issue #23) and `shared` has
 warnings, so a green CI run does not imply lint-clean.
@@ -193,8 +200,13 @@ of running them all by hand every time. Locally, in order of preference:
    **Not part of the standard local PR loop.** CI runs Miri as its own
    `expensive` job (see `.github/workflows/ci.yml`), so don't run
    `cargo smiri` locally as a matter of course before shipping a PR — rely
-   on that CI job instead. Do run it locally when the specific change
-   actually hinges on it (e.g. you're touching the unsafe page-table
+   on that CI job instead. That job is path-gated (PR #32): it runs Miri
+   only when a Miri input changed (`shared/**` plus a few build files — see
+   "Project status" for the full list), which covers every change Miri can
+   actually catch, since Miri only exercises `shared`; a daily scheduled
+   run additionally forces it to catch nightly drift. Do run it locally
+   when the specific change actually hinges on it (e.g. you're touching the
+   unsafe page-table
    pointer walks in [shared/src/memory/paging.rs](shared/src/memory/paging.rs)
    and want fast local iteration), but a slow/pending local Miri run should
    never block otherwise-ready work from being committed or opened as a PR.

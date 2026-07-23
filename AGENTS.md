@@ -28,13 +28,6 @@ based system with a schema-based RPC and syscall system.
 
 Right now, everything is a mix of scripts run at build time (which mostly invoke cargo, a couple special tools, and compost everything together into a bootable image), but the script hides a lot. Would it be appropriate to use a different way to orchestrate the build, which makes the relationships and stages more visible?
 
-### GitHub actions
-
-Actions for the main verification steps will:
-* Speed up dev cycle on Apple silicon
-* Improve build hermeticity
-* Allow more automation
-
 ### C toolchain
 
 Eventually, a C toolchain necessary. However, it is helpful much sooner:
@@ -60,9 +53,16 @@ halting. A clean boot now exercises all of that — don't assume it's still
 inert the way it was right after the UEFI migration.
 
 A dedicated testing/verification strategy (beyond ad hoc debugcon-reading
-and manual QEMU boots) is wanted before more kernel feature work lands —
-GDB-over-QEMU-stub debugging is real but slow here (see "Verifying
-changes" below), which is part of the motivation.
+and manual QEMU boots) landed in `.github/workflows/ci.yml` (PR #25):
+three jobs — `cheap` (host unit tests + per-crate compile checks),
+`expensive` (Miri), and `smoke` (full image build + a headless QEMU boot,
+gated on a new `src/qemu.rs` isa-debug-exit pass/fail signal, see
+"Verifying changes" below). GDB-over-QEMU-stub debugging is still real but
+slow for interactive local work, so CI — not local runs — is what now
+exercises everything, including a full boot, on every push/PR. Clippy is
+deliberately **not** gated yet: `cargo kclippy` currently fails on a
+pre-existing lint violation in `src/kmain.rs` (issue #23) and `shared` has
+warnings, so a green CI run does not imply lint-clean.
 
 ## Environment setup
 
@@ -144,12 +144,14 @@ Cargo aliases (see `.cargo/config.toml` for the full definitions):
 
 ## Verifying changes
 
-There's no test suite beyond `cargo stest` (host unit tests in `shared`,
-the one crate that doesn't need kernel space to run). Everything else —
-kernel, loader, init — can only really be checked by booting it, which is
-slow on Apple Silicon (see "Booting headlessly" below) — part of the
-motivation for the GitHub Actions item under "Next steps" above. In order
-of preference:
+Beyond `cargo stest` (host unit tests in `shared`, the one crate that
+doesn't need kernel space to run), everything else — kernel, loader, init
+— can only really be checked by booting it, which is slow to iterate on
+locally (especially on Apple Silicon; see "Booting headlessly" below).
+GitHub Actions CI (`.github/workflows/ci.yml`, see "Project status" above)
+now runs all of this, including a full headless QEMU boot, on every
+push/PR, so a local session can lean on CI for the expensive steps instead
+of running them all by hand every time. Locally, in order of preference:
 
 1. `cargo kcheck` / `cargo lcheck` / `cargo icheck` — fast compile check.
 2. `cargo stest` — unit tests, including an end-to-end `harness_tests` in

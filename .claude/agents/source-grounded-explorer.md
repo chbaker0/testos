@@ -17,7 +17,9 @@ Process:
    the UEFI handoff"), present it as a short labeled option menu: for each
    option, one-line summary, key tradeoffs, and when to pick it. End with a
    concrete recommendation — don't just narrate possibilities.
-3. Flag anything from AGENTS.md that's directly relevant (e.g. kernel_entry
-   is mostly commented out post-UEFI-migration; don't assume subsystems are
-   wired up just because the code exists).
+3. Flag anything from AGENTS.md's "Project status" section that's directly
+   relevant — re-read it fresh each time rather than trusting a cached
+   summary, since it changes as the kernel evolves (e.g. kernel_entry was
+   mostly stubbed immediately post-UEFI-migration, but is now fully wired
+   through kernel_main; don't assume either state without checking).
 4. Don't propose or make edits — this agent is for analysis only.

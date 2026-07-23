@@ -187,6 +187,16 @@ of preference:
 3. `cargo smiri` — same `shared` tests under Miri (`rustup component add
    miri` once). Miri interprets the harness's unsafe page-table pointer
    walks and flags out-of-bounds/use-after-free/uninit/provenance errors.
+
+   **Not part of the standard local PR loop.** CI runs Miri as its own
+   `expensive` job (see `.github/workflows/ci.yml`), so don't run
+   `cargo smiri` locally as a matter of course before shipping a PR — rely
+   on that CI job instead. Do run it locally when the specific change
+   actually hinges on it (e.g. you're touching the unsafe page-table
+   pointer walks in [shared/src/memory/paging.rs](shared/src/memory/paging.rs)
+   and want fast local iteration), but a slow/pending local Miri run should
+   never block otherwise-ready work from being committed or opened as a PR.
+
    Two gotchas, both already handled in `.cargo/config.toml`'s
    `MIRIFLAGS`:
    * **Permissive** (not strict) provenance is required — the paging code

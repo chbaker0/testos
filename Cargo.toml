@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Collin <chbaker0@gmail.com>"]
 edition = "2024"
 
+[lints]
+workspace = true
+
 [workspace]
 members = [
     ".",
@@ -15,6 +18,10 @@ members = [
 ]
 default-members = ["."]
 resolver = "2"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+never_type_fallback_flowing_into_unsafe = "deny"
 
 [workspace.dependencies]
 aligned = "0.4.3"

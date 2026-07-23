@@ -199,11 +199,13 @@ pub fn yield_current() {
     // `prev_task`).
     let next_rsp: usize = unsafe { next_task.0.as_mut().rsp.take().unwrap().get() };
     // SAFETY: `prev_task` is `CURRENT_TASK`'s old value, exclusively owned
-    // here; `&mut prev_task.0.as_mut().rsp` is a valid, live `usize`-sized
+    // here, so `(*prev_task.0.as_ptr()).rsp` is a valid, live `usize`-sized
     // `Option<NonZeroUsize>` slot that `switch_to` writes the suspended `rsp`
-    // into (see its own contract).
-    let prev_rsp: *mut usize =
-        unsafe { &mut prev_task.0.as_mut().rsp as *mut Option<NonZeroUsize> as *mut usize };
+    // into (see its own contract). `&raw mut` projects to that field without
+    // forming a `&mut Task`, which matters because `prev_task` is the task
+    // being switched away from. `Option<NonZeroUsize>` is niche-optimized to
+    // the same layout as `usize`.
+    let prev_rsp: *mut usize = unsafe { &raw mut (*prev_task.0.as_ptr()).rsp as *mut usize };
 
     // SAFETY: `next_rsp` is a valid suspended stack pointer for `next_task`
     // (either freshly built by `create_task` or previously saved by this

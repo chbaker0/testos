@@ -2,7 +2,7 @@
 
 use core::alloc::{AllocError, Allocator, GlobalAlloc, Layout};
 use core::mem::MaybeUninit;
-use core::ptr::{addr_of, NonNull};
+use core::ptr::NonNull;
 
 use intrusive_collections::UnsafeRef;
 use intrusive_collections::{singly_linked_list as sll, Adapter};
@@ -62,17 +62,17 @@ unsafe impl Adapter for BlockAdapter {
         value: *const <Self::PointerOps as intrusive_collections::PointerOps>::Value,
     ) -> <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr {
         // SAFETY: forwarded from this fn's contract (see the `unsafe impl`
-        // above): `value` points to a valid `FreeBlock`, so `addr_of!` of its
+        // above): `value` points to a valid `FreeBlock`, so `&raw const` of its
         // `header.link` field is a valid, non-null pointer (it's a field of
         // a real object, not a null/dangling base).
-        unsafe { NonNull::new_unchecked(addr_of!((*value).header.link) as *mut _) }
+        unsafe { NonNull::new_unchecked(&raw const (*value).header.link as *mut _) }
     }
 
     unsafe fn get_value(
         &self,
         link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
     ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
-        // Inverts `get_link`'s `addr_of!((*value).header.link)` through the
+        // Inverts `get_link`'s `&raw const (*value).header.link` through the
         // same nested path, so neither hop assumes `header` sits at offset 0.
         // SAFETY: `link` points to the `header.link` field of a live
         // `FreeBlock`, so backing up by that field's offset lands on the

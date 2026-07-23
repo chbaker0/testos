@@ -4,6 +4,15 @@ on:
   push:
     branches: [master]
   pull_request:
+  # Daily unconditional full run. The `expensive` job's path filter skips Miri
+  # when no Miri inputs changed, but `rust-toolchain` pins a dateless `nightly`,
+  # so the channel can advance (and Miri/compiler behaviour drift) without any
+  # tracked file changing. A run of Miri-input-untouched PRs would then skip
+  # Miri right across a nightly bump and miss the drift. This scheduled run
+  # forces the full Miri suite at least once a day regardless of paths, so
+  # nightly drift is caught within ~24h even without a Miri-touching PR.
+  schedule:
+    - cron: '0 6 * * *'
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
 concurrency:
@@ -79,7 +88,10 @@ jobs:
       #  - this workflow file    changes the job itself
       # On a push where the diff can't be determined, paths-filter reports every
       # file changed, so the fail-safe direction is to run Miri.
+      # Skipped on `schedule` (no base commit to diff against); the scheduled
+      # run forces Miri unconditionally via the `decide` step below.
       - name: Detect changes to Miri inputs
+        if: github.event_name != 'schedule'
         uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -92,22 +104,34 @@ jobs:
               - 'rust-toolchain'
               - '.github/workflows/ci.yml'
 
+      # Single source of truth for whether Miri runs: any changed input, or the
+      # daily scheduled run (which forces a full run to catch nightly drift the
+      # path filter can't see — see the `schedule:` trigger above).
+      - name: Decide whether to run Miri
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ steps.filter.outputs.miri }}" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install nightly toolchain (with Miri)
-        if: steps.filter.outputs.miri == 'true'
+        if: steps.decide.outputs.run == 'true'
         run: |
           rustup toolchain install nightly --profile minimal
           rustup component add --toolchain nightly miri rust-src
           rustup show
 
       - uses: Swatinem/rust-cache@v2
-        if: steps.filter.outputs.miri == 'true'
+        if: steps.decide.outputs.run == 'true'
 
       - name: Miri (shared)
-        if: steps.filter.outputs.miri == 'true'
+        if: steps.decide.outputs.run == 'true'
         run: cargo smiri
 
       - name: Skip Miri (no changes to Miri inputs)
-        if: steps.filter.outputs.miri != 'true'
+        if: steps.decide.outputs.run != 'true'
         run: echo "No changes under shared/ or other Miri inputs; skipping Miri."
 
   # Build the full UEFI image and boot it in QEMU. Success is signalled by the

@@ -299,7 +299,7 @@ where
         // SAFETY: `ptr` is a valid, aligned pointer to a live `PageTable` per
         // the contract established in `PhysTableStore::new`. `index` is
         // always a 9-bit table index (see `Page::l*_index`), so `< 512`.
-        Ok(unsafe { ptr::read_volatile(ptr::addr_of!((*ptr).entries[index])) })
+        Ok(unsafe { ptr::read_volatile(&raw const (*ptr).entries[index]) })
     }
 
     fn write_entry(
@@ -314,7 +314,7 @@ where
         // the original code reserved for just the leaf write.
         unsafe {
             compiler_fence(Ordering::AcqRel);
-            ptr::write_volatile(ptr::addr_of_mut!((*ptr).entries[index]), entry);
+            ptr::write_volatile(&raw mut (*ptr).entries[index], entry);
             compiler_fence(Ordering::AcqRel);
         }
         Ok(())

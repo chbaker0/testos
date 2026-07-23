@@ -392,10 +392,10 @@ pub fn kernel_ptr_to_phys_addr<T>(p: *const T) -> PhysAddress {
 
 #[inline]
 pub fn get_kernel_virt_base() -> VirtAddress {
-    // SAFETY: `KERNEL_VIRT_BASE` does not have a value, but it is zero-sized.
-    // Its address is set appropriately by the linker so we may get a raw
-    // pointers to it, as long as we never dereference it.
-    unsafe { VirtAddress::from_raw(&internal::KERNEL_VIRT_BASE as *const _ as usize as u64) }
+    // `KERNEL_VIRT_BASE` has no value; only its address, set by the linker, is
+    // meaningful. `&raw const` yields that address without ever forming a
+    // reference, so the symbol is never read or dereferenced.
+    VirtAddress::from_raw(&raw const internal::KERNEL_VIRT_BASE as usize as u64)
 }
 
 /// Provides "chunks" or pages to the heap implementation. This is very basic:

@@ -48,13 +48,11 @@ impl BlockAdapter {
     }
 }
 
-// SAFETY: `get_link`/`get_value` are exact inverses, round-tripping through
-// the `link` field's offset within `FreeBlockData` (via `addr_of!` and
-// `memoffset::offset_of!` respectively), so `Adapter`'s contract that they
-// consistently identify the same object holds. `FreeBlock`'s `header.link`
-// field is never moved once linked (blocks are only ever handed to the list
-// by reference via `UnsafeRef`, never relocated), satisfying the link
-// stability `intrusive_collections` requires.
+// SAFETY: `get_link`/`get_value` are exact inverses — both resolve the same
+// nested `FreeBlock.header.link` offset — so they consistently identify the
+// same object. Blocks reach the list only by `UnsafeRef` and are never
+// relocated while linked, satisfying `intrusive_collections`' link stability
+// requirement.
 unsafe impl Adapter for BlockAdapter {
     type LinkOps = sll::AtomicLinkOps;
     type PointerOps = intrusive_collections::DefaultPointerOps<UnsafeRef<FreeBlock>>;
@@ -74,18 +72,24 @@ unsafe impl Adapter for BlockAdapter {
         &self,
         link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
     ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
-        let offset = memoffset::offset_of!(FreeBlockData, link);
-        // SAFETY: `link` points to the `link` field of a `FreeBlockData`. We
-        // offset the pointer accordingly and get a reference to the owning
+        // Inverts `get_link`'s `addr_of!((*value).header.link)` through the
+        // same nested path, so neither hop assumes `header` sits at offset 0.
+        // SAFETY: `link` points to the `header.link` field of a live
+        // `FreeBlock`, so backing up by that field's offset lands on the
+        // block's base, and `header`'s own offset from there lands on its
         // `FreeBlockData`.
-        let header =
-            unsafe { &*(link.as_ptr().byte_offset(-(offset as isize)) as *const FreeBlockData) };
+        let (base, header) = unsafe {
+            let base = link
+                .as_ptr()
+                .byte_sub(core::mem::offset_of!(FreeBlock, header.link))
+                as *const ();
+            let header = &*(base.byte_add(core::mem::offset_of!(FreeBlock, header))
+                as *const FreeBlockData);
+            (base, header)
+        };
 
         let size = header.size.size();
-        core::ptr::from_raw_parts::<FreeBlock>(
-            header as *const _ as *const (),
-            FreeBlock::metadata_from_size(size),
-        )
+        core::ptr::from_raw_parts::<FreeBlock>(base, FreeBlock::metadata_from_size(size))
     }
 
     fn link_ops(&self) -> &Self::LinkOps {
@@ -227,13 +231,13 @@ impl<Provider, const CHUNK_SIZE: usize> CheckedHeap<Provider, CHUNK_SIZE> {
     }
 }
 
-// SAFETY: `alloc` returns a pointer from `Heap::allocate`, which either hands
-// out a `Provider::allocate`-backed chunk directly or a block carved out of
-// one by `FreeBlock::build`/`allocate_small` — in both cases a live,
-// exclusively-owned region at least `layout.size()` bytes, satisfying
-// `GlobalAlloc`'s contract for the memory `alloc` returns. `dealloc` is
-// deliberately a no-op (this heap never reclaims memory once handed out; see
-// its comment), which is a valid (if wasteful) `GlobalAlloc` impl.
+// SAFETY: `alloc` returns a live, exclusively-owned region of at least
+// `layout.size()` bytes from `Heap::allocate`; `dealloc` is deliberately a
+// no-op (valid, if wasteful — this heap never reclaims).
+//
+// INCOMPLETE: this does *not* hold for `layout.align() > CHUNK_SIZE`. The
+// chunk-direct path only guarantees `CHUNK_SIZE` alignment, so the impl is
+// unsound for such layouts until issue #40 is fixed.
 unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> GlobalAlloc
     for CheckedHeap<Provider, CHUNK_SIZE>
 {
@@ -246,9 +250,8 @@ unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Global
     }
 }
 
-// SAFETY: `allocate` forwards to the same `Heap::allocate` as the
-// `GlobalAlloc` impl above, with the same reasoning; `deallocate` is
-// likewise a deliberate no-op.
+// SAFETY: same reasoning as the `GlobalAlloc` impl above, including the same
+// `align > CHUNK_SIZE` unsoundness (#40); `deallocate` is likewise a no-op.
 unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Allocator
     for CheckedHeap<Provider, CHUNK_SIZE>
 {

@@ -161,12 +161,12 @@ fn main() -> Status {
             .enumerate()
         {
             let page = first_page.next(n as u64).unwrap();
-            // SAFETY: `page_mapper`'s page table isn't active yet (CR3 is
-            // switched only after this loop, at the bottom of `main`), so
-            // there's no live translation to break. `page` comes from this
-            // segment's own `p_vaddr`, and segments don't overlap in a
-            // well-formed ELF, so each `page` here is being mapped for the
-            // first time.
+            // SAFETY: `page_mapper`'s table isn't active yet (CR3 switches
+            // only at the bottom of `main`), so no live translation is broken.
+            // PT_LOAD segments are byte-disjoint but may still share a page in
+            // general; here every section gets `ALIGN(4K)` from
+            // `src/linker.ld`, so the segments' page ranges are disjoint too
+            // and no `page` is mapped twice.
             unsafe {
                 page_mapper
                     .map(page, frame, leaf_flags, parent_set_flags, parent_mask_flags)

@@ -97,19 +97,20 @@ pub struct QemuDebugWriter {
     _phantom: core::marker::PhantomData<*mut u8>,
 }
 
-// SAFETY: `QemuDebugWriter` holds no real state — the `PhantomData<*mut u8>`
-// only exists to make it `!Send` by default (forcing construction through
-// the unsafe `new`, whose contract is the actual gate). Every `write_str`
-// call independently re-derives its own local `Port` handle to the fixed
-// port 0xe9 rather than holding one, so there's nothing thread-affine for
-// moving a `QemuDebugWriter` to another thread to invalidate; `LogSink`'s
-// `Mutex` is what serializes concurrent access to the port itself.
+// SAFETY: `QemuDebugWriter` holds no state. The `PhantomData<*mut u8>` makes
+// it `!Send`/`!Sync` by default; this impl deliberately restores `Send` only,
+// leaving it `!Sync`. Each `write_str` derives its own local `Port` to the
+// fixed port 0xe9, so nothing is thread-affine and moving the writer
+// invalidates nothing. Serializing writers to the port is the caller's
+// obligation under `new`'s contract — nothing here provides it.
 unsafe impl Send for QemuDebugWriter {}
 
 impl QemuDebugWriter {
     /// # Safety
     ///
-    /// Caller must ensure x86 port 0xe9 is safe to write to.
+    /// Caller must ensure x86 port 0xe9 is safe to write to, and must
+    /// serialize this writer against every other writer to that port —
+    /// nothing here provides that.
     pub unsafe fn new() -> Self {
         QemuDebugWriter {
             _phantom: core::marker::PhantomData,

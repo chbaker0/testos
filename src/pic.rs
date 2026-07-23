@@ -31,9 +31,9 @@ static PIC_REGS: Mutex<PicRegs> = Mutex::new(PicRegs {
 
 /// # Safety
 ///
-/// Interrupts should be disabled before this is called (so a spurious IRQ
-/// can't arrive mid-sequence, before the handlers below are installed). It is
-/// safe to enable interrupts after `init()` returns.
+/// Interrupts must be disabled before this is called, so a spurious IRQ can't
+/// arrive mid-sequence before the handlers below are installed. It is safe to
+/// enable interrupts after `init()` returns.
 pub unsafe fn init() {
     // SAFETY: forwarded from this fn's contract; `without_interrupts` itself
     // doesn't add any further requirement.

@@ -164,7 +164,7 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     let page_table_ptr = boot_info.page_table_root.as_raw() as *mut paging::PageTable;
     // SAFETY: `page_table_root` is the physical address of the L4 table the
     // loader built and installed as the active CR3 (`BootInfo::page_table_root`'s
-    // documented contract); the loader identity-mapped all physical memory it
+    // documented contract); the loader identity-mapped all usable memory it
     // knew about (including this table itself) before handing off, so
     // dereferencing it directly as a pointer is valid. `extend_page_table_with_physical_map`'s
     // own contract (see its doc comment) covers the rest.

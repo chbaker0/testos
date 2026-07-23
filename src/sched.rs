@@ -152,19 +152,19 @@ pub fn quit_current() -> ! {
 
 /// This function cannot be called safely from Rust in the ordinary sense: it
 /// is never `call`ed, only `ret`urned into by `quit_current`'s `asm!` block
-/// above, with `task` (the just-quit task, whose stack this function is
-/// running on top of) arriving in `rdi` per the C calling convention.
+/// above, which has already switched `rsp` onto the *next* task's stack.
+/// `task` (the just-retired task) arrives in `rdi` per the C calling
+/// convention.
 ///
 /// # Safety
 ///
-/// `task` must point to a valid, fully-populated `Task` that owns the stack
-/// this function is currently executing on, and which is not (and will never
-/// be) referenced anywhere else.
+/// `task` must point to a valid, fully-populated `Task` owning a stack that is
+/// no longer active — in particular **not** the stack this function is running
+/// on — and not referenced anywhere else. That stack is freed here.
 unsafe extern "C" fn clean_quit_task(task: *const Task) {
-    // SAFETY: forwarded from this fn's contract: `task` is valid and
-    // exclusively owned, so reading it out (rather than going through a
-    // reference into memory we're about to invalidate by dropping its
-    // owning stack) is sound.
+    // SAFETY: per this fn's contract `task` is valid and exclusively owned.
+    // Copying it out, rather than holding a reference into the retired stack,
+    // lets the `Task`'s drop free that stack without invalidating us.
     let task = unsafe { task.read() };
     assert_eq!(task.next_in_list, None);
     assert_eq!(task.prev_in_list, None);

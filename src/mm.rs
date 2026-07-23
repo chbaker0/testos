@@ -391,7 +391,7 @@ static GLOBAL_ALLOCATOR: heap::CheckedHeap<HeapProvider> =
     heap::CheckedHeap::new(heap::Heap::new(HeapProvider));
 
 mod internal {
-    extern "C" {
+    unsafe extern "C" {
         #![allow(improper_ctypes)]
         // These may not be dereferenced. Only their address is meaningful.
         pub static KERNEL_VIRT_BASE: ();

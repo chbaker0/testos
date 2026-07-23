@@ -48,6 +48,11 @@ impl BlockAdapter {
     }
 }
 
+// SAFETY: `get_link`/`get_value` are exact inverses — both resolve the same
+// nested `FreeBlock.header.link` offset — so they consistently identify the
+// same object. Blocks reach the list only by `UnsafeRef` and are never
+// relocated while linked, satisfying `intrusive_collections`' link stability
+// requirement.
 unsafe impl Adapter for BlockAdapter {
     type LinkOps = sll::AtomicLinkOps;
     type PointerOps = intrusive_collections::DefaultPointerOps<UnsafeRef<FreeBlock>>;
@@ -56,6 +61,10 @@ unsafe impl Adapter for BlockAdapter {
         &self,
         value: *const <Self::PointerOps as intrusive_collections::PointerOps>::Value,
     ) -> <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr {
+        // SAFETY: forwarded from this fn's contract (see the `unsafe impl`
+        // above): `value` points to a valid `FreeBlock`, so `addr_of!` of its
+        // `header.link` field is a valid, non-null pointer (it's a field of
+        // a real object, not a null/dangling base).
         unsafe { NonNull::new_unchecked(addr_of!((*value).header.link) as *mut _) }
     }
 
@@ -63,18 +72,24 @@ unsafe impl Adapter for BlockAdapter {
         &self,
         link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
     ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
-        let offset = memoffset::offset_of!(FreeBlockData, link);
-        // SAFETY: `link` points to the `link` field of a `FreeBlockData`. We
-        // offset the pointer accordingly and get a reference to the owning
+        // Inverts `get_link`'s `addr_of!((*value).header.link)` through the
+        // same nested path, so neither hop assumes `header` sits at offset 0.
+        // SAFETY: `link` points to the `header.link` field of a live
+        // `FreeBlock`, so backing up by that field's offset lands on the
+        // block's base, and `header`'s own offset from there lands on its
         // `FreeBlockData`.
-        let header =
-            unsafe { &*(link.as_ptr().byte_offset(-(offset as isize)) as *const FreeBlockData) };
+        let (base, header) = unsafe {
+            let base = link
+                .as_ptr()
+                .byte_sub(core::mem::offset_of!(FreeBlock, header.link))
+                as *const ();
+            let header = &*(base.byte_add(core::mem::offset_of!(FreeBlock, header))
+                as *const FreeBlockData);
+            (base, header)
+        };
 
         let size = header.size.size();
-        core::ptr::from_raw_parts::<FreeBlock>(
-            header as *const _ as *const (),
-            FreeBlock::metadata_from_size(size),
-        )
+        core::ptr::from_raw_parts::<FreeBlock>(base, FreeBlock::metadata_from_size(size))
     }
 
     fn link_ops(&self) -> &Self::LinkOps {
@@ -136,6 +151,9 @@ impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Heap<Provider
 
         let block_ptr = UnsafeRef::into_raw(first_fit.pop_front().unwrap());
         assert!(block_ptr.is_aligned_to(layout.align()));
+        // SAFETY: `block_ptr` came from `UnsafeRef::into_raw` on a block just
+        // popped off the free list, so it's valid and, now unlinked, not
+        // referenced by the list (or anything else) anymore.
         let block = unsafe { &mut *block_ptr };
         assert!(block.header.size.size() >= layout.size());
 
@@ -186,6 +204,10 @@ impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Heap<Provider
         while chunk.len() >= MAXIMAL_BLOCK_SIZE {
             let block;
             (block, chunk) = FreeBlock::build(chunk, BlockSizeKey::Size256);
+            // SAFETY: `block` was just built by `FreeBlock::build` from a
+            // disjoint slice of `chunk`, so it's valid and not aliased by
+            // anything else; `UnsafeRef` takes over as its sole owner from
+            // here (the free list's intrusive links).
             free_list.push_front(unsafe { UnsafeRef::from_raw(block as *mut _) });
         }
     }
@@ -209,6 +231,13 @@ impl<Provider, const CHUNK_SIZE: usize> CheckedHeap<Provider, CHUNK_SIZE> {
     }
 }
 
+// SAFETY: `alloc` returns a live, exclusively-owned region of at least
+// `layout.size()` bytes from `Heap::allocate`; `dealloc` is deliberately a
+// no-op (valid, if wasteful — this heap never reclaims).
+//
+// INCOMPLETE: this does *not* hold for `layout.align() > CHUNK_SIZE`. The
+// chunk-direct path only guarantees `CHUNK_SIZE` alignment, so the impl is
+// unsound for such layouts until issue #40 is fixed.
 unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> GlobalAlloc
     for CheckedHeap<Provider, CHUNK_SIZE>
 {
@@ -221,6 +250,8 @@ unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Global
     }
 }
 
+// SAFETY: same reasoning as the `GlobalAlloc` impl above, including the same
+// `align > CHUNK_SIZE` unsoundness (#40); `deallocate` is likewise a no-op.
 unsafe impl<Provider: ChunkProvider<CHUNK_SIZE>, const CHUNK_SIZE: usize> Allocator
     for CheckedHeap<Provider, CHUNK_SIZE>
 {
@@ -314,6 +345,9 @@ impl FreeBlock {
         // `block` is correctly sized for the `_rest` field, and it is properly
         // aligned.
         assert_eq!(block_len, core::mem::size_of_val(unsafe { &*block }));
+        // SAFETY: as above; `block_mem` (and thus `block`) is exclusively
+        // borrowed here (via `split_at_mut` above), so nothing else aliases
+        // it.
         let block: &mut FreeBlock = unsafe { &mut *block };
 
         (block, rest)
@@ -360,6 +394,11 @@ mod test {
         }
 
         while let Some(block) = free_list.pop_front() {
+            // SAFETY: `block` was just popped off the free list (so no
+            // longer referenced by it) and immediately converted back to a
+            // raw pointer via `into_raw`, so this is the sole reference to
+            // it; the underlying memory (from `fetch_chunk`'s chunks) is
+            // still live.
             let block = unsafe { &*UnsafeRef::into_raw(block) };
             assert_eq!(core::mem::size_of_val(block), block.header.size.size());
             assert_eq!(BlockSizeKey::Size256, block.header.size);
@@ -398,6 +437,11 @@ mod test {
     impl Drop for TestProvider {
         fn drop(&mut self) {
             for (p, l) in self.allocations.drain(..) {
+                // SAFETY: `(p, l)` is exactly the `(raw, layout)` pair
+                // `allocate` below recorded at the point it called `alloc`,
+                // and `allocations` only ever grows there and drains here
+                // once, so each pair is deallocated exactly once with its
+                // original layout.
                 unsafe {
                     std::alloc::dealloc(p, l);
                 }
@@ -405,12 +449,21 @@ mod test {
         }
     }
 
+    // SAFETY: `allocate` returns a `len`-byte (`num_chunks * PAGE_SIZE`),
+    // `PAGE_SIZE`-aligned region from the host allocator, matching
+    // `ChunkProvider::allocate`'s size/alignment contract (`CHUNK_SIZE`
+    // defaults to `PAGE_SIZE` here); each returned pointer is recorded in
+    // `allocations` and not reused until `Drop` frees it, so the caller's
+    // exclusive access is real.
     unsafe impl ChunkProvider for TestProvider {
         fn allocate(&mut self, num_chunks: usize) -> *mut [MaybeUninit<u8>] {
             use std::alloc::*;
 
             let len = num_chunks * PAGE_SIZE;
             let layout = Layout::from_size_align(len, PAGE_SIZE).unwrap();
+            // SAFETY: `layout` has non-zero size (`num_chunks` is always
+            // `>= 1` in `fetch_chunk`'s callers) and valid alignment (a
+            // power of two, `PAGE_SIZE`), satisfying `alloc`'s contract.
             let raw = unsafe { alloc(layout) };
             assert!(!raw.is_null());
             self.allocations.push((raw, layout));

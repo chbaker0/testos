@@ -60,12 +60,23 @@ fn init_impl() {
         idt[i] = Entry::missing();
     }
 
+    // SAFETY: `load_unsafe` requires the referenced IDT to remain valid (i.e.
+    // never moved or dropped) for as long as it stays loaded. `IDT` is a
+    // `'static` `SpinMutex<InterruptDescriptorTable>`, so it never moves and
+    // is never destroyed.
     unsafe {
-        // This is OK since IDT_RAW never moves and is never destroyed.
         idt.load_unsafe();
     }
 }
 
+/// # Safety
+///
+/// `num` must not be one of the CPU-reserved exception vectors this module
+/// installs handlers for above (0..=31, i.e. divide error through security
+/// exception); overwriting one of those would leave that exception without
+/// its dedicated handler. Installing over an IRQ vector already registered
+/// via `pic::install_irq_handler` will also silently override the PIC's
+/// dispatch for that IRQ.
 pub unsafe fn install_interrupt_handler(num: u8, maybe_handler: Option<HandlerFunc>) {
     without_interrupts(|| {
         let mut idt = IDT.lock();

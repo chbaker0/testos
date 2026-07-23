@@ -162,6 +162,12 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // maps the kernel image and identity-maps physical memory, so there's no
     // need to build a fresh table and install it.
     let page_table_ptr = boot_info.page_table_root.as_raw() as *mut paging::PageTable;
+    // SAFETY: `page_table_root` is the physical address of the L4 table the
+    // loader built and installed as the active CR3 (`BootInfo::page_table_root`'s
+    // documented contract); the loader identity-mapped all usable memory it
+    // knew about (including this table itself) before handing off, so
+    // dereferencing it directly as a pointer is valid. `extend_page_table_with_physical_map`'s
+    // own contract (see its doc comment) covers the rest.
     unsafe {
         extend_page_table_with_physical_map(
             &mut *page_table_ptr,
@@ -194,6 +200,12 @@ pub fn init(boot_info: &shared::boot_info::BootInfo) {
     // Now `frame_allocator` has exclusive access to the frame bitmap.
     let frame_bitmap_ref = spin::MutexGuard::leak(frame_bitmap);
 
+    // SAFETY: `frame_bitmap_ref` was just filled by `fill_bitmap_from_map`
+    // from `memory_map`, which marks only `MemoryType::Available` frames
+    // free — the kernel image (`KernelLoad`) and other non-`Available` types
+    // are left marked used, satisfying `BitmapFrameAllocator::new`'s
+    // contract. `MutexGuard::leak` above ensures nothing else can observe or
+    // mutate `FRAME_BITMAP` through the lock concurrently.
     let frame_allocator = unsafe { BitmapFrameAllocator::new(frame_bitmap_ref) };
 
     // Mark all reserved areas. Important so we don't hand out memory containing
@@ -233,6 +245,11 @@ pub fn allocate_frames(order: usize) -> Option<FrameRange> {
     frame_allocator.allocate_range(order)
 }
 
+/// # Safety
+///
+/// `frames` must have been returned by `allocate_frames` (or
+/// `allocate_owned_frames`) and not already deallocated since (see
+/// `FrameAllocator::deallocate_range`'s contract, which this forwards to).
 #[inline(never)]
 pub unsafe fn deallocate_frames(frames: FrameRange) {
     let mut guard = FRAME_ALLOCATOR.lock();
@@ -260,6 +277,11 @@ impl OwnedFrameRange {
 
 impl Drop for OwnedFrameRange {
     fn drop(&mut self) {
+        // SAFETY: `self.frames` was allocated by `allocate_frames`
+        // (`allocate_owned_frames`'s only caller path) and `OwnedFrameRange`
+        // exclusively owns it for its whole lifetime with no way to hand out
+        // a duplicate, so it hasn't been deallocated before and nothing else
+        // holds it.
         unsafe {
             deallocate_frames(self.frames);
         }
@@ -269,10 +291,16 @@ impl Drop for OwnedFrameRange {
 /// Extends `table` in place with a mapping of all physical memory described
 /// by `memory_map` into kernel space (see `VirtualMap::phys_map`).
 ///
-/// `table` is expected to already be a valid, active root page table (built
-/// by the loader) that maps the kernel image and identity-maps physical
-/// memory; this only adds the physical-memory window, so no existing
-/// mapping is disturbed and no TLB flush is required.
+/// # Safety
+///
+/// `table` must already be a valid, active root page table (built by the
+/// loader) that maps the kernel image and identity-maps physical memory;
+/// this only adds the physical-memory window, so no existing mapping is
+/// disturbed and no TLB flush is required. `get_frame` must return frames
+/// not in use anywhere else, and `translator` must return a valid,
+/// accessible virtual address for any physical address this may need to
+/// read or write (see `paging::Mapper::new`'s contract, which this
+/// forwards to).
 unsafe fn extend_page_table_with_physical_map<
     F: FnMut() -> Option<Frame>,
     T: Fn(PhysAddress) -> Option<VirtAddress>,
@@ -282,6 +310,7 @@ unsafe fn extend_page_table_with_physical_map<
     get_frame: F,
     translator: T,
 ) {
+    // SAFETY: forwarded from this fn's contract.
     let mut mapper = unsafe { paging::Mapper::new(table, translator, get_frame) };
 
     // All mappings here will have the global and frozen flags. This table is
@@ -306,6 +335,12 @@ unsafe fn extend_page_table_with_physical_map<
     // (issue #5's other, kernel-side symptom).
     for entry in memory_map.entries().iter().filter(|e| e.mem_type.is_ram_backed()) {
         let virt_base = phys_to_virt(entry.extent.address());
+        // SAFETY: `map_range`'s target region assumption holds: `virt_base`
+        // falls within `VirtualMap::phys_map()`, a dedicated window this
+        // function is the only code that ever populates, and `memory_map`'s
+        // entries are disjoint physical ranges (from the loader's memory
+        // map), so each iteration maps a distinct, previously-untouched
+        // sub-range of that window.
         unsafe {
             mapper
                 .map_range(entry.extent, virt_base, leaf_flags, parent_flags, PageTableFlags::all())
@@ -371,6 +406,13 @@ pub fn get_kernel_virt_base() -> VirtAddress {
 /// address space for the heap.
 struct HeapProvider;
 
+// SAFETY: `allocate` returns `num_chunks * PAGE_SIZE` bytes starting at
+// `phys_to_virt` of a freshly `allocate_range`-allocated, page-aligned frame
+// range (default `CHUNK_SIZE` is `PAGE_SIZE`, see `heap::DEFAULT_CHUNK_SIZE`),
+// so the slice is validly sized and aligned to `CHUNK_SIZE` as
+// `ChunkProvider::allocate`'s contract requires. The underlying frames were
+// just handed out by the frame allocator and aren't referenced anywhere
+// else, so the heap has exclusive access to them from here on.
 unsafe impl heap::ChunkProvider for HeapProvider {
     fn allocate(&mut self, num_chunks: usize) -> *mut [core::mem::MaybeUninit<u8>] {
         let mut guard = FRAME_ALLOCATOR.lock();
@@ -391,6 +433,11 @@ static GLOBAL_ALLOCATOR: heap::CheckedHeap<HeapProvider> =
     heap::CheckedHeap::new(heap::Heap::new(HeapProvider));
 
 mod internal {
+    // `KERNEL_VIRT_BASE` is declared by the linker script (`src/linker.ld`),
+    // not defined in Rust, so there is no actual `()` value at that symbol.
+    // Declaring the extern block itself isn't unsafe to do; see
+    // `get_kernel_virt_base` for the safety reasoning at the actual use
+    // site (only the symbol's address is ever taken, never read through).
     unsafe extern "C" {
         #![allow(improper_ctypes)]
         // These may not be dereferenced. Only their address is meaningful.

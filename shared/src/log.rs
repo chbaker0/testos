@@ -97,12 +97,20 @@ pub struct QemuDebugWriter {
     _phantom: core::marker::PhantomData<*mut u8>,
 }
 
+// SAFETY: `QemuDebugWriter` holds no state. The `PhantomData<*mut u8>` makes
+// it `!Send`/`!Sync` by default; this impl deliberately restores `Send` only,
+// leaving it `!Sync`. Each `write_str` derives its own local `Port` to the
+// fixed port 0xe9, so nothing is thread-affine and moving the writer
+// invalidates nothing. Serializing writers to the port is the caller's
+// obligation under `new`'s contract — nothing here provides it.
 unsafe impl Send for QemuDebugWriter {}
 
 impl QemuDebugWriter {
     /// # Safety
     ///
-    /// Caller must ensure x86 port 0xe9 is safe to write to.
+    /// Caller must ensure x86 port 0xe9 is safe to write to, and must
+    /// serialize this writer against every other writer to that port —
+    /// nothing here provides that.
     pub unsafe fn new() -> Self {
         QemuDebugWriter {
             _phantom: core::marker::PhantomData,
@@ -118,6 +126,8 @@ impl Write for QemuDebugWriter {
         #[cfg(target_arch = "x86_64")]
         {
             let mut port = x86_64::instructions::port::PortWriteOnly::new(0xe9);
+            // SAFETY: forwarded from `QemuDebugWriter::new`'s contract: the
+            // caller has already ensured port 0xe9 is safe to write to.
             s.bytes().for_each(|b| unsafe { port.write(b) });
         }
         #[cfg(not(target_arch = "x86_64"))]

@@ -162,6 +162,13 @@ impl<'a> BitmapFrameAllocator<'a> {
     }
 }
 
+// SAFETY: `allocate_range` only ever clears bits it finds set (never hands
+// out a frame whose bit was already 0, i.e. already allocated/reserved), and
+// `reserve` fails (rather than clearing) when the target bit is already 0.
+// Both `deallocate`/`unreserve` (via `deallocate_impl`/`unreserve_impl`)
+// assert the bit is currently 0 before setting it, so double-free/double-
+// unreserve panics rather than silently marking an in-use frame free twice.
+// Together these satisfy `FrameAllocator`'s documented invariants.
 unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
     fn allocate_range(&mut self, order: usize) -> Option<FrameRange> {
         // An order of 24 gives a size of 8 MiB. Let this be the max size.
@@ -609,6 +616,8 @@ mod tests {
         // In each byte, the LSB represents the first frame in the range of 8
         // frames, and the MSB represents the last.
         let mut bitmap = [0b00100000, 0b00010000, 0b00000010];
+        // SAFETY: `bitmap` is a local test array, not backing any real
+        // memory; there's nothing else for its "free" bits to conflict with.
         let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
         let mut allocated_frames = std::collections::BTreeSet::new();
 
@@ -631,6 +640,8 @@ mod tests {
     #[test]
     fn bitmap_allocator_does_not_return_reserved_frame() {
         let mut bitmap = [0b01000010];
+        // SAFETY: `bitmap` is a local test array, not backing any real
+        // memory; there's nothing else for its "free" bits to conflict with.
         let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
 
         allocator
@@ -653,6 +664,8 @@ mod tests {
     #[test]
     fn bitmap_allocator_returns_freed_frame() {
         let mut bitmap = [0b01000010];
+        // SAFETY: `bitmap` is a local test array, not backing any real
+        // memory; there's nothing else for its "free" bits to conflict with.
         let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
 
         let frame1 = allocator.allocate().unwrap();
@@ -677,6 +690,9 @@ mod tests {
                 .map(u8::count_ones)
                 .fold(0, |acc, x| acc + x as u64);
 
+            // SAFETY: `bitmap` is a proptest-generated local array, not
+            // backing any real memory; there's nothing else for its "free"
+            // bits to conflict with.
             let mut allocator = unsafe { BitmapFrameAllocator::new(&mut bitmap) };
             let mut allocated_frames = std::collections::BTreeSet::new();
 

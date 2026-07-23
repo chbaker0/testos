@@ -109,9 +109,10 @@ impl PageTableEntry {
     /// Get flags (as documented in `PageTableFlags`).
     #[inline]
     pub fn get_flags(&self) -> PageTableFlags {
-        // SAFETY: PageTableFlags::all().bits() only returns bits valid for
-        // PageTableFlags. Bitwise-and with any other value will yield only
-        // valid bits.
+        // Not a `SAFETY` note (this is ordinary safe code): `unwrap` can't
+        // panic because `PageTableFlags::all().bits()` only has bits valid
+        // for `PageTableFlags` set, so masking `self.raw` with it can't
+        // produce a bit pattern `from_bits` would reject.
         PageTableFlags::from_bits(self.raw & PageTableFlags::all().bits()).unwrap()
     }
 
@@ -392,6 +393,15 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
     /// allocated and the parent entry will have `parent_set_flags`.
     ///
     /// Note that this currently will overwrite any existing leaf entries.
+    ///
+    /// # Safety
+    ///
+    /// The traversed page table (`self`'s `level_4` and, transitively, every
+    /// table it points to) must be exclusively controlled by this `Mapper`
+    /// — no concurrent reader/writer — and if it is the active page table,
+    /// the caller must ensure this call doesn't invalidate a translation
+    /// currently relied upon (see `Mapper::new`'s contract, which this
+    /// inherits).
     pub unsafe fn map(
         &mut self,
         page: Page,
@@ -449,6 +459,13 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
     ///
     /// # Panics
     /// Panics if `frame`/`page` are not aligned to `S::SIZE`.
+    ///
+    /// # Safety
+    ///
+    /// Same contract as `map`: the traversed page table must be exclusively
+    /// controlled by this `Mapper`, and if it is the active page table, the
+    /// caller must ensure this doesn't invalidate a translation currently
+    /// relied upon.
     pub unsafe fn map_large<S: LargePageSize>(
         &mut self,
         page: Page,
@@ -518,6 +535,13 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
     /// Same unmapped-target-region assumption as `map`/`map_large`: call this
     /// once per already-disjoint region (e.g. once per memory-map entry) so
     /// two calls never contend over the same page-table slot.
+    ///
+    /// # Safety
+    ///
+    /// Same contract as `map`/`map_large`, which this calls internally: the
+    /// traversed page table must be exclusively controlled by this `Mapper`,
+    /// and if it is the active page table, the caller must ensure this
+    /// doesn't invalidate a translation currently relied upon.
     pub unsafe fn map_range(
         &mut self,
         phys: PhysExtent,
@@ -958,8 +982,15 @@ mod harness_tests {
         let parent_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `p`/`f` target a fresh, still-all-zero `root`, so `map`'s
+            // "target region currently unmapped" precondition holds.
             unsafe {
                 mapper
                     .map(p, f, leaf_flags, parent_flags, PageTableFlags::all())
@@ -988,8 +1019,15 @@ mod harness_tests {
         let mapped = page(1, 2, 3, 4);
         let f = Frame::new(PhysAddress::from_raw(0x8000_0000));
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `mapped`/`f` target a fresh, still-all-zero `root`, so
+            // `map`'s "target region currently unmapped" precondition holds.
             unsafe {
                 mapper
                     .map(
@@ -1023,8 +1061,16 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `a`/`b` are distinct, previously-unmapped leaf targets
+            // in a fresh `root`, satisfying `map`'s "currently unmapped"
+            // precondition for both calls.
             unsafe {
                 mapper.map(a, fa, flags, flags, PageTableFlags::all()).unwrap();
                 mapper.map(b, fb, flags, flags, PageTableFlags::all()).unwrap();
@@ -1048,8 +1094,16 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `a`/`b` are distinct, previously-unmapped leaf targets
+            // in a fresh `root`, satisfying `map`'s "currently unmapped"
+            // precondition for both calls.
             unsafe {
                 mapper.map(a, fa, flags, flags, PageTableFlags::all()).unwrap();
                 mapper.map(b, fb, flags, flags, PageTableFlags::all()).unwrap();
@@ -1079,8 +1133,17 @@ mod harness_tests {
         let mask_clear_writable = PageTableFlags::all().difference(PageTableFlags::WRITABLE);
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `a`/`b` are distinct, previously-unmapped leaf targets
+            // in a fresh `root`; the second call reuses `a`'s parent tables
+            // (masking/setting their flags, per `map`'s documented behavior)
+            // but writes a distinct, still-unmapped leaf at `b`.
             unsafe {
                 mapper
                     .map(a, f, leaf, set_first, PageTableFlags::all())
@@ -1113,8 +1176,15 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `p`/`f` target a fresh, still-all-zero `root`, so
+            // `map`'s "target region currently unmapped" precondition holds.
             unsafe {
                 mapper.map(p, f, flags, flags, PageTableFlags::all()).unwrap();
             }
@@ -1135,8 +1205,18 @@ mod harness_tests {
         let flags_b = PageTableFlags::PRESENT | PageTableFlags::EXECUTE_DISABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: the first call targets `p` in a fresh, unmapped
+            // `root`; the second deliberately remaps the same `p`, which
+            // `map`'s own contract explicitly allows ("this currently will
+            // overwrite any existing leaf entries") — that overwrite is
+            // exactly what this test exercises.
             unsafe {
                 mapper.map(p, fa, flags_a, flags_a, PageTableFlags::all()).unwrap();
                 mapper.map(p, fb, flags_b, flags_b, PageTableFlags::all()).unwrap();
@@ -1162,8 +1242,16 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `p`/`f` are 2 MiB-aligned (per the comment above) and
+            // target a fresh, still-all-zero `root`, satisfying
+            // `map_large`'s alignment and "currently unmapped" preconditions.
             unsafe {
                 mapper
                     .map_large::<Size2M>(p, f, flags, flags, PageTableFlags::all())
@@ -1193,8 +1281,16 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `p`/`f` are 1 GiB-aligned (per the comment above) and
+            // target a fresh, still-all-zero `root`, satisfying
+            // `map_large`'s alignment and "currently unmapped" preconditions.
             unsafe {
                 mapper
                     .map_large::<Size1G>(p, f, flags, flags, PageTableFlags::all())
@@ -1221,7 +1317,14 @@ mod harness_tests {
         let f = Frame::new(PhysAddress::from_raw(0x1000));
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
+        // SAFETY: as in the other tests in this module (see e.g.
+        // `single_map_round_trips`): `mem`'s translator/allocator satisfy
+        // `Mapper::new`'s contract.
         let mut mapper = unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+        // SAFETY: `map_large`'s alignment asserts are expected to panic
+        // before any table access happens (that's this test's point), so
+        // its memory-safety preconditions are moot here; `Mapper::new`'s
+        // contract was already established above.
         unsafe {
             mapper
                 .map_large::<Size2M>(page(1, 2, 3, 0), f, flags, flags, PageTableFlags::all())
@@ -1245,8 +1348,18 @@ mod harness_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         {
+            // SAFETY: `mem.translate` resolves any frame it (or `mem.alloc`)
+            // hands out to a live pointer into `FakePhysMem`'s own arena
+            // (see `phys_to_host`), and `mem.alloc` never hands out the same
+            // frame twice, satisfying `Mapper::new`'s translator/allocator
+            // contract. `root` is a fresh, zeroed L4 table.
             let mut mapper =
                 unsafe { Mapper::new(&mut root, |p| mem.translate(p), || mem.alloc()) };
+            // SAFETY: `phys`/`virt_base` describe a single, previously-
+            // unmapped region in a fresh `root`, and `virt_base`'s offset
+            // from `phys.address()` (zero, since this is an identity map) is
+            // trivially aligned to any page size `map_range` might choose,
+            // satisfying its contract.
             unsafe {
                 mapper.map_range(phys, virt_base, flags, flags, PageTableFlags::all()).unwrap();
             }
@@ -1409,6 +1522,8 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `p`/`f` target a fresh, still-all-zero `root`, so
+            // `map`'s "target region currently unmapped" precondition holds.
             unsafe {
                 mapper
                     .map(p, f, leaf_flags, parent_flags, PageTableFlags::all())
@@ -1436,6 +1551,8 @@ mod safe_tests {
         let f = Frame::new(PhysAddress::from_raw(0x8000_0000));
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `mapped`/`f` target a fresh, still-all-zero `root`, so
+            // `map`'s "target region currently unmapped" precondition holds.
             unsafe {
                 mapper
                     .map(
@@ -1466,6 +1583,9 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `a`/`b` are distinct, previously-unmapped leaf targets
+            // in a fresh `root`, satisfying `map`'s "currently unmapped"
+            // precondition for both calls.
             unsafe {
                 mapper.map(a, fa, flags, flags, PageTableFlags::all()).unwrap();
                 mapper.map(b, fb, flags, flags, PageTableFlags::all()).unwrap();
@@ -1492,6 +1612,10 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `a`/`b` are distinct, previously-unmapped leaf targets
+            // in a fresh `root`; the second call reuses `a`'s parent tables
+            // (masking/setting their flags, per `map`'s documented behavior)
+            // but writes a distinct, still-unmapped leaf at `b`.
             unsafe {
                 mapper
                     .map(a, f, leaf, set_first, PageTableFlags::all())
@@ -1523,6 +1647,11 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: the first call targets `p` in a fresh, unmapped
+            // `root`; the second deliberately remaps the same `p`, which
+            // `map`'s own contract explicitly allows ("this currently will
+            // overwrite any existing leaf entries") — that overwrite is
+            // exactly what this test exercises.
             unsafe {
                 mapper.map(p, fa, flags_a, flags_a, PageTableFlags::all()).unwrap();
                 mapper.map(p, fb, flags_b, flags_b, PageTableFlags::all()).unwrap();
@@ -1546,6 +1675,9 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `p`/`f` are 2 MiB-aligned (per the comment above) and
+            // target a fresh, still-all-zero `root`, satisfying
+            // `map_large`'s alignment and "currently unmapped" preconditions.
             unsafe {
                 mapper
                     .map_large::<Size2M>(p, f, flags, flags, PageTableFlags::all())
@@ -1571,6 +1703,9 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `p`/`f` are 1 GiB-aligned (per the comment above) and
+            // target a fresh, still-all-zero `root`, satisfying
+            // `map_large`'s alignment and "currently unmapped" preconditions.
             unsafe {
                 mapper
                     .map_large::<Size1G>(p, f, flags, flags, PageTableFlags::all())
@@ -1595,6 +1730,9 @@ mod safe_tests {
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
 
         let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+        // SAFETY: `map_large`'s alignment asserts are expected to panic
+        // before any table access happens (that's this test's point), and
+        // `MapTableStore` never touches raw memory regardless.
         unsafe {
             mapper
                 .map_large::<Size2M>(page(1, 2, 3, 0), f, flags, flags, PageTableFlags::all())
@@ -1613,6 +1751,11 @@ mod safe_tests {
 
         {
             let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `phys`/`virt_base` describe a single, previously-
+            // unmapped region in a fresh `root`, and `virt_base`'s offset
+            // from `phys.address()` (zero, since this is an identity map) is
+            // trivially aligned to any page size `map_range` might choose,
+            // satisfying its contract.
             unsafe {
                 mapper.map_range(phys, virt_base, flags, flags, PageTableFlags::all()).unwrap();
             }

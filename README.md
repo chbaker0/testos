@@ -48,6 +48,10 @@ Useful `cargo` aliases (defined in `.cargo/config.toml`):
 * `cargo scheck` / `sclippy` / `stest`: **shared** — the only crate with
   runnable unit tests, since everything else needs a booted kernel to
   exercise.
+* `cargo tclippy`: the host-side build tools (**buildutil**, **mkimage**,
+  **fetch-prebuilts**) in one go. Together with `kclippy` / `iclippy` /
+  `lclippy` / `sclippy` this covers every package in the workspace, which is
+  what CI runs.
 
 ## Project structure
 

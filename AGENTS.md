@@ -59,10 +59,15 @@ three jobs — `cheap` (host unit tests + per-crate compile checks),
 gated on a new `src/qemu.rs` isa-debug-exit pass/fail signal, see
 "Verifying changes" below). GDB-over-QEMU-stub debugging is still real but
 slow for interactive local work, so CI — not local runs — is what now
-exercises everything, including a full boot, on every push/PR. Clippy is
-deliberately **not** gated yet: `cargo kclippy` currently fails on a
-pre-existing lint violation in `src/kmain.rs` (issue #23) and `shared` has
-warnings, so a green CI run does not imply lint-clean.
+exercises everything, including a full boot, on every push/PR. Clippy **is**
+now gated: the `cheap` job runs `kclippy`/`sclippy`/`lclippy`/`iclippy`/
+`tclippy`, covering every workspace package. What it enforces is the safety
+lints denied in `[workspace.lints.clippy]` (`undocumented_unsafe_blocks`,
+`missing_safety_doc`, `unnecessary_safety_comment`, `unnecessary_safety_doc`);
+it does **not** pass `-D warnings`, so a green run means "no denied-lint
+violations," not "zero clippy warnings" — some pre-existing style lints
+(needless_borrow in mkimage, slow_vector_initialization in loader, empty_loop
+in init) are still present and visible in the CI log.
 
 ## Environment setup
 
@@ -129,6 +134,7 @@ Cargo aliases (see `.cargo/config.toml` for the full definitions):
 | `icheck` / `iclippy` | init | `targets/x86_64-unknown-testos.json` |
 | `lcheck` / `lclippy` | loader | built-in `x86_64-unknown-uefi` |
 | `scheck` / `sclippy` / `stest` / `smiri` | shared | host triple |
+| `tclippy` | buildutil + mkimage + fetch-prebuilts | host triple |
 
 ## Project structure
 

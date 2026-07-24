@@ -254,7 +254,9 @@ pub fn allocate_frames(order: usize) -> Option<FrameRange> {
 pub unsafe fn deallocate_frames(frames: FrameRange) {
     let mut guard = FRAME_ALLOCATOR.lock();
     let frame_allocator = guard.get_mut().unwrap();
-    frame_allocator.deallocate_range(frames);
+    // SAFETY: forwarded from this fn's contract — `frames` was returned by
+    // `allocate_frames`/`allocate_owned_frames` and not already deallocated.
+    unsafe { frame_allocator.deallocate_range(frames) };
 }
 
 #[inline(never)]

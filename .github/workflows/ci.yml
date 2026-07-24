@@ -26,12 +26,20 @@ env:
 
 jobs:
   # Cheap, fast feedback: host unit tests + compile-check every crate on its
-  # real target. This is the gate that should almost always be green.
+  # real target, then clippy over every package. This is the gate that should
+  # almost always be green.
   #
-  # Clippy is intentionally NOT run here yet: `cargo kclippy` currently fails on
-  # pre-existing code (clippy::not_unsafe_ptr_arg_deref on kernel_entry) and
-  # `shared` has lint warnings, so it can't be a hard gate without code changes
-  # unrelated to CI setup. Add a clippy job once those are addressed.
+  # Clippy lives here rather than in its own job so it reuses this job's warm
+  # `-Zbuild-std` cache; a separate job gets a separate `rust-cache` key and
+  # would rebuild `core`/`alloc` from scratch just to lint.
+  #
+  # What clippy actually gates: the safety lints denied in
+  # `[workspace.lints.clippy]` (undocumented_unsafe_blocks, missing_safety_doc,
+  # unnecessary_safety_comment, unnecessary_safety_doc). It is deliberately NOT
+  # run with `-D warnings`, so pre-existing style lints (needless_borrow in
+  # mkimage, slow_vector_initialization in loader, empty_loop in init) stay
+  # visible in the log without failing the build. Add `-D warnings` once that
+  # style debt is cleared, if a total lint gate is wanted.
   cheap:
     name: Cheap (tests + checks)
     runs-on: ubuntu-latest
@@ -43,7 +51,7 @@ jobs:
           # The `rust-toolchain` file pins bare `nightly`; make sure it is
           # installed with the components the build-std targets need.
           rustup toolchain install nightly --profile minimal
-          rustup component add --toolchain nightly rust-src
+          rustup component add --toolchain nightly rust-src clippy
           rustup target add --toolchain nightly x86_64-unknown-uefi
           rustup show
 
@@ -60,6 +68,22 @@ jobs:
         run: cargo lcheck
       - name: Check init
         run: cargo icheck
+
+      # Clippy over every package in the workspace. The kernel/init/loader each
+      # need their own target (custom `-Zbuild-std` specs or the UEFI triple),
+      # so there is no single `--workspace` invocation that covers them; these
+      # five aliases together do. Keep this list in sync with the workspace
+      # members in Cargo.toml.
+      - name: Clippy kernel
+        run: cargo kclippy
+      - name: Clippy shared
+        run: cargo sclippy
+      - name: Clippy loader
+        run: cargo lclippy
+      - name: Clippy init
+        run: cargo iclippy
+      - name: Clippy host tools (buildutil, mkimage, fetch-prebuilts)
+        run: cargo tclippy
 
   # Expensive correctness checks that are too slow for every-push ergonomics on
   # a laptop but are worth it in CI: Miri over the `shared` unsafe page-table

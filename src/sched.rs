@@ -304,6 +304,12 @@ unsafe extern "C" fn switch_to(
     // genuine bug that's benign only by luck so far). Everything else here
     // (the push sequence and its pairing with `restore_task_state`) I
     // believe is sound; I did not want to assert that about this branch too.
+    //
+    // SAFETY: `naked_asm!` is the entire body of this `#[unsafe(naked)]` fn,
+    // as required. The push sequence and its pairing with
+    // `restore_task_state` implement this fn's documented contract. The `rax`
+    // branch described above is deliberately *not* asserted sound here; it is
+    // tracked separately in issue #38.
     unsafe {
         naked_asm!(
             "pushfq",

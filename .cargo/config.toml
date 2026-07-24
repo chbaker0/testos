@@ -31,6 +31,10 @@ kclippy = "clippy --target targets/x86_64-unknown-none.json -Zbuild-std=core,all
 sclippy = "clippy --package shared"
 iclippy = "clippy --package init --target targets/x86_64-unknown-testos.json -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 lclippy = "clippy -p loader --target x86_64-unknown-uefi"
+# Host-side build tools. Grouped into one alias because they share the host
+# triple and are never built for a kernel target; together with k/s/i/l above
+# this covers every package in the workspace.
+tclippy = "clippy -p buildutil -p mkimage -p fetch-prebuilts"
 stest = "test --package shared"
 smiri = "miri test --package shared"
 skani = "kani --package shared"

@@ -49,6 +49,10 @@ Useful `cargo` aliases (defined in `.cargo/config.toml`):
   only crate with runnable unit tests, since everything else needs a booted
   kernel to exercise. `smiri` re-runs those tests under Miri; `skani` runs the
   Kani proof harnesses (see [docs/verification.md](docs/verification.md)).
+* `cargo tclippy`: the host-side build tools (**buildutil**, **mkimage**,
+  **fetch-prebuilts**) in one go. Together with `kclippy` / `iclippy` /
+  `lclippy` / `sclippy` this covers every package in the workspace, which is
+  what CI runs.
 
 ## Project structure
 

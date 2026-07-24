@@ -22,6 +22,9 @@ resolver = "2"
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 never_type_fallback_flowing_into_unsafe = "deny"
+# `cfg(kani)` is set by `cargo kani`, not by cargo itself, so a normal build
+# doesn't know the name. See docs/verification.md.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 # `warn`, not `deny`: `cargo kclippy` already fails on a pre-existing
 # violation in src/kmain.rs (issue #23), and `shared` has pre-existing

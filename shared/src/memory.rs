@@ -50,8 +50,15 @@ impl Map {
         &mut self.entries[0..self.num_entries as usize]
     }
 
+    /// Iterates the entries of the given type.
+    ///
+    /// Filters `entries()` — the `num_entries` prefix — not the whole backing
+    /// array. `from_entries` fills the unused tail with dummy `Reserved`
+    /// entries at address 0, so scanning the raw array would yield up to 128
+    /// phantom one-byte extents to any caller asking for `Reserved`. That the
+    /// only current caller asks for `Available` is what kept this invisible.
     pub fn iter_type(&self, mem_type: MemoryType) -> impl Iterator<Item = MapEntry> + '_ {
-        self.entries
+        self.entries()
             .iter()
             .filter(move |e| e.mem_type == mem_type)
             .copied()
@@ -364,5 +371,145 @@ mod tests {
             mark_kernel_areas(regions, areas).collect::<Vec<_>>(),
             correct.to_vec()
         );
+    }
+}
+
+#[cfg(kani)]
+mod verify {
+    //! Kani proof harnesses for [`crate::memory`]'s physical memory map.
+    //!
+    //! `Map` is the handoff structure the loader fills from the UEFI memory map
+    //! and the kernel then trusts to decide which physical frames may be handed
+    //! out. Its representation invariant — "only the first `num_entries` slots are
+    //! real; the rest are dummies" — is enforced by convention rather than by the
+    //! type, so every accessor has to respect it independently.
+
+    use super::*;
+
+    /// Number of real entries to model. `Map`'s backing array is 128 slots; three
+    /// is enough to distinguish "reads only the real entries" from "reads the
+    /// whole array", which is what these harnesses are about, without asking the
+    /// solver to reason about 128 symbolic entries.
+    const MODELLED_ENTRIES: usize = 3;
+
+    fn any_mem_type() -> MemoryType {
+        let choice: u8 = kani::any();
+        kani::assume(choice < 6);
+        match choice {
+            0 => MemoryType::Available,
+            1 => MemoryType::Acpi,
+            2 => MemoryType::ReservedPreserveOnHibernation,
+            3 => MemoryType::Defective,
+            4 => MemoryType::Reserved,
+            _ => MemoryType::KernelLoad,
+        }
+    }
+
+    /// A `Map` with a symbolic number of entries (0..=3), each of a symbolic type.
+    /// Extents are kept small and concrete: these harnesses are about *entry
+    /// bookkeeping*, and the extent algebra is proved in `verify/addr.rs`.
+    fn any_map() -> (Map, usize) {
+        let count: usize = kani::any();
+        kani::assume(count <= MODELLED_ENTRIES);
+
+        let mut types = [MemoryType::Reserved; MODELLED_ENTRIES];
+        for t in types.iter_mut() {
+            *t = any_mem_type();
+        }
+
+        let map = Map::from_entries((0..count).map(|i| MapEntry {
+            // Disjoint, ascending, non-empty — what `from_entries` documents as
+            // its precondition.
+            extent: PhysExtent::from_raw(i as u64 * 4096 + 4096, 4096),
+            mem_type: types[i],
+        }));
+
+        (map, count)
+    }
+
+    /// `entries()` must expose exactly the entries that were inserted — no dummy
+    /// tail, no truncation. Everything downstream (`mm::init`'s bootstrap-region
+    /// search, `fill_bitmap_from_map`) iterates this.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn entries_exposes_exactly_the_inserted_entries() {
+        let (map, count) = any_map();
+
+        assert_eq!(map.entries().len(), count);
+        for (i, e) in map.entries().iter().enumerate() {
+            assert_eq!(e.extent.address().as_raw(), i as u64 * 4096 + 4096);
+        }
+    }
+
+    /// `iter_type` must agree with filtering `entries()` by the same type,
+    /// for *every* memory type — not just `Available`, the only one any
+    /// caller asks for today.
+    ///
+    /// This harness used to fail: `iter_type` filtered `self.entries`, the
+    /// whole 128-slot backing array, so it also yielded the dummy fill entries
+    /// `from_entries` writes. Asking for `Reserved` returned up to 128 phantom
+    /// one-byte extents at address 0. See `docs/kani-findings.md`.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn iter_type_matches_filtering_the_real_entries() {
+        let (map, _count) = any_map();
+        let wanted = any_mem_type();
+
+        let via_iter_type = map.iter_type(wanted).count();
+        let via_entries = map
+            .entries()
+            .iter()
+            .filter(|e| e.mem_type == wanted)
+            .count();
+
+        assert_eq!(
+            via_iter_type, via_entries,
+            "iter_type must not see past num_entries into the dummy tail"
+        );
+    }
+
+    /// `is_ram_backed` decides which regions get identity-mapped by the loader and
+    /// windowed into `phys_map` by the kernel. The two sides must agree, so the
+    /// classification has to be total and stable — proved over every variant
+    /// rather than the six the unit test spells out.
+    #[kani::proof]
+    fn ram_backed_classification_is_total() {
+        let t = any_mem_type();
+
+        let backed = t.is_ram_backed();
+
+        // Exactly the two unusable classes are excluded.
+        let expected = !matches!(t, MemoryType::Reserved | MemoryType::Defective);
+        assert_eq!(backed, expected);
+    }
+
+    /// `iter_map_frames` shrinks each entry to frame alignment and yields the
+    /// frames strictly inside it. Anything it yields must lie within the original
+    /// extent — a frame reaching outside would be memory the firmware never
+    /// declared usable, marked free in the allocator bitmap.
+    #[kani::proof]
+    #[kani::unwind(4)]
+    fn iter_map_frames_stays_within_its_entry() {
+        let address: u64 = kani::any();
+        let length: u64 = kani::any();
+        kani::assume(length != 0);
+        kani::assume(length <= u64::MAX - address);
+
+        let entry = MapEntry {
+            extent: PhysExtent::new(PhysAddress::from_raw(address), Length::from_raw(length)),
+            mem_type: MemoryType::Available,
+        };
+
+        for range in iter_map_frames([entry]) {
+            assert!(
+                range.first().start().as_raw() >= address,
+                "a yielded frame starts before the entry"
+            );
+            assert!(
+                range.last().start().as_raw() + PAGE_SIZE.as_raw() - 1
+                    <= entry.extent.last_address().as_raw(),
+                "a yielded frame ends after the entry"
+            );
+        }
     }
 }

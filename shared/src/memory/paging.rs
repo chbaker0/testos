@@ -392,6 +392,10 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
     /// `parent_set_flags` will be set. If not present, a new table will be
     /// allocated and the parent entry will have `parent_set_flags`.
     ///
+    /// `PRESENT` is exempt from `parent_mask_flags` and always ends up set on
+    /// every parent entry along the path — see `next_level`. Masking it away
+    /// would detach the subtree this call is in the middle of writing into.
+    ///
     /// Note that this currently will overwrite any existing leaf entries.
     ///
     /// # Safety
@@ -650,9 +654,18 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
     /// Given the entry in a parent table that should point at the next-level
     /// table, return that table's frame — allocating and zeroing a fresh one
     /// if `entry` isn't `PRESENT`. If it is, masks `entry`'s flags with
-    /// `mask_flags` then sets those in `set_flags`; otherwise leaves it
-    /// alone. Mutates `entry` in place; the caller writes it back to its
-    /// table (directly for L4, via `store` otherwise).
+    /// `mask_flags` then sets those in `set_flags`. Mutates `entry` in place;
+    /// the caller writes it back to its table (directly for L4, via `store`
+    /// otherwise).
+    ///
+    /// Either way the returned frame is left `PRESENT`, so the caller can
+    /// descend into it and so can the hardware walker. `PRESENT` is therefore
+    /// re-set *after* masking rather than being subject to `mask_flags`: a
+    /// mask that dropped it would leave the entry pointing at a real table
+    /// while marked absent, and `map` would go on writing into a subtree the
+    /// CPU can no longer reach — silently producing no mapping at all, and
+    /// leaking the table on the next `map` through the same slot (see the
+    /// frame-ownership NOTE below).
     #[inline]
     fn next_level(
         entry: &mut PageTableEntry,
@@ -669,7 +682,7 @@ impl<'a, Store: TableStore> Mapper<'a, Store> {
                 "next_level tried to descend through what is actually a huge-page leaf"
             );
             let new_flags = entry.get_flags() & mask_flags | set_flags;
-            entry.set_flags(new_flags);
+            entry.set_flags(new_flags.union(PageTableFlags::PRESENT));
             Ok(Frame::new(entry.get_addr()))
         } else {
             let new_frame = store.alloc_zeroed_table()?;
@@ -940,7 +953,7 @@ mod harness_tests {
 
         /// Follow a parent-table entry to the table it points at, or `None` if
         /// it isn't present.
-        fn descend(&self, mut entry: PageTableEntry) -> Option<&PageTable> {
+        fn descend(&self, entry: PageTableEntry) -> Option<&PageTable> {
             if !entry.get_flags().contains(PageTableFlags::PRESENT) {
                 return None;
             }
@@ -1786,5 +1799,919 @@ mod safe_tests {
         assert!(!tail_frame.get_flags().contains(PageTableFlags::PAGE_SIZE));
 
         assert!(store.walk(&root, Page::new(VirtAddress::from_raw(0x8030_0000))).is_none());
+    }
+}
+
+#[cfg(kani)]
+mod verify {
+    //! Kani proof harnesses for [`crate::memory::paging`] — the highest-stakes
+    //! code in the tree.
+    //!
+    //! Two layers are proved here.
+    //!
+    //! **Entry packing.** `PageTableEntry` splits a `u64` into an address field
+    //! (bits 12..52) and a flag field, and this project has already shipped two
+    //! separate hand-packing bugs in that exact field (PR #10, PR #11; the second
+    //! silently truncated any physical address above 2^48). The harnesses below
+    //! prove the split is total: `set_addr` and `set_flags` each write *only*
+    //! their own bits and leave every other bit of the entry — including the
+    //! available/reserved bits that belong to neither field — bit-for-bit intact,
+    //! for all 2^64 starting entry values.
+    //!
+    //! **Traversal.** `Mapper::map` decomposes a virtual address into four table
+    //! indices and walks/allocates its way down to a leaf. The existing unit tests
+    //! check a handful of hand-picked pages against an oracle walk. These
+    //! harnesses run the same real `Mapper` against a pointer-free array-backed
+    //! `TableStore` with a *symbolic* page and frame, and check the result with an
+    //! independent oracle that translates the way hardware does. A `SUCCESS` there
+    //! means the round trip holds for every page in the address space, not the
+    //! four the tests happen to name.
+    //!
+    //! The store is deliberately the same seam `safe_tests` uses: no pointers, no
+    //! `unsafe`, so what is being proved is the *traversal logic*. The unsafe
+    //! pointer walks in `PhysTableStore` remain Miri's job (`cargo smiri`) — Kani
+    //! and Miri cover complementary halves of this module.
+
+    use super::*;
+
+    // ---------------------------------------------------------------------------
+    // Symbolic value constructors
+    // ---------------------------------------------------------------------------
+
+    /// Any 4 KiB-aligned physical address `set_addr` will accept, i.e. below the
+    /// 2^52 architectural maximum.
+    fn any_mappable_phys() -> PhysAddress {
+        let raw: u64 = kani::any();
+        kani::assume(raw & (PAGE_SIZE.as_raw() - 1) == 0);
+        kani::assume(raw < MAX_PHYS_ADDR.as_raw());
+        PhysAddress::from_raw(raw)
+    }
+
+    fn any_page_aligned_virt() -> VirtAddress {
+        let raw: u64 = kani::any();
+        kani::assume(raw & (PAGE_SIZE.as_raw() - 1) == 0);
+        VirtAddress::from_raw(raw)
+    }
+
+    /// Any valid combination of flag bits. `from_bits_truncate` drops bits that
+    /// aren't declared in `PageTableFlags`, which is exactly the set `set_flags`
+    /// is allowed to write.
+    fn any_flags() -> PageTableFlags {
+        PageTableFlags::from_bits_truncate(kani::any())
+    }
+
+    /// Every bit that is neither part of the address field nor a declared flag:
+    /// the "available for software" bits (9..11, 52..61) plus any architecturally
+    /// reserved bit. Nothing in `PageTableEntry`'s API is allowed to disturb
+    /// these — a future user of an available bit must be able to rely on that.
+    const UNCLAIMED_BITS: u64 = !(PAGE_TABLE_ENTRY_ADDR_BITS | PageTableFlags::all().bits());
+
+    // ---------------------------------------------------------------------------
+    // The generated address bitfield
+    //
+    // `AddrField` exists specifically so the shift/mask arithmetic is generated
+    // rather than hand-written. That only helps if the generated field really does
+    // land on bits 12..52 — which is what this proves, against a literal
+    // specification of the shift and mask.
+    // ---------------------------------------------------------------------------
+
+    #[kani::proof]
+    fn addr_field_reads_exactly_bits_12_to_52() {
+        let raw: u64 = kani::any();
+
+        let pfn = AddrField::from(raw).pfn();
+
+        assert_eq!(pfn, (raw >> 12) & ((1u64 << 40) - 1));
+    }
+
+    #[kani::proof]
+    fn addr_field_writes_exactly_bits_12_to_52() {
+        let raw: u64 = kani::any();
+        let pfn: u64 = kani::any();
+        kani::assume(pfn < (1u64 << 40));
+
+        let mut fields = AddrField::from(raw);
+        fields.set_pfn(pfn);
+        let out: u64 = fields.into();
+
+        assert_eq!(out & PAGE_TABLE_ENTRY_ADDR_BITS, pfn << 12, "field written");
+        assert_eq!(
+            out & !PAGE_TABLE_ENTRY_ADDR_BITS,
+            raw & !PAGE_TABLE_ENTRY_ADDR_BITS,
+            "every bit outside the field is preserved"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // PageTableEntry: address and flags occupy disjoint, non-interfering bits
+    // ---------------------------------------------------------------------------
+
+    /// The structural precondition everything else rests on. Cheap to state,
+    /// catastrophic if it ever stopped holding: overlapping fields would make
+    /// `set_addr` and `set_flags` clobber each other.
+    #[kani::proof]
+    fn addr_bits_and_flag_bits_are_disjoint() {
+        assert_eq!(PAGE_TABLE_ENTRY_ADDR_BITS & PageTableFlags::all().bits(), 0);
+    }
+
+    /// `set_addr` writes the address and *nothing* else — proved from an
+    /// arbitrary starting entry, so it covers overwriting an entry that already
+    /// held a different address and an arbitrary set of flags.
+    ///
+    /// This is the direct generalization of the `set_addr_replaces_rather_than_
+    /// accumulates`, `set_addr_preserves_flags` and
+    /// `set_addr_round_trips_above_2_pow_48` regression tests: all three are
+    /// instances of the two assertions below.
+    #[kani::proof]
+    fn set_addr_writes_only_the_address_field() {
+        let before: u64 = kani::any();
+        let addr = any_mappable_phys();
+
+        let mut e = PageTableEntry { raw: before };
+        e.set_addr(addr);
+
+        assert_eq!(e.get_addr(), addr, "the address round-trips exactly");
+        assert_eq!(
+            e.as_raw() & !PAGE_TABLE_ENTRY_ADDR_BITS,
+            before & !PAGE_TABLE_ENTRY_ADDR_BITS,
+            "flags and available bits are untouched"
+        );
+    }
+
+    /// `set_flags` is documented as assigning rather than OR-accumulating, so
+    /// callers can rely on it to *clear* flags. Proved for every starting entry
+    /// and every flag combination at once.
+    #[kani::proof]
+    fn set_flags_writes_only_the_flag_field() {
+        let before: u64 = kani::any();
+        let flags = any_flags();
+
+        let mut e = PageTableEntry { raw: before };
+        e.set_flags(flags);
+
+        assert_eq!(e.get_flags().bits(), flags.bits(), "assigns, never accumulates");
+        assert_eq!(
+            e.as_raw() & PAGE_TABLE_ENTRY_ADDR_BITS,
+            before & PAGE_TABLE_ENTRY_ADDR_BITS,
+            "the address is untouched"
+        );
+        assert_eq!(
+            e.as_raw() & UNCLAIMED_BITS,
+            before & UNCLAIMED_BITS,
+            "available/reserved bits are untouched"
+        );
+    }
+
+    /// Order independence: setting the address then the flags gives the same entry
+    /// as the reverse. Non-obvious only because both write through the same `u64`,
+    /// and it is precisely what fails if either field's mask is wrong.
+    #[kani::proof]
+    fn set_addr_and_set_flags_commute() {
+        let before: u64 = kani::any();
+        let addr = any_mappable_phys();
+        let flags = any_flags();
+
+        let mut a = PageTableEntry { raw: before };
+        a.set_addr(addr);
+        a.set_flags(flags);
+
+        let mut b = PageTableEntry { raw: before };
+        b.set_flags(flags);
+        b.set_addr(addr);
+
+        assert_eq!(a.as_raw(), b.as_raw());
+        assert_eq!(a.get_addr(), addr);
+        assert_eq!(a.get_flags().bits(), flags.bits());
+    }
+
+    /// `get_flags` unwraps a `from_bits`, justified in a comment by the claim that
+    /// masking with `all()` can never produce a rejected bit pattern. Proved here
+    /// for every possible entry, so the unwrap is total.
+    #[kani::proof]
+    fn get_flags_never_panics() {
+        let raw: u64 = kani::any();
+        let e = PageTableEntry { raw };
+
+        let flags = e.get_flags();
+
+        assert_eq!(flags.bits(), raw & PageTableFlags::all().bits());
+    }
+
+    /// `set_addr`'s documented panics are exactly its two asserts, and nothing
+    /// else: any 4 KiB-aligned address below 2^52 is accepted.
+    #[kani::proof]
+    #[kani::should_panic]
+    fn set_addr_rejects_addresses_at_or_above_the_architectural_max() {
+        let raw: u64 = kani::any();
+        kani::assume(raw & (PAGE_SIZE.as_raw() - 1) == 0);
+        kani::assume(raw >= MAX_PHYS_ADDR.as_raw());
+
+        PageTableEntry::zero().set_addr(PhysAddress::from_raw(raw));
+    }
+
+    #[kani::proof]
+    #[kani::should_panic]
+    fn set_addr_rejects_misaligned_addresses() {
+        let raw: u64 = kani::any();
+        kani::assume(raw & (PAGE_SIZE.as_raw() - 1) != 0);
+        kani::assume(raw < MAX_PHYS_ADDR.as_raw());
+
+        PageTableEntry::zero().set_addr(PhysAddress::from_raw(raw));
+    }
+
+    // ---------------------------------------------------------------------------
+    // A pointer-free `TableStore` for driving the real `Mapper` under Kani
+    // ---------------------------------------------------------------------------
+
+    /// Fake physical base of the table arena. Arbitrary, frame-aligned, and far
+    /// from zero so that mistaking a table frame for a leaf frame (or vice versa)
+    /// shows up rather than coincidentally working.
+    const ARENA_BASE: u64 = 1 << 30;
+
+    /// Page tables in a plain array, addressed by fake physical frame. Mirrors
+    /// `safe_tests::MapTableStore` but with fixed capacity instead of a `BTreeMap`
+    /// — a bounded, non-allocating model is what keeps these harnesses tractable
+    /// for the solver.
+    struct ArrayStore<const N: usize> {
+        tables: [PageTable; N],
+        allocated: usize,
+    }
+
+    impl<const N: usize> ArrayStore<N> {
+        fn new() -> Self {
+            ArrayStore {
+                tables: [const { PageTable::zero() }; N],
+                allocated: 0,
+            }
+        }
+
+        fn index_of(table: Frame) -> usize {
+            ((table.start().as_raw() - ARENA_BASE) / PAGE_SIZE.as_raw()) as usize
+        }
+
+        fn frame_of(index: usize) -> Frame {
+            Frame::new(PhysAddress::from_raw(
+                ARENA_BASE + index as u64 * PAGE_SIZE.as_raw(),
+            ))
+        }
+
+        /// Independent translation **oracle**: walk the tables from `root` exactly
+        /// as hardware would, stopping early at an L3/L2 entry with `PAGE_SIZE`
+        /// set, and return the physical address `virt` resolves to.
+        ///
+        /// Deliberately shares no code with `Mapper` — including recomputing the
+        /// huge-page offset from the raw address rather than from anything `map`
+        /// produced. This is the check, not the thing checked.
+        fn translate(&self, root: &PageTable, virt: VirtAddress) -> Option<PhysAddress> {
+            let page = Page::containing(virt);
+            let offset_in = |size: u64| virt.as_raw() & (size - 1);
+
+            let l3 = self.descend(root.entries()[page.l4_index()])?;
+
+            let l3e = l3.entries()[page.l3_index()];
+            if !l3e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l3e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(PhysAddress::from_raw(
+                    l3e.get_addr().as_raw() + offset_in(Size1G::SIZE.as_raw()),
+                ));
+            }
+
+            let l2 = self.descend(l3e)?;
+            let l2e = l2.entries()[page.l2_index()];
+            if !l2e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l2e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(PhysAddress::from_raw(
+                    l2e.get_addr().as_raw() + offset_in(Size2M::SIZE.as_raw()),
+                ));
+            }
+
+            let l1 = self.descend(l2e)?;
+            let leaf = l1.entries()[page.l1_index()];
+            if !leaf.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            Some(PhysAddress::from_raw(
+                leaf.get_addr().as_raw() + offset_in(PAGE_SIZE.as_raw()),
+            ))
+        }
+
+        /// The leaf entry `virt`'s page resolves to, without applying the offset.
+        /// Used where a harness wants to inspect flags rather than the translated
+        /// address.
+        fn walk(&self, root: &PageTable, page: Page) -> Option<PageTableEntry> {
+            let l3 = self.descend(root.entries()[page.l4_index()])?;
+            let l3e = l3.entries()[page.l3_index()];
+            if !l3e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l3e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l3e);
+            }
+            let l2 = self.descend(l3e)?;
+            let l2e = l2.entries()[page.l2_index()];
+            if !l2e.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            if l2e.get_flags().contains(PageTableFlags::PAGE_SIZE) {
+                return Some(l2e);
+            }
+            let l1 = self.descend(l2e)?;
+            let leaf = l1.entries()[page.l1_index()];
+            leaf.get_flags()
+                .contains(PageTableFlags::PRESENT)
+                .then_some(leaf)
+        }
+
+        fn descend(&self, entry: PageTableEntry) -> Option<&PageTable> {
+            if !entry.get_flags().contains(PageTableFlags::PRESENT) {
+                return None;
+            }
+            self.tables.get(Self::index_of(Frame::new(entry.get_addr())))
+        }
+    }
+
+    impl<const N: usize> TableStore for ArrayStore<N> {
+        fn read_entry(&mut self, table: Frame, index: usize) -> Result<PageTableEntry, MapError> {
+            Ok(self.tables[Self::index_of(table)].entries[index])
+        }
+
+        fn write_entry(
+            &mut self,
+            table: Frame,
+            index: usize,
+            entry: PageTableEntry,
+        ) -> Result<(), MapError> {
+            self.tables[Self::index_of(table)].entries[index] = entry;
+            Ok(())
+        }
+
+        fn alloc_zeroed_table(&mut self) -> Result<Frame, MapError> {
+            if self.allocated >= N {
+                return Err(MapError::FrameAllocationFailed);
+            }
+            let index = self.allocated;
+            self.allocated += 1;
+            self.tables[index] = PageTable::zero();
+            Ok(Self::frame_of(index))
+        }
+    }
+
+    /// Parent flags that keep the tree well-formed. `PAGE_SIZE` on a non-leaf
+    /// entry would turn a parent into a huge-page leaf mid-walk, which `map`
+    /// neither rejects nor is designed to produce; `next_level`'s `debug_assert`
+    /// is the only thing that notices, and only in debug builds.
+    fn any_parent_flags() -> PageTableFlags {
+        let flags = any_flags();
+        kani::assume(!flags.contains(PageTableFlags::PAGE_SIZE));
+        flags
+    }
+
+    // ---------------------------------------------------------------------------
+    // Mapper::map — the four-level traversal
+    // ---------------------------------------------------------------------------
+
+    /// The central correctness property of `map`: after mapping a *symbolic* page
+    /// to a *symbolic* frame in a fresh table, an independent hardware-shaped walk
+    /// of the resulting tables resolves that page back to that frame, with exactly
+    /// the requested leaf flags.
+    ///
+    /// This subsumes the `single_map_round_trips` /
+    /// `high_physical_frame_round_trips_through_full_map` unit tests (which pin
+    /// one page and one frame each) and, more importantly, closes the gap they
+    /// leave: a decomposition bug that only shows up for, say, L2 indices above
+    /// 255 cannot hide from a symbolic page.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn map_then_translate_round_trips_for_any_page_and_frame() {
+        let page = Page::new(any_page_aligned_virt());
+        let frame = Frame::new(any_mappable_phys());
+        let leaf_flags = any_flags();
+        // The leaf must be present for a walk to find it; that is the caller's
+        // job, not `map`'s.
+        kani::assume(leaf_flags.contains(PageTableFlags::PRESENT));
+        kani::assume(!leaf_flags.contains(PageTableFlags::PAGE_SIZE));
+        let parent_set = any_parent_flags();
+
+        // Three tables: one each for L3, L2, L1.
+        let mut store: ArrayStore<3> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: `store` is a plain array with no aliasing and no live
+            // hardware page table behind it, so `map`'s exclusive-control and
+            // active-table preconditions are trivially met.
+            unsafe {
+                mapper
+                    .map(page, frame, leaf_flags, parent_set, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        // A fresh table needs exactly one new table per level below L4.
+        assert_eq!(store.allocated, 3);
+
+        let leaf = store.walk(&root, page).expect("the page must be mapped");
+        assert_eq!(leaf.get_addr(), frame.start());
+        assert_eq!(leaf.get_flags().bits(), leaf_flags.bits());
+
+        // And the full translation, offset included, for a symbolic address inside
+        // the page — the property hardware actually depends on.
+        let off: u64 = kani::any();
+        kani::assume(off < PAGE_SIZE.as_raw());
+        let virt = VirtAddress::from_raw(page.start().as_raw() + off);
+        assert_eq!(
+            store.translate(&root, virt),
+            Some(PhysAddress::from_raw(frame.start().as_raw() + off))
+        );
+    }
+
+    /// Mapping one page must not accidentally map any other. Stated over a
+    /// symbolic second page, so it rules out an entire aliasing class rather than
+    /// the two specific misses `unmapped_page_translates_to_none` checks.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn map_leaves_every_other_page_unmapped() {
+        let mapped = Page::new(any_page_aligned_virt());
+        let other = Page::new(any_page_aligned_virt());
+        kani::assume(mapped != other);
+        // Confine both to the low canonical half so that "different page" means
+        // "different translated bits" (see
+        // `page::verify::distinct_pages_get_distinct_index_quadruples`).
+        kani::assume(mapped.start().as_raw() < 0x0001_0000_0000_0000);
+        kani::assume(other.start().as_raw() < 0x0001_0000_0000_0000);
+
+        let frame = Frame::new(any_mappable_phys());
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        let mut store: ArrayStore<3> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table.
+            unsafe {
+                mapper
+                    .map(mapped, frame, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert!(store.walk(&root, other).is_none());
+    }
+
+    /// Two distinct pages map independently: neither clobbers the other, whatever
+    /// their index quadruples share. The unit tests cover "differs only in L1"
+    /// (shared parents) and "differs in L4" (disjoint subtrees) as separate cases;
+    /// symbolic pages cover those and every mixture in between, including the
+    /// awkward ones that share L4 and L3 but not L2.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn two_mappings_do_not_interfere() {
+        let a = Page::new(any_page_aligned_virt());
+        let b = Page::new(any_page_aligned_virt());
+        kani::assume(a.start().as_raw() < 0x0001_0000_0000_0000);
+        kani::assume(b.start().as_raw() < 0x0001_0000_0000_0000);
+        kani::assume(a != b);
+
+        let fa = Frame::new(any_mappable_phys());
+        let fb = Frame::new(any_mappable_phys());
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        // Worst case is two fully disjoint subtrees: 3 tables each.
+        let mut store: ArrayStore<6> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table.
+            unsafe {
+                mapper.map(a, fa, flags, flags, PageTableFlags::all()).unwrap();
+                mapper.map(b, fb, flags, flags, PageTableFlags::all()).unwrap();
+            }
+        }
+
+        assert_eq!(store.walk(&root, a).unwrap().get_addr(), fa.start());
+        assert_eq!(store.walk(&root, b).unwrap().get_addr(), fb.start());
+    }
+
+    /// Remapping is documented as overwriting the existing leaf ("this currently
+    /// will overwrite any existing leaf entries"). Prove the second mapping wins
+    /// completely — both address and flags — and that no extra table is leaked in
+    /// the process.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn remap_replaces_the_leaf_entirely() {
+        let page = Page::new(any_page_aligned_virt());
+        let first = Frame::new(any_mappable_phys());
+        let second = Frame::new(any_mappable_phys());
+        let flags_a = any_flags();
+        let flags_b = any_flags();
+        kani::assume(flags_b.contains(PageTableFlags::PRESENT));
+        kani::assume(!flags_b.contains(PageTableFlags::PAGE_SIZE));
+        let parent = any_parent_flags();
+
+        let mut store: ArrayStore<3> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table. The
+            // second call deliberately remaps `page`, which `map`'s contract
+            // explicitly permits.
+            unsafe {
+                mapper
+                    .map(page, first, flags_a, parent, PageTableFlags::all())
+                    .unwrap();
+                mapper
+                    .map(page, second, flags_b, parent, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(store.allocated, 3, "parent tables are reused, not reallocated");
+        let leaf = store.walk(&root, page).unwrap();
+        assert_eq!(leaf.get_addr(), second.start());
+        assert_eq!(leaf.get_flags().bits(), flags_b.bits());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Mapper::map_large — huge-page leaves
+    // ---------------------------------------------------------------------------
+
+    /// A 2 MiB mapping puts a `PAGE_SIZE`-flagged leaf at L2 and translates the
+    /// whole 2 MiB region — including a symbolic offset within it.
+    ///
+    /// The offset is the part worth proving. `map_large` reuses `set_addr`
+    /// unmodified for a huge leaf, which is only sound because the low 9 bits of
+    /// the packed PFN (reserved-zero in a real `PAGE_SIZE` entry) fall out as zero
+    /// from the `S::SIZE` alignment assert. Translating at a symbolic offset is
+    /// what would catch that reasoning being wrong.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn map_2m_translates_across_the_whole_huge_page() {
+        let size = Size2M::SIZE.as_raw();
+        let virt: u64 = kani::any();
+        let phys: u64 = kani::any();
+        kani::assume(virt & (size - 1) == 0);
+        kani::assume(phys & (size - 1) == 0);
+        kani::assume(phys < MAX_PHYS_ADDR.as_raw());
+
+        let page = Page::new(VirtAddress::from_raw(virt));
+        let frame = Frame::new(PhysAddress::from_raw(phys));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        // L3 and L2 only — a 2 MiB leaf never needs an L1 table.
+        let mut store: ArrayStore<2> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table;
+            // `page`/`frame` are 2 MiB-aligned per the assumptions above.
+            unsafe {
+                mapper
+                    .map_large::<Size2M>(page, frame, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(store.allocated, 2, "no L1 table for a 2 MiB leaf");
+
+        let leaf = store.walk(&root, page).unwrap();
+        assert!(leaf.get_flags().contains(PageTableFlags::PAGE_SIZE));
+        assert_eq!(leaf.get_addr().as_raw(), phys);
+
+        let off: u64 = kani::any();
+        kani::assume(off < size);
+        assert_eq!(
+            store.translate(&root, VirtAddress::from_raw(virt + off)),
+            Some(PhysAddress::from_raw(phys + off))
+        );
+    }
+
+    /// The 1 GiB counterpart: leaf lands directly in the L3 entry, one table
+    /// total, and translation holds across the full gigabyte.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn map_1g_translates_across_the_whole_huge_page() {
+        let size = Size1G::SIZE.as_raw();
+        let virt: u64 = kani::any();
+        let phys: u64 = kani::any();
+        kani::assume(virt & (size - 1) == 0);
+        kani::assume(phys & (size - 1) == 0);
+        kani::assume(phys < MAX_PHYS_ADDR.as_raw());
+
+        let page = Page::new(VirtAddress::from_raw(virt));
+        let frame = Frame::new(PhysAddress::from_raw(phys));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        let mut store: ArrayStore<1> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table;
+            // `page`/`frame` are 1 GiB-aligned per the assumptions above.
+            unsafe {
+                mapper
+                    .map_large::<Size1G>(page, frame, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(store.allocated, 1, "a 1 GiB leaf lives in the L3 table itself");
+
+        let off: u64 = kani::any();
+        kani::assume(off < size);
+        assert_eq!(
+            store.translate(&root, VirtAddress::from_raw(virt + off)),
+            Some(PhysAddress::from_raw(phys + off))
+        );
+    }
+
+    /// `map_large`'s alignment asserts are its documented panics. Prove they fire
+    /// for *every* misaligned frame, not just the one the unit test picks — this
+    /// is what keeps a huge leaf's reserved-zero PFN bits actually zero.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    #[kani::should_panic]
+    fn map_large_rejects_any_misaligned_frame() {
+        let phys: u64 = kani::any();
+        kani::assume(phys & (PAGE_SIZE.as_raw() - 1) == 0);
+        kani::assume(phys < MAX_PHYS_ADDR.as_raw());
+        // 4 KiB-aligned but not 2 MiB-aligned.
+        kani::assume(phys & (Size2M::SIZE.as_raw() - 1) != 0);
+
+        let mut store: ArrayStore<2> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+        let flags = PageTableFlags::PRESENT;
+        // SAFETY: the alignment assert fires before any table access, which is
+        // the point of this harness; the store is a plain array regardless.
+        unsafe {
+            let _ = mapper.map_large::<Size2M>(
+                Page::new(VirtAddress::from_raw(0)),
+                Frame::new(PhysAddress::from_raw(phys)),
+                flags,
+                flags,
+                PageTableFlags::all(),
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // next_level — parent-entry allocation and flag masking
+    // ---------------------------------------------------------------------------
+
+    /// `next_level` has two branches with quite different obligations. Present:
+    /// reuse the pointed-to table and rewrite its flags as `flags & mask | set`.
+    /// Absent: allocate, and set `set | PRESENT` so the walk can descend next
+    /// time. Prove both, plus the property `map` silently relies on — that the
+    /// returned frame is the one the (possibly rewritten) entry now points at.
+    ///
+    /// `set_flags`/`mask_flags` are left fully symbolic on purpose. This harness
+    /// originally failed here (see `docs/kani-findings.md`, "next_level can clear
+    /// PRESENT"): the reuse path rewrote flags wholesale as `flags & mask | set`,
+    /// so a caller passing neither `PRESENT` in `mask` nor in `set` got back a
+    /// parent entry pointing at a real table but marked *not present* — with
+    /// `map` carrying on down the now-detached subtree and reporting success.
+    /// `next_level` now re-sets `PRESENT` after masking, so the property holds
+    /// for every mask and set, with no precondition.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn next_level_reuses_present_entries_and_allocates_otherwise() {
+        let raw: u64 = kani::any();
+        let mut entry = PageTableEntry { raw };
+        // A present parent entry must point at a real table in the arena, and
+        // must not itself be a huge-page leaf — `next_level`'s own
+        // `debug_assert` documents that as a precondition.
+        let was_present = entry.get_flags().contains(PageTableFlags::PRESENT);
+        kani::assume(!entry.get_flags().contains(PageTableFlags::PAGE_SIZE));
+
+        let mut store: ArrayStore<2> = ArrayStore::new();
+        if was_present {
+            // Point the entry at arena slot 0 and mark it used.
+            let target = ArrayStore::<2>::frame_of(0);
+            entry.set_addr(target.start());
+            store.allocated = 1;
+        }
+
+        let set = any_parent_flags();
+        let mask = any_flags();
+        let before_flags = entry.get_flags();
+        let before_addr = entry.get_addr();
+
+        let frame =
+            Mapper::<'_, ArrayStore<2>>::next_level(&mut entry, &mut store, set, mask).unwrap();
+
+        if was_present {
+            assert_eq!(frame.start(), before_addr, "reuses the existing table");
+            assert_eq!(
+                entry.get_flags().bits(),
+                (before_flags & mask | set | PageTableFlags::PRESENT).bits(),
+                "flags are masked then set, with PRESENT re-applied on top"
+            );
+            assert_eq!(store.allocated, 1, "no table allocated for a present entry");
+        } else {
+            assert_eq!(store.allocated, 1, "a fresh table was allocated");
+            assert_eq!(
+                entry.get_flags().bits(),
+                set.union(PageTableFlags::PRESENT).bits(),
+                "a newly allocated parent is always marked present"
+            );
+        }
+
+        // The invariant `map` depends on across every level: the entry now points
+        // at exactly the frame that was returned. If these ever diverged, `map`
+        // would descend into one table while the hardware walked another.
+        assert_eq!(entry.get_addr(), frame.start());
+        // And the entry stays walkable for *every* mask/set combination — the
+        // property the fix above establishes.
+        assert!(entry.get_flags().contains(PageTableFlags::PRESENT));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Mapper::map_range — greedy huge-page selection
+    //
+    // This is the newest and least test-covered code in the module, and its
+    // failure mode is silent: a phase boundary that is off by one chunk maps
+    // physical memory the caller never asked for (over-mapping) or leaves a hole
+    // (under-mapping). Neither panics.
+    //
+    // Rather than execute the loops over a realistically-sized extent — thousands
+    // of iterations, hopeless for a bounded model checker — each harness pins the
+    // *alignment* of the extent so that only the phases under test can run, and
+    // bounds the length so those phases execute a handful of times. The property
+    // checked is the one that matters end to end: a symbolic probe address
+    // translates iff it is inside the extent, and to the right physical address.
+    // ---------------------------------------------------------------------------
+
+    /// Phases 3 and 4: a 1 GiB-aligned extent whose length is a whole number of
+    /// gigabytes is covered entirely by 1 GiB leaves.
+    #[kani::proof]
+    #[kani::unwind(4)]
+    fn map_range_covers_a_gigabyte_aligned_extent_exactly() {
+        let gib = Size1G::SIZE.as_raw();
+        let base: u64 = kani::any();
+        let gibs: u64 = kani::any();
+        kani::assume(base & (gib - 1) == 0);
+        kani::assume(gibs >= 1 && gibs <= 2);
+        // Stay clear of the top of the address space and of `set_addr`'s 2^52
+        // ceiling.
+        kani::assume(base < MAX_PHYS_ADDR.as_raw() - 2 * gib);
+
+        let phys = PhysExtent::from_raw(base, gibs * gib);
+        // Identity-mapped, matching the loader's identity map — the offset is
+        // trivially aligned to any page size, which is `map_range`'s stated
+        // assumption about `virt_base`.
+        let virt_base = VirtAddress::from_raw(base);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        // Two gigabytes need at most two L3 tables (if the extent straddles a
+        // 512 GiB boundary) — plus none below, since every leaf is 1 GiB.
+        let mut store: ArrayStore<2> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table, and a
+            // single previously-unmapped region.
+            unsafe {
+                mapper
+                    .map_range(phys, virt_base, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        // Inside the extent: translates, identity, via a 1 GiB leaf.
+        let off: u64 = kani::any();
+        kani::assume(off < gibs * gib);
+        let inside = VirtAddress::from_raw(base + off);
+        assert_eq!(
+            store.translate(&root, inside),
+            Some(PhysAddress::from_raw(base + off)),
+            "every address in the extent translates to itself"
+        );
+        assert!(
+            store
+                .walk(&root, Page::containing(inside))
+                .unwrap()
+                .get_flags()
+                .contains(PageTableFlags::PAGE_SIZE),
+            "and does so through a huge-page leaf, not 4 KiB pages"
+        );
+
+        // Just past the extent: must not have been mapped. This is the
+        // over-mapping check — the failure mode where a phase rounds its chunk
+        // size up past `end` and maps memory the caller never offered.
+        let past: u64 = kani::any();
+        kani::assume(past >= base + gibs * gib);
+        kani::assume(past < base + (gibs + 1) * gib);
+        assert!(
+            store.translate(&root, VirtAddress::from_raw(past)).is_none(),
+            "nothing beyond the extent is mapped"
+        );
+    }
+
+    /// Phases 1 and 5: a 4 KiB-aligned extent smaller than 2 MiB never reaches the
+    /// huge-page phases and is covered by 4 KiB leaves only.
+    ///
+    /// The `end` bound matters here: phase 1 runs to the next 2 MiB boundary *or*
+    /// `end`, whichever comes first, and phase 5 mops up the tail. An extent that
+    /// starts just below a 2 MiB boundary exercises the hand-off between them.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn map_range_covers_a_small_extent_with_4k_pages() {
+        let base: u64 = kani::any();
+        let pages: u64 = kani::any();
+        kani::assume(base & (PAGE_SIZE.as_raw() - 1) == 0);
+        kani::assume(pages >= 1 && pages <= 3);
+        kani::assume(base < MAX_PHYS_ADDR.as_raw() - Size2M::SIZE.as_raw());
+
+        let len = pages * PAGE_SIZE.as_raw();
+        let phys = PhysExtent::from_raw(base, len);
+        let virt_base = VirtAddress::from_raw(base);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        // Up to 3 pages can straddle at most two L1 tables, each needing its own
+        // L2/L3 chain in the worst case.
+        let mut store: ArrayStore<6> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table, and a
+            // single previously-unmapped region.
+            unsafe {
+                mapper
+                    .map_range(phys, virt_base, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        let off: u64 = kani::any();
+        kani::assume(off < len);
+        let inside = VirtAddress::from_raw(base + off);
+        assert_eq!(
+            store.translate(&root, inside),
+            Some(PhysAddress::from_raw(base + off))
+        );
+        assert!(
+            !store
+                .walk(&root, Page::containing(inside))
+                .unwrap()
+                .get_flags()
+                .contains(PageTableFlags::PAGE_SIZE),
+            "a sub-2 MiB extent must not be mapped with huge pages"
+        );
+
+        // No over-mapping past the end of the extent.
+        let past: u64 = kani::any();
+        kani::assume(past >= base + len);
+        kani::assume(past < base + len + PAGE_SIZE.as_raw());
+        assert!(store.translate(&root, VirtAddress::from_raw(past)).is_none());
+    }
+
+    /// Phase 2/4: a 2 MiB-aligned extent below 1 GiB in length is covered by 2 MiB
+    /// leaves, and — the part worth proving — the extent's *tail* is not rounded
+    /// up. The guard `end - cursor >= Size2M::SIZE` in phase 2 exists precisely to
+    /// stop a 2 MiB chunk being emitted when less than 2 MiB remains.
+    #[kani::proof]
+    #[kani::unwind(4)]
+    fn map_range_covers_a_two_meg_aligned_extent_exactly() {
+        let two_m = Size2M::SIZE.as_raw();
+        let base: u64 = kani::any();
+        let chunks: u64 = kani::any();
+        kani::assume(base & (two_m - 1) == 0);
+        kani::assume(chunks >= 1 && chunks <= 2);
+        kani::assume(base < MAX_PHYS_ADDR.as_raw() - Size1G::SIZE.as_raw());
+
+        let len = chunks * two_m;
+        let phys = PhysExtent::from_raw(base, len);
+        let virt_base = VirtAddress::from_raw(base);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+        // Worst case: the extent straddles a 1 GiB boundary, so two L3/L2 chains.
+        let mut store: ArrayStore<4> = ArrayStore::new();
+        let mut root = PageTable::zero();
+        {
+            let mut mapper = Mapper::new_with_store(&mut root, &mut store);
+            // SAFETY: as above — an array-backed store, no live page table, and a
+            // single previously-unmapped region.
+            unsafe {
+                mapper
+                    .map_range(phys, virt_base, flags, flags, PageTableFlags::all())
+                    .unwrap();
+            }
+        }
+
+        let off: u64 = kani::any();
+        kani::assume(off < len);
+        assert_eq!(
+            store.translate(&root, VirtAddress::from_raw(base + off)),
+            Some(PhysAddress::from_raw(base + off))
+        );
+
+        let past: u64 = kani::any();
+        kani::assume(past >= base + len);
+        kani::assume(past < base + len + two_m);
+        assert!(store.translate(&root, VirtAddress::from_raw(past)).is_none());
     }
 }

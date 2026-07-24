@@ -40,10 +40,14 @@ Eventually, a C toolchain necessary. However, it is helpful much sooner:
 
 ## Project status
 
-Last updated 2026-07-21. The project just finished migrating its boot
-process from Multiboot2/GRUB to a custom UEFI loader. The loader
-(`loader/`) now successfully parses the kernel ELF, maps its segments, sets
-up paging, and jumps into `kernel_entry` in [src/kmain.rs](src/kmain.rs).
+Last updated 2026-07-24. The project migrated its boot process from
+Multiboot2/GRUB to a custom UEFI loader, and has since moved the whole
+workspace to Rust **edition 2024** and centralized its unsafe/safety lints
+in `[workspace.lints]` (`unsafe_op_in_unsafe_fn` and the clippy safety lints
+— see `Cargo.toml`), which is what the clippy CI gate below enforces. The
+loader (`loader/`) now successfully parses the kernel ELF, maps its
+segments, sets up paging, and jumps into `kernel_entry` in
+[src/kmain.rs](src/kmain.rs).
 
 **`kernel_entry` has been re-wired for the new UEFI handoff.** It sets up
 the GDT and IDT, initializes the frame allocator, and hands off into
@@ -148,7 +152,10 @@ Cargo aliases (see `.cargo/config.toml` for the full definitions):
 * **mkimage**: builds a GRUB/xorriso ISO. Leftover from the pre-UEFI boot
   flow — **not** invoked by `make-image.sh` anymore; don't assume it's part
   of the live build path.
-* **buildutil**: helpers shared between build scripts and mkimage.
+* **buildutil**: host-side helper lib (e.g. `run_and_check`) consumed
+  **only** by `mkimage` (per `Cargo.toml` and a source grep). Despite the
+  "build scripts" framing, the live `make-image.sh` path does not use it —
+  like `mkimage`, it's effectively a pre-UEFI leftover.
 * **fetch-prebuilts**: manual updater that downloads prebuilt OVMF firmware and
   refreshes the vendored copy in `third_party/ovmf` (not part of the normal
   build; needs network).

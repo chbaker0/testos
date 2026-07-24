@@ -214,7 +214,27 @@ of running them all by hand every time. Locally, in order of preference:
      that model.
    * Isolation is disabled so `proptest` can call `getcwd`; stacked
      borrows stay disabled for the intrusive-collection code.
-4. Actually boot it and read the debugcon output (port 0xE9, see
+4. `cargo skani` — Kani proof harnesses over `shared`, living in a
+   `#[cfg(kani)] mod verify` block at the bottom of each module under proof
+   (same placement as `mod tests`). Kani *proves* a property over every input
+   in a symbolic domain rather than sampling it, so it covers what `proptest`
+   can't reach. See [docs/verification.md](docs/verification.md) for how it's
+   set up and [docs/kani-findings.md](docs/kani-findings.md) for what it has
+   turned up.
+
+   **Not part of the standard local PR loop either**, and not yet in CI. The
+   whole suite has never finished in one run; a handful of the paging
+   harnesses take 2-3 minutes each. Run individual harnesses
+   (`cargo kani -p shared --harness <name>`) when touching the code they
+   cover. `cargo kani -p shared --only-codegen` is a fast check that the
+   harnesses still compile.
+
+   Five harnesses currently **fail on purpose**; between them they pin two
+   real defects in `alloc::phys` that aren't fixed yet. They're marked
+   `KNOWN FAILURE` in their own doc comments and catalogued under "Open" in
+   the findings doc, so don't read a red result as a regression without
+   checking there first.
+5. Actually boot it and read the debugcon output (port 0xE9, see
    [shared/src/log.rs](shared/src/log.rs)).
 
 ### Booting headlessly and bounding the run

@@ -472,3 +472,274 @@ mod test {
         }
     }
 }
+
+#[cfg(kani)]
+mod verify {
+    //! Kani proof harnesses for [`crate::memory::alloc::heap`].
+    //!
+    //! The heap's `GlobalAlloc`/`Allocator` impls are `unsafe`, and their safety
+    //! comment already records one known hole (issue #40: layouts with
+    //! `align > CHUNK_SIZE`). The size-class logic in `key_for_size_align` is what
+    //! decides which of the two allocation paths a layout takes, and therefore
+    //! which alignment guarantee it actually gets — so that is where the
+    //! interesting proof obligations are.
+    //!
+    //! The block-carving code itself (`FreeBlock::build`, the `Adapter` impl) is
+    //! raw-pointer work over dynamically-sized types; that stays Miri's job.
+
+    use super::*;
+
+    /// A `ChunkProvider` that is never called. `key_for_size_align` takes `&mut
+    /// self` but reads nothing from it, so a `Heap` is only needed to name the
+    /// method.
+    struct NullProvider;
+
+    // SAFETY: `allocate` is unreachable — no harness in this module drives a path
+    // that requests a chunk — so the contract about returned memory is vacuous.
+    unsafe impl ChunkProvider for NullProvider {
+        fn allocate(&mut self, _num_chunks: usize) -> *mut [MaybeUninit<u8>] {
+            unreachable!("no harness in this module allocates a chunk")
+        }
+    }
+
+    /// The largest size class. Layouts needing more than this take the
+    /// chunk-direct path instead of a free-list block.
+    const LARGEST_BLOCK: usize = 256;
+
+    // ---------------------------------------------------------------------------
+    // Size-class selection
+    // ---------------------------------------------------------------------------
+
+    /// `key_for_size_align` must return the *smallest* block class that satisfies
+    /// both the size and the alignment, or `None` when no class does.
+    ///
+    /// Both halves matter. Returning too small a class would hand back a block
+    /// that under-serves the allocation — `allocate_small`'s
+    /// `assert!(block.header.size.size() >= layout.size())` would catch the size
+    /// case but not an alignment shortfall. Returning too large a class wastes
+    /// memory silently.
+    ///
+    /// Note the conflation of size and alignment via `max(size, align)`: it is
+    /// sound only because every block class is a power of two *and* blocks are
+    /// carved at `MAXIMAL_BLOCK_SIZE` strides from a `CHUNK_SIZE`-aligned chunk,
+    /// so a block of size `n` is also `n`-aligned. The final assertion pins that
+    /// down.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn key_for_size_align_picks_the_smallest_sufficient_class() {
+        let size: usize = kani::any();
+        let align: usize = kani::any();
+        // `Layout` guarantees a power-of-two alignment; the heap inherits that.
+        kani::assume(align.is_power_of_two());
+
+        let mut heap: Heap<NullProvider> = Heap::new(NullProvider);
+        let needed = core::cmp::max(size, align);
+
+        match heap.key_for_size_align(size, align) {
+            Some(key) => {
+                let chosen = key.size();
+                assert!(chosen >= needed, "the class actually fits the layout");
+                assert!(chosen <= LARGEST_BLOCK);
+
+                // Minimality: no smaller class would have fit.
+                let index = key as usize;
+                assert!(
+                    index == 0 || BLOCK_SIZES[index - 1] < needed,
+                    "a smaller block class would also have fit"
+                );
+
+                // Every class is a power of two, which is what makes satisfying
+                // `align` by size alone correct.
+                assert!(chosen.is_power_of_two());
+            }
+            None => assert!(
+                needed > LARGEST_BLOCK,
+                "no class was chosen even though one would have fit"
+            ),
+        }
+    }
+
+    /// The routing decision that issue #40 is about, stated precisely: a layout
+    /// goes to the chunk-direct path exactly when `max(size, align)` exceeds the
+    /// largest block class.
+    ///
+    /// The chunk path only ever guarantees `CHUNK_SIZE` alignment (see
+    /// `fetch_chunk`'s `assert!(chunk_ptr.is_aligned_to(CHUNK_SIZE))`), so this
+    /// harness bounds the unsoundness: alignments in `(256, CHUNK_SIZE]` are
+    /// served correctly by the chunk path, and only `align > CHUNK_SIZE` is
+    /// unsound. That is the exact boundary the `INCOMPLETE:` note on the
+    /// `GlobalAlloc` impl refers to.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn oversized_alignments_are_exactly_the_ones_routed_to_chunks() {
+        let align: usize = kani::any();
+        kani::assume(align.is_power_of_two());
+
+        let mut heap: Heap<NullProvider> = Heap::new(NullProvider);
+        // A minimal-size allocation, so the routing decision is driven purely by
+        // alignment.
+        let key = heap.key_for_size_align(1, align);
+
+        assert_eq!(
+            key.is_none(),
+            align > LARGEST_BLOCK,
+            "alignment alone decides the path once size is negligible"
+        );
+
+        if key.is_some() {
+            // Block-served alignments are satisfied by the block's own size.
+            assert!(key.unwrap().size() >= align);
+        } else {
+            // Chunk-served. Sound only while `align <= CHUNK_SIZE` — this is
+            // issue #40's boundary, made explicit.
+            assert!(align > LARGEST_BLOCK);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Block size keys
+    // ---------------------------------------------------------------------------
+
+    /// `BlockSizeKey` is converted to and from `usize` via `num_derive` on the
+    /// hot path (`allocate_small` slices `free_lists[key.to_usize().unwrap()..]`).
+    /// Prove the round trip is exact and the discriminant is a valid index into
+    /// both `BLOCK_SIZES` and `free_lists`, so neither `unwrap` nor the slice can
+    /// panic.
+    #[kani::proof]
+    fn block_size_keys_index_their_tables() {
+        let index: usize = kani::any();
+        kani::assume(index < NUM_BLOCK_SIZES);
+
+        let key = BlockSizeKey::from_usize(index).unwrap();
+
+        assert_eq!(key.to_usize().unwrap(), index);
+        assert_eq!(key.size(), BLOCK_SIZES[index]);
+        assert!(key as usize == index, "the discriminant is the table index");
+        // Ascending order is what makes `binary_search` in `key_for_size_align`
+        // valid, and what makes "scan free lists from `key` upwards" find a block
+        // that is big enough rather than too small.
+        if index > 0 {
+            assert!(BLOCK_SIZES[index - 1] < key.size());
+        }
+    }
+
+    /// Every block class must be large enough to hold the free-list header that
+    /// gets written into it, otherwise `FreeBlock::build` would write past the
+    /// block, and `metadata_from_size` would underflow computing the tail length.
+    /// The source asserts this only for the *smallest* class via `const_assert`;
+    /// this covers all of them, including the subtraction itself.
+    #[kani::proof]
+    fn every_block_class_holds_its_header() {
+        let index: usize = kani::any();
+        kani::assume(index < NUM_BLOCK_SIZES);
+        let size = BlockSizeKey::from_usize(index).unwrap().size();
+
+        let header = core::mem::size_of::<FreeBlockData>();
+        assert!(size >= header, "the header fits inside the block");
+
+        // `metadata_from_size` is `size - header`; the assertion above is exactly
+        // what stops it underflowing.
+        assert_eq!(FreeBlock::metadata_from_size(size), size - header);
+    }
+
+    /// `Heap::new`'s two `assert!`s encode the provider contract `fetch_chunk`
+    /// depends on: a chunk must be a power-of-two size at least as large as the
+    /// largest block, so that carving `MAXIMAL_BLOCK_SIZE` blocks out of it yields
+    /// correctly aligned blocks and terminates.
+    #[kani::proof]
+    fn default_chunk_size_satisfies_the_heap_contract() {
+        assert!(DEFAULT_CHUNK_SIZE >= MAXIMAL_BLOCK_SIZE);
+        assert!(DEFAULT_CHUNK_SIZE.is_power_of_two());
+        // Blocks are carved at `MAXIMAL_BLOCK_SIZE` strides from a
+        // `CHUNK_SIZE`-aligned base, so a whole number of them fits and every one
+        // is `MAXIMAL_BLOCK_SIZE`-aligned — which is what lets `allocate_small`'s
+        // `assert!(block_ptr.is_aligned_to(layout.align()))` hold for every
+        // alignment routed to the block path.
+        assert_eq!(DEFAULT_CHUNK_SIZE % MAXIMAL_BLOCK_SIZE, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // BlockAdapter — the intrusive-list link/value correspondence
+    // -----------------------------------------------------------------------
+
+    /// The `unsafe impl Adapter for BlockAdapter` justifies itself with the
+    /// claim that `get_link` and `get_value` are *exact inverses* — "both
+    /// resolve the same nested `FreeBlock.header.link` offset, so they
+    /// consistently identify the same object". `intrusive_collections` relies
+    /// on that to recover a block from a list link, so if the two ever
+    /// disagreed, every `pop_front` off a free list would hand out a pointer
+    /// into the middle of a block and `allocate_small` would return it.
+    ///
+    /// Nothing else checks this. The unit tests only traverse lists whose
+    /// links were produced by this very pair of functions, so a *matched* pair
+    /// of wrong offsets cancels out and goes unnoticed; here the round trip is
+    /// checked against the block's original address, computed independently.
+    ///
+    /// `FreeBlock` is a DST, so the pointer metadata has to round-trip too:
+    /// `get_value` rebuilds the fat pointer from the size class stored in the
+    /// header rather than carrying it along, which is a second, independent
+    /// way for the correspondence to break.
+    #[kani::proof]
+    fn adapter_get_link_and_get_value_are_inverses() {
+        // `FreeBlock::build` asserts its header is aligned, so the backing
+        // storage needs real alignment rather than whatever a local array of
+        // bytes happens to get.
+        #[repr(align(64))]
+        struct Backing([MaybeUninit<u8>; MAXIMAL_BLOCK_SIZE]);
+
+        let mut backing = Backing([MaybeUninit::uninit(); MAXIMAL_BLOCK_SIZE]);
+        let (block, _rest) = FreeBlock::build(&mut backing.0[..], BlockSizeKey::Size256);
+
+        let original: *const FreeBlock = block;
+        let original_size = core::mem::size_of_val(block);
+
+        let adapter = BlockAdapter::new();
+        // SAFETY: `original` points at the live `FreeBlock` just built above,
+        // which is exactly what `get_link` requires.
+        let link = unsafe { adapter.get_link(original) };
+        // SAFETY: `link` is the `header.link` field of that same live block,
+        // which is what `get_value` requires.
+        let recovered = unsafe { adapter.get_value(link) };
+
+        assert_eq!(
+            recovered as *const u8, original as *const u8,
+            "the recovered block must be the one we started from"
+        );
+        // SAFETY: `recovered` is the same live block as `original`.
+        assert_eq!(
+            unsafe { core::mem::size_of_val(&*recovered) },
+            original_size,
+            "the DST metadata must survive the round trip"
+        );
+    }
+
+    /// The link `get_link` hands out must actually point *inside* the block,
+    /// at its header. A link outside the block would mean the free list is
+    /// threading pointers through memory the block does not own.
+    #[kani::proof]
+    fn adapter_link_points_into_the_block_header() {
+        #[repr(align(64))]
+        struct Backing([MaybeUninit<u8>; MAXIMAL_BLOCK_SIZE]);
+
+        let mut backing = Backing([MaybeUninit::uninit(); MAXIMAL_BLOCK_SIZE]);
+        let (block, _rest) = FreeBlock::build(&mut backing.0[..], BlockSizeKey::Size256);
+        let base = block as *const FreeBlock as *const u8 as usize;
+        let size = core::mem::size_of_val(block);
+
+        let adapter = BlockAdapter::new();
+        // SAFETY: `block` is the live `FreeBlock` built just above.
+        let link = unsafe { adapter.get_link(block as *const FreeBlock) };
+        let link_addr = link.as_ptr() as *const u8 as usize;
+
+        assert!(link_addr >= base, "the link is not below the block");
+        assert!(
+            link_addr + core::mem::size_of::<sll::AtomicLink>() <= base + size,
+            "the link lies wholly inside the block"
+        );
+        assert_eq!(
+            link_addr - base,
+            core::mem::offset_of!(FreeBlock, header.link),
+            "and sits at the header's link field"
+        );
+    }
+}

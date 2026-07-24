@@ -45,9 +45,10 @@ Useful `cargo` aliases (defined in `.cargo/config.toml`):
   `targets/x86_64-unknown-testos.json`.
 * `cargo lcheck` / `lclippy`: **loader**, targeting the built-in
   `x86_64-unknown-uefi` target.
-* `cargo scheck` / `sclippy` / `stest`: **shared** — the only crate with
-  runnable unit tests, since everything else needs a booted kernel to
-  exercise.
+* `cargo scheck` / `sclippy` / `stest` / `smiri` / `skani`: **shared** — the
+  only crate with runnable unit tests, since everything else needs a booted
+  kernel to exercise. `smiri` re-runs those tests under Miri; `skani` runs the
+  Kani proof harnesses (see [docs/verification.md](docs/verification.md)).
 * `cargo tclippy`: the host-side build tools (**buildutil**, **mkimage**,
   **fetch-prebuilts**) in one go. Together with `kclippy` / `iclippy` /
   `lclippy` / `sclippy` this covers every package in the workspace, which is

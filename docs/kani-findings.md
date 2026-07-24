@@ -137,6 +137,38 @@ Extracting the function is also what made it provable: the harness now takes a
 *symbolic* bitmap — so it proves both that every frame in the range ends up
 free and that every bit outside it is untouched.
 
+### `contained_by_extent` panicked on an extent in the last partial page
+
+**Harness:** `memory::page::verify::frame_range_contained_by_extent_never_escapes`
+**Site:** [`shared/src/memory/page.rs`](../shared/src/memory/page.rs) —
+`FrameRange::contained_by_extent`
+
+The same `align_u64_up` overflow as the first finding, reached by a second
+route — and initially *hidden* by the harness rather than caught by it. The
+harness assumed `address + length <= u64::MAX - (PAGE_SIZE - 1)`, on the stated
+grounds that `contained_by_extent` aligns up its `end_address()`. It doesn't: it
+aligns *down* the end and aligns *up* the start. So the assumption excluded
+every extent whose start sits in the final 4 KiB of the address space, which is
+precisely the input that panics. Caught in review by Codex on PR #47.
+
+```
+PhysExtent::from_raw(u64::MAX - 0xFFE, 0xFFE)   // starts at ...F001
+        -> panic in align_u64_up
+```
+
+**Fix.** `contained_by_extent` now uses `align_up_checked` and propagates
+`None`, the same resolution as `shrink_to_alignment` — if the start has no
+page-aligned successor, no whole frame fits above it. The harness keeps only
+the `end_address()` precondition, which is a genuine constraint of `Extent`
+itself (`new_checked` rejects a length reaching the last byte, so an extent
+covering `u64::MAX` is unrepresentable). A regression unit test pins the case;
+it panics against the old implementation.
+
+The general lesson is worth recording, since it applies to every harness here:
+**an `assume` that is wrong is worse than no proof at all**, because it produces
+a green result over a domain nobody checked. This one was wrong for a reason
+that reads plausibly in the comment and takes reading the callee to falsify.
+
 ### `Map::iter_type` scanned the dummy tail
 
 **Harness:** `memory::verify::iter_type_matches_filtering_the_real_entries`

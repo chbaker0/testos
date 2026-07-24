@@ -161,8 +161,14 @@ impl FrameRange {
     }
 
     /// The maximal range fully contained in `extent`.
+    ///
+    /// Returns `None` if no whole frame fits. That includes the case where
+    /// `extent` starts inside the final partial page of the address space, so
+    /// its start has no page-aligned successor: no aligned frame can fit above
+    /// a start that isn't representable, so `None` is the right answer rather
+    /// than a panic.
     pub fn contained_by_extent(extent: PhysExtent) -> Option<FrameRange> {
-        let first = extent.address().align_up(PAGE_SIZE.as_raw());
+        let first = extent.address().align_up_checked(PAGE_SIZE.as_raw())?;
         let last = extent.end_address().align_down(PAGE_SIZE.as_raw());
         if first >= last {
             return None;
@@ -276,6 +282,22 @@ impl PageRange {
                 None
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An extent starting inside the last partial page has no page-aligned
+    /// start, so no whole frame fits in it. `contained_by_extent` used to
+    /// panic aligning that start up; it must report `None` instead.
+    #[test]
+    fn contained_by_extent_reports_none_at_the_top_of_the_address_space() {
+        // Starts at ...F001, one byte above the last page boundary, and runs to
+        // the highest address `Extent`'s own invariant allows.
+        let e = PhysExtent::from_raw(u64::MAX - 0xFFE, 0xFFE);
+        assert_eq!(FrameRange::contained_by_extent(e), None);
     }
 }
 
@@ -473,11 +495,13 @@ mod verify {
         let address: u64 = kani::any();
         let length: u64 = kani::any();
         kani::assume(length != 0);
-        // `contained_by_extent` calls `end_address()` then `align_up` on it, so
-        // the extent must sit far enough below the top of the address space for
-        // both to be representable. This is an unstated precondition.
+        // `contained_by_extent` calls `end_address()`, which is exclusive and so
+        // is unrepresentable for an extent covering the very last byte. That is
+        // a genuine precondition of `Extent` itself, not of this function, so it
+        // stays assumed away. Nothing else is: in particular the extent may
+        // *start* inside the final partial page, which is the case that used to
+        // panic in `align_up`.
         kani::assume(length <= u64::MAX - address);
-        kani::assume(address + length <= u64::MAX - (PAGE_SIZE.as_raw() - 1));
         let e = PhysExtent::new(PhysAddress::from_raw(address), Length::from_raw(length));
 
         if let Some(r) = FrameRange::contained_by_extent(e) {

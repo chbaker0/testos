@@ -35,8 +35,11 @@ pub unsafe trait FrameAllocator {
     /// # Safety
     ///
     /// `frame` must have been returned by allocate and not deallocated since.
-    fn deallocate(&mut self, frame: Frame) {
-        self.deallocate_range(FrameRange::one(frame))
+    unsafe fn deallocate(&mut self, frame: Frame) {
+        // SAFETY: forwarded from this fn's contract — `frame` was returned by
+        // `allocate` and not deallocated since, so the one-frame range built
+        // from it satisfies `deallocate_range`'s contract.
+        unsafe { self.deallocate_range(FrameRange::one(frame)) }
     }
 
     /// Return several allocated frames of physical address space.
@@ -45,7 +48,7 @@ pub unsafe trait FrameAllocator {
     ///
     /// `range` must have been returned by allocate_range and not deallocated
     /// since.
-    fn deallocate_range(&mut self, range: FrameRange);
+    unsafe fn deallocate_range(&mut self, range: FrameRange);
 
     /// Reserve a specific frame, if possible.
     fn reserve(&mut self, frame: Frame) -> Result<(), FrameReserveError>;
@@ -56,7 +59,7 @@ pub unsafe trait FrameAllocator {
     ///
     /// The frame must have been successfully reserved by `reserve` and not
     /// returned by `unreserve` since.
-    fn unreserve(&mut self, frame: Frame);
+    unsafe fn unreserve(&mut self, frame: Frame);
 }
 
 /// Allocates successive frames from a given set. This can be "unwrapped" to get
@@ -231,13 +234,16 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
         unreachable!();
     }
 
-    fn deallocate(&mut self, frame: Frame) {
+    unsafe fn deallocate(&mut self, frame: Frame) {
         self.deallocate_impl(frame)
     }
 
-    fn deallocate_range(&mut self, range: FrameRange) {
+    unsafe fn deallocate_range(&mut self, range: FrameRange) {
         for frame in range.iter() {
-            self.deallocate(frame);
+            // SAFETY: forwarded from this fn's contract — every frame in
+            // `range` was returned by `allocate_range` and not deallocated
+            // since, so each one satisfies `deallocate`'s contract.
+            unsafe { self.deallocate(frame) };
         }
     }
 
@@ -259,7 +265,7 @@ unsafe impl FrameAllocator for BitmapFrameAllocator<'_> {
         Ok(())
     }
 
-    fn unreserve(&mut self, frame: Frame) {
+    unsafe fn unreserve(&mut self, frame: Frame) {
         self.unreserve_impl(frame)
     }
 }
@@ -389,7 +395,7 @@ fn set_least_significant_bits(num_bits: u8) -> u8 {
 }
 
 fn ceil_divide(x: u64, divisor: u64) -> u64 {
-    (x + divisor - 1) / divisor
+    x.div_ceil(divisor)
 }
 
 #[cfg(test)]
@@ -653,7 +659,9 @@ mod tests {
         );
         assert_eq!(allocator.allocate(), None);
 
-        allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64)));
+        // SAFETY: this frame was reserved by the `reserve` call above and has
+        // not been unreserved since.
+        unsafe { allocator.unreserve(Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64))) };
         assert_eq!(
             allocator.allocate().unwrap(),
             Frame::new(PhysAddress::from_zero(PAGE_SIZE * 1u64))
@@ -672,10 +680,13 @@ mod tests {
         let frame2 = allocator.allocate().unwrap();
         assert_eq!(allocator.allocate(), None);
 
-        allocator.deallocate(frame2);
+        // SAFETY: `frame2` was just returned by `allocate` and not yet
+        // deallocated.
+        unsafe { allocator.deallocate(frame2) };
         assert_eq!(allocator.allocate().unwrap(), frame2);
 
-        allocator.deallocate(frame1);
+        // SAFETY: `frame1` was returned by `allocate` and not yet deallocated.
+        unsafe { allocator.deallocate(frame1) };
         assert_eq!(allocator.allocate().unwrap(), frame1);
     }
 

@@ -20,11 +20,11 @@ pub const DEFAULT_CHUNK_SIZE: usize = crate::memory::page::PAGE_SIZE.as_raw() as
 pub unsafe trait ChunkProvider<const CHUNK_SIZE: usize = DEFAULT_CHUNK_SIZE> {
     /// Allocate `num_chunks` contiguous chunks.
     ///
-    /// # Safety
-    ///
-    /// The implementation must return a valid slice sized and aligned to
-    /// CHUNK_SIZE. The client of `ChunkProvider` has exclusive access to this
-    /// slice thereafter.
+    /// Implementations must return a valid slice sized and aligned to
+    /// CHUNK_SIZE. The client of `ChunkProvider` has exclusive access to that
+    /// slice thereafter. This is an obligation on the *implementor*, carried
+    /// by this trait's own `unsafe` contract (see the trait docs) — calling
+    /// this method is safe.
     fn allocate(&mut self, num_chunks: usize) -> *mut [MaybeUninit<u8>];
 }
 
